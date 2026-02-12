@@ -1,3 +1,65 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --safe-blue: #01579b;
+  --safe-blue-2: #006ab8;
+  --safe-blue-3: #004c86;
+  --safe-orange: #ff8f00;
+  --safe-text: #f4f7fb;
+  --safe-white: #ffffff;
+  --container: 1200px;
+  --pad: clamp(1.5rem, 3vw, 3rem);
+  --radius-pill: 999px;
+  --shadow-card: 0 18px 60px rgba(0, 0, 0, 0.25);
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: linear-gradient(135deg, #0a8bdb 0%, #01579b 35%, #003c6b 100%);
+  color: var(--safe-text);
+}
+
+.cta-pill {
+  background: var(--safe-orange);
+  color: #0b3152;
+  border-radius: var(--radius-pill);
+  padding: 0.65rem 1.5rem;
+  font-weight: 700;
+  box-shadow: 0 12px 30px rgba(255, 143, 0, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cta-pill:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 34px rgba(255, 143, 0, 0.45);
+}
+
+.nav-link {
+  color: #eaf3fb;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.nav-link:hover {
+  color: var(--safe-white);
+}
+
+.store-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1.25px solid rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  padding: 0.6rem 0.95rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--safe-white);
+  font-weight: 700;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.store-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.6);
+}

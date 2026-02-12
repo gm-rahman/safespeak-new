@@ -1,12 +1,29 @@
-import { Card, CardBody } from "@nextui-org/react";
+import CommunityImpact from "@/components/landing/community-impact";
+import FaqSection from "@/components/landing/faq-section";
+import FooterSection from "@/components/landing/footer-section";
+import Hero from "@/components/landing/hero";
+import LandingNavbar from "@/components/landing/navbar";
+import LocalIntelligence from "@/components/landing/local-intelligence";
+import ProblemSection from "@/components/landing/problem";
+import ResourcesSection from "@/components/landing/resources";
+import SupportYourWay from "@/components/landing/support-your-way";
+import HowItWorks from "@/components/landing/how-it-works";
 
-export default async function Home() {
+export default function Home() {
   return (
-    <Card className="mx-auto mt-4 max-w-md">
-      <CardBody className="text-center">
-        <h1 className="text-5xl">Next.js Starter</h1>
-        <p className="text-xl">A simple starter for Next.js</p>
-      </CardBody>
-    </Card>
+    <>
+      <main>
+        <LandingNavbar />
+        <Hero />
+        <ProblemSection />
+        <ResourcesSection />
+        <HowItWorks />
+        <LocalIntelligence />
+        <CommunityImpact />
+        <SupportYourWay />
+        <FaqSection />
+        <FooterSection />
+      </main>
+    </>
   );
 }
