@@ -38,6 +38,7 @@ export interface AgentLoginResponse {
   message: string;
   data: AgentLoginData;
   timestamp: string;
+  requestId?: string;
 }
 
 export interface AgentLoginInput {
@@ -61,6 +62,8 @@ export interface AuthSession {
 }
 
 const AUTH_SESSION_KEY = "safespeak_auth_session";
+const SENSITIVE_KEY_PATTERN =
+  /password|token|accesstoken|refreshtoken|authorization|cookie|otp|secret/i;
 
 function getApiBaseUrl(explicit?: string): string {
   // eslint-disable-next-line n/no-process-env
@@ -82,6 +85,54 @@ async function parseJsonSafe(response: Response): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+function redactSensitivePayload<T>(value: T): T {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactSensitivePayload(item)) as T;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entryValue]) => [
+      key,
+      SENSITIVE_KEY_PATTERN.test(key)
+        ? "[REDACTED]"
+        : redactSensitivePayload(entryValue),
+    ])
+  ) as T;
+}
+
+function debugApiResponse(args: {
+  ok: boolean;
+  url: string;
+  method: string;
+  status: number;
+  data: unknown;
+  requestId: string | null;
+}): void {
+  // eslint-disable-next-line n/no-process-env
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+
+  const payload = {
+    status: args.status,
+    url: args.url,
+    method: args.method,
+    response: redactSensitivePayload(args.data),
+    requestId: args.requestId,
+  };
+
+  if (args.ok) {
+    console.debug("[api:success]", payload);
+    return;
+  }
+
+  console.error("[api:error]", payload);
 }
 
 export function saveAuthSession(session: AuthSession): void {
@@ -136,6 +187,16 @@ export async function loginAgent(
   const payload = (await parseJsonSafe(
     response
   )) as Partial<AgentLoginResponse> | null;
+
+  debugApiResponse({
+    ok: response.ok && Boolean(payload?.success),
+    url: response.url,
+    method: "POST",
+    status: response.status,
+    data: payload,
+    requestId: response.headers.get("x-request-id") ?? payload?.requestId ?? null,
+  });
+
   const message = payload?.message ?? "Login failed";
 
   if (
