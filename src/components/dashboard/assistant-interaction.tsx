@@ -10,11 +10,23 @@ import {
   useState,
 } from "react";
 
-import { IconMapPin, IconMicrophone } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconCheck,
+  IconLoader2,
+  IconMapPin,
+  IconMicrophone,
+} from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
 import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
+import {
+  type CapturedReportMetadata,
+  captureReportMetadata,
+  clearReportMetadata,
+  saveReportMetadata,
+} from "@/lib/report-metadata";
 import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
 type RecordingErrorCode =
@@ -104,6 +116,11 @@ export function AssistantInteraction({
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [finalTranscript, setFinalTranscript] = useState("");
   const [liveTranscript, setLiveTranscript] = useState("");
+  const [isMetadataEnabled, setIsMetadataEnabled] = useState(false);
+  const [isMetadataCapturing, setIsMetadataCapturing] = useState(false);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [reportMetadata, setReportMetadata] =
+    useState<CapturedReportMetadata | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
@@ -230,6 +247,10 @@ export function AssistantInteraction({
     if (showTranscriptPanel) {
       return;
     }
+
+    window.scrollTo({ top: 0, left: 0 });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
 
     const previousBodyOverflowY = document.body.style.overflowY;
     const previousDocumentOverflowY = document.documentElement.style.overflowY;
@@ -392,7 +413,59 @@ export function AssistantInteraction({
     }
   };
 
+  const enableMetadataCapture = async () => {
+    setIsMetadataCapturing(true);
+    setMetadataError(null);
+
+    try {
+      const metadata = await captureReportMetadata();
+      saveReportMetadata(metadata);
+      setReportMetadata(metadata);
+      setIsMetadataEnabled(true);
+    } catch (error) {
+      clearReportMetadata();
+      setReportMetadata(null);
+      setIsMetadataEnabled(false);
+      setMetadataError(
+        error instanceof Error
+          ? error.message
+          : t("dashboard.assistant.metadataCaptureFailed")
+      );
+    } finally {
+      setIsMetadataCapturing(false);
+    }
+  };
+
+  const disableMetadataCapture = () => {
+    clearReportMetadata();
+    setReportMetadata(null);
+    setIsMetadataEnabled(false);
+    setMetadataError(null);
+  };
+
+  const toggleMetadataCapture = () => {
+    if (isMetadataCapturing) {
+      return;
+    }
+
+    if (isMetadataEnabled) {
+      disableMetadataCapture();
+      return;
+    }
+
+    void enableMetadataCapture();
+  };
+
   const recordingSpacingClass = showTranscriptPanel ? "mt-5 sm:mt-6" : "mt-7";
+  const metadataStatusText = isMetadataCapturing
+    ? t("dashboard.assistant.metadataCapturing")
+    : metadataError
+      ? t("dashboard.assistant.metadataUnavailable")
+      : reportMetadata
+        ? reportMetadata.location
+          ? t("dashboard.assistant.metadataReady")
+          : t("dashboard.assistant.metadataDeviceOnly")
+        : t("dashboard.assistant.metadataDescription");
 
   return (
     <div className="flex flex-1 flex-col items-center px-2 pb-2 pt-4 sm:px-4 sm:pb-4 sm:pt-5">
@@ -439,6 +512,9 @@ export function AssistantInteraction({
           className="rounded-[20px] border border-[#dbe6f2] bg-white p-2"
         >
           <input type="hidden" name="view" value="assistantconversation" />
+          {reportMetadata ? (
+            <input type="hidden" name="metadataCapture" value="1" />
+          ) : null}
           <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
             <input
               type="text"
@@ -492,23 +568,49 @@ export function AssistantInteraction({
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="flex h-[54px] flex-1 items-center justify-between rounded-full bg-white px-4">
               <div className="inline-flex items-center gap-2.5">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#e9f1ff] text-[#3f7de0]">
-                  <IconMapPin size={12} />
+                <span
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded-full ${
+                    metadataError
+                      ? "bg-[#fee2e2] text-[#dc2626]"
+                      : reportMetadata
+                        ? "bg-[#dcfce7] text-[#16a34a]"
+                        : "bg-[#e9f1ff] text-[#3f7de0]"
+                  }`}
+                >
+                  {isMetadataCapturing ? (
+                    <IconLoader2 size={12} className="animate-spin" />
+                  ) : metadataError ? (
+                    <IconAlertCircle size={12} />
+                  ) : reportMetadata ? (
+                    <IconCheck size={12} />
+                  ) : (
+                    <IconMapPin size={12} />
+                  )}
                 </span>
                 <div>
                   <p className="text-[11px] font-semibold leading-none text-[#1f2a3a]">
                     {t("dashboard.assistant.metadataCapture")}
                   </p>
                   <p className="mt-1 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#8b97a8]">
-                    {t("dashboard.assistant.metadataDescription")}
+                    {metadataStatusText}
                   </p>
                 </div>
               </div>
               <button
+                type="button"
+                onClick={toggleMetadataCapture}
+                disabled={isMetadataCapturing}
                 aria-label={t("dashboard.assistant.toggleMetadataCapture")}
-                className="inline-flex h-5 w-8 items-center rounded-full bg-[#d4dbe4] p-[2px]"
+                aria-pressed={isMetadataEnabled}
+                className={`inline-flex h-5 w-8 items-center rounded-full p-[2px] transition ${
+                  isMetadataEnabled ? "bg-[#16a34a]" : "bg-[#d4dbe4]"
+                } ${isMetadataCapturing ? "cursor-wait opacity-80" : ""}`}
               >
-                <span className="h-4 w-4 rounded-full bg-white" />
+                <span
+                  className={`h-4 w-4 rounded-full bg-white transition ${
+                    isMetadataEnabled ? "translate-x-3" : ""
+                  }`}
+                />
               </button>
             </div>
 

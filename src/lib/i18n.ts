@@ -364,6 +364,13 @@ const resources = {
           stopRecording: "Stop Recording",
           metadataCapture: "Metadata Capture",
           metadataDescription: "GPS & Device Intelligence",
+          metadataCapturing: "Capturing GPS & device...",
+          metadataReady: "GPS & device captured",
+          metadataDeviceOnly: "Device captured, GPS unavailable",
+          metadataUnavailable: "Metadata unavailable",
+          metadataCaptureFailed: "Metadata capture failed.",
+          metadataPermissionDenied:
+            "Location permission was denied. Device metadata can still be captured.",
           toggleMetadataCapture: "Toggle metadata capture",
           tapToStartRecording: "Tap to start recording",
           speechNotSupported: "Speech not supported",
@@ -751,8 +758,7 @@ const resources = {
             warmReferralDescription:
               "A warm referral ensures the provider has the context they need to help you immediately without repeating your story. This secure transfer of information helps build trust and accelerates the support process.",
             includeIncidentSummary: "Include Incident Summary",
-            includeIncidentSummaryHelp:
-              "Shares your recent report securely.",
+            includeIncidentSummaryHelp: "Shares your recent report securely.",
             sendReferral: "Send Referral",
             relevantResources: "Relevant Resources",
           },
@@ -874,8 +880,7 @@ const resources = {
           passwordMinError: "Password must be at least 10 characters.",
           passwordMatchError: "Password and confirm password must match.",
           acceptTermsError: "Please accept the terms to continue.",
-          success:
-            "Registration complete. You are now signed in.",
+          success: "Registration complete. You are now signed in.",
           error: "Registration failed.",
         },
       },
@@ -1218,6 +1223,13 @@ const resources = {
           stopRecording: "Detener grabacion",
           metadataCapture: "Captura de metadatos",
           metadataDescription: "GPS e inteligencia del dispositivo",
+          metadataCapturing: "Capturando GPS y dispositivo...",
+          metadataReady: "GPS y dispositivo capturados",
+          metadataDeviceOnly: "Dispositivo capturado, GPS no disponible",
+          metadataUnavailable: "Metadatos no disponibles",
+          metadataCaptureFailed: "No se pudieron capturar los metadatos.",
+          metadataPermissionDenied:
+            "Se nego el permiso de ubicacion. Aun se pueden capturar metadatos del dispositivo.",
           toggleMetadataCapture: "Alternar captura de metadatos",
           tapToStartRecording: "Toca para comenzar a grabar",
           speechNotSupported: "Voz no compatible",
