@@ -2,17 +2,22 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
+import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 import { AuthShell } from "@/components/auth/auth-shell";
 import { AuthSocialButtons } from "@/components/auth/auth-social-buttons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { type SocialAuthProvider, startSocialAuth } from "@/lib/auth";
+import {
+  type SocialAuthProvider,
+  registerUser,
+  startSocialAuth,
+} from "@/lib/auth";
 
 export default function RegisterPage() {
   const { t } = useTranslation();
-  const [fullName, setFullName] = useState("");
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -26,20 +31,19 @@ export default function RegisterPage() {
   const isDisabled = useMemo(() => {
     return (
       isSubmitting ||
-      !fullName.trim() ||
       !email.trim() ||
       !password ||
       !confirmPassword ||
       !acceptedTerms
     );
-  }, [acceptedTerms, confirmPassword, email, fullName, isSubmitting, password]);
+  }, [acceptedTerms, confirmPassword, email, isSubmitting, password]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setSuccess(null);
 
-    if (password.length < 8) {
+    if (password.length < 10) {
       setError(t("auth.register.passwordMinError"));
       return;
     }
@@ -57,16 +61,17 @@ export default function RegisterPage() {
     setIsSubmitting(true);
 
     try {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 700);
+      await registerUser({
+        email: email.trim(),
+        password,
       });
 
       setSuccess(t("auth.register.success"));
-      setFullName("");
       setEmail("");
       setPassword("");
       setConfirmPassword("");
       setAcceptedTerms(false);
+      router.push("/profile");
     } catch (submitError) {
       const message =
         submitError instanceof Error
@@ -107,22 +112,6 @@ export default function RegisterPage() {
       footerLinkHref="/login"
     >
       <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="space-y-1.5">
-          <label htmlFor="fullName" className="text-sm font-medium text-white">
-            {t("auth.register.fullName")}
-          </label>
-          <Input
-            id="fullName"
-            type="text"
-            value={fullName}
-            onChange={(event) => setFullName(event.target.value)}
-            placeholder={t("auth.register.fullNamePlaceholder")}
-            autoComplete="name"
-            className="h-11 rounded-md border border-white/20 bg-white text-[#0f172a] placeholder:text-slate-400 focus-visible:ring-[#4ba3d9]"
-            required
-          />
-        </div>
-
         <div className="space-y-1.5">
           <label htmlFor="email" className="text-sm font-medium text-white">
             {t("auth.register.email")}

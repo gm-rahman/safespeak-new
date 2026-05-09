@@ -8,9 +8,13 @@ import {
   IconBook,
   IconCheck,
   IconChevronLeft,
+  IconDownload,
   IconFilter,
+  IconFileText,
   IconFolderFilled,
+  IconHeadphones,
   IconMoodSmile,
+  IconMovie,
   IconSearch,
   IconShieldFilled,
   IconX,
@@ -27,23 +31,29 @@ import { useTranslation } from "react-i18next";
 import mentalHealth from "@/assets/mental_health.svg?url";
 import mentalHealth2 from "@/assets/mental_health_2.svg?url";
 import mentalHealthLove from "@/assets/mental_health_love.svg?url";
+import {
+  getContentResourceDownloadUrl,
+  listPublishedContentResources,
+  type ContentResourceItem,
+} from "@/lib/content-resources";
+import {
+  listPublishedMicroEducation,
+  type MicroEducationChip,
+  type MicroEducationDuration,
+  type MicroEducationFormat,
+  type MicroEducationTone,
+} from "@/lib/microeducation";
 import { cn } from "@/lib/utils";
 
 import { interFont } from "./dashboard-shared";
 
-type TopicId =
-  | "bullying"
-  | "discrimination"
-  | "onlineSafety"
-  | "rights"
-  | "mentalHealth"
-  | "legalAid";
+type TopicId = string;
 
-type TopicTone = "blue" | "orange" | "green" | "amber" | "violet" | "teal";
+type TopicTone = MicroEducationTone;
 
-type LessonChipId = "all" | "harassment" | "rights" | "safety" | "mentalHealth";
-type LessonDuration = "quick" | "deep";
-type LessonFormat = "video" | "interactive" | "guide";
+type LessonChipId = "all" | MicroEducationChip;
+type LessonDuration = MicroEducationDuration;
+type LessonFormat = MicroEducationFormat;
 
 type MicroTopic = {
   id: TopicId;
@@ -52,7 +62,7 @@ type MicroTopic = {
   title: string;
   summary: string;
   cta: string;
-  chips: LessonChipId[];
+  chips: MicroEducationChip[];
   duration: LessonDuration;
   format: LessonFormat;
 };
@@ -111,16 +121,21 @@ function topicToneStyles(tone: TopicTone) {
   return styles[tone];
 }
 
-function topicIcon(topicId: TopicId) {
-  if (topicId === "onlineSafety" || topicId === "bullying") {
+function topicIcon(topic: Pick<MicroTopic, "id" | "title">) {
+  const topicKey = `${topic.id} ${topic.title}`.toLowerCase();
+
+  if (topicKey.includes("online safety") || topicKey.includes("bullying")) {
     return <IconShieldFilled size={30} />;
   }
-  if (topicId === "rights") {
+
+  if (topicKey.includes("rights") || topicKey.includes("legal aid")) {
     return <IconFolderFilled size={30} />;
   }
-  if (topicId === "mentalHealth") {
+
+  if (topicKey.includes("mental health")) {
     return <IconMoodSmile size={30} />;
   }
+
   return <IconBook size={30} />;
 }
 
@@ -132,6 +147,48 @@ function topicNarrative(topic: MicroTopic) {
   ];
 }
 
+function contentResourceIcon(mimeType: string) {
+  if (mimeType.startsWith("video/")) {
+    return <IconMovie size={18} />;
+  }
+
+  if (mimeType.startsWith("audio/")) {
+    return <IconHeadphones size={18} />;
+  }
+
+  return <IconFileText size={18} />;
+}
+
+function formatContentResourceSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes}B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)}KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function formatContentResourceDate(value?: string) {
+  if (!value) {
+    return "Review date open";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Review date open";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
 function MicroEducationPage() {
   const { t } = useTranslation();
   const prefersReducedMotion = useReducedMotion();
@@ -139,6 +196,9 @@ function MicroEducationPage() {
   const [activeChipId, setActiveChipId] = useState<LessonChipId>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [adminTopics, setAdminTopics] = useState<MicroTopic[]>([]);
+  const [isLoadingMicroEducation, setIsLoadingMicroEducation] = useState(true);
+  const [contentResources, setContentResources] = useState<ContentResourceItem[]>([]);
   const [appliedFilters, setAppliedFilters] = useState<LessonFilters>(
     createDefaultLessonFilters
   );
@@ -147,77 +207,73 @@ function MicroEducationPage() {
   );
   const pushedHistoryRef = useRef(false);
 
-  const topics = useMemo<MicroTopic[]>(
-    () => [
-      {
-        id: "bullying",
-        tone: "blue",
-        tag: t("dashboard.home.cyber"),
-        title: t("dashboard.microeducation.bullying"),
-        summary: t("dashboard.microeducation.onlineSafetyBody"),
-        cta: t("dashboard.microeducation.getProtected"),
-        chips: ["harassment", "safety"],
-        duration: "quick",
-        format: "interactive",
-      },
-      {
-        id: "discrimination",
-        tone: "orange",
-        tag: t("dashboard.microeducation.harassment"),
-        title: t("dashboard.microeducation.discrimination"),
-        summary: t("dashboard.microeducation.discriminationBody"),
-        cta: t("dashboard.microeducation.startNow"),
-        chips: ["harassment", "rights"],
-        duration: "deep",
-        format: "video",
-      },
-      {
-        id: "onlineSafety",
-        tone: "green",
-        tag: t("dashboard.microeducation.protection"),
-        title: t("dashboard.explorer.onlineSafety"),
-        summary: t("dashboard.microeducation.onlineSafetyBody"),
-        cta: t("dashboard.microeducation.getProtected"),
-        chips: ["safety"],
-        duration: "quick",
-        format: "video",
-      },
-      {
-        id: "rights",
-        tone: "amber",
-        tag: t("dashboard.home.legal"),
-        title: t("dashboard.microeducation.migrantStudentRights"),
-        summary: t("dashboard.microeducation.discriminationBody"),
-        cta: t("dashboard.microeducation.startNow"),
-        chips: ["rights"],
-        duration: "deep",
-        format: "guide",
-      },
-      {
-        id: "mentalHealth",
-        tone: "violet",
-        tag: t("dashboard.microeducation.mental"),
-        title: t("dashboard.microeducation.mentalHealthTitle"),
-        summary: t("dashboard.microeducation.onlineSafetyBody"),
-        cta: t("dashboard.microeducation.startNow"),
-        chips: ["mentalHealth"],
-        duration: "quick",
-        format: "interactive",
-      },
-      {
-        id: "legalAid",
-        tone: "teal",
-        tag: t("dashboard.microeducation.fundamentals"),
-        title: t("dashboard.microeducation.legalAidBasics"),
-        summary: t("dashboard.microeducation.discriminationBody"),
-        cta: t("dashboard.microeducation.startNow"),
-        chips: ["rights"],
-        duration: "deep",
-        format: "guide",
-      },
-    ],
-    [t]
-  );
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMicroEducation = async () => {
+      try {
+        const items = await listPublishedMicroEducation();
+
+        if (!isMounted) {
+          return;
+        }
+
+        setAdminTopics(
+          items.map((item) => ({
+            id: item.id,
+            tone: item.tone,
+            tag: item.tag,
+            title: item.title,
+            summary: item.summary,
+            cta: item.cta,
+            chips: item.chips,
+            duration: item.duration,
+            format: item.format,
+          }))
+        );
+      } catch {
+        if (isMounted) {
+          setAdminTopics([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingMicroEducation(false);
+        }
+      }
+    };
+
+    void loadMicroEducation();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadContentResources = async () => {
+      try {
+        const resources = await listPublishedContentResources();
+
+        if (isMounted) {
+          setContentResources(resources);
+        }
+      } catch {
+        if (isMounted) {
+          setContentResources([]);
+        }
+      }
+    };
+
+    void loadContentResources();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const topics = adminTopics;
 
   const activeTopic =
     topics.find((topic) => topic.id === activeTopicId) ?? null;
@@ -546,7 +602,7 @@ function MicroEducationPage() {
                             : "bg-white/20 text-white/90"
                         )}
                       >
-                        {topicIcon(topic.id)}
+                        {topicIcon(topic)}
                       </span>
                     )}
                   </motion.button>
@@ -556,15 +612,77 @@ function MicroEducationPage() {
               {filteredTopics.length === 0 ? (
                 <article className="col-span-full rounded-[20px] border border-[#dce5f1] bg-white p-6 text-center">
                   <p className="text-sm font-semibold text-[#22344a]">
-                    No lessons match your filters.
+                    {isLoadingMicroEducation
+                      ? "Loading lessons..."
+                      : "No lessons match your filters."}
                   </p>
                   <p className="mt-1 text-xs text-[#6f8197]">
-                    Try changing the selected topic, duration, format, or search
-                    terms.
+                    {isLoadingMicroEducation
+                      ? "Please wait while lessons load."
+                      : "Try changing the selected topic, duration, format, or search terms."}
                   </p>
                 </article>
               ) : null}
             </div>
+
+            {contentResources.length > 0 ? (
+              <section className="mt-5 rounded-[22px] border border-[#dce5f1] bg-white p-4 sm:p-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7e90a8]">
+                      Resource Library
+                    </p>
+                    <h2
+                      className={`${interFont.className} mt-1 text-2xl font-extrabold text-[#12243c]`}
+                    >
+                      Downloadable safety resources
+                    </h2>
+                  </div>
+                  <p className="text-xs font-semibold text-[#6f8197]">
+                    {contentResources.length} published
+                  </p>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  {contentResources.map((resource) => (
+                    <article
+                      key={resource.id}
+                      className="flex min-h-[104px] items-center gap-3 rounded-[14px] border border-[#e1eaf4] bg-[#f8fbff] p-3"
+                    >
+                      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#eaf2ff] text-[#0f5fa7]">
+                        {contentResourceIcon(resource.mimeType)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-[#1f2a3a]">
+                          {resource.name}
+                        </p>
+                        <p className="mt-1 text-[11px] font-semibold text-[#64748b]">
+                          {resource.category}
+                          {" | "}
+                          {resource.language}
+                          {" | "}
+                          {resource.jurisdiction}
+                        </p>
+                        <p className="mt-1 text-[10px] text-[#8a9ab0]">
+                          {formatContentResourceSize(resource.fileSizeBytes)}
+                          {" | "}
+                          {formatContentResourceDate(resource.reviewDate)}
+                        </p>
+                      </div>
+                      <a
+                        href={getContentResourceDownloadUrl(resource)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0f5fa7] text-white transition hover:bg-[#0b578f]"
+                        aria-label={`Download ${resource.name}`}
+                      >
+                        <IconDownload size={15} />
+                      </a>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </div>
         </div>
       </div>

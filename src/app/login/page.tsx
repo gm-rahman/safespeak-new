@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   type SocialAuthProvider,
-  loginAgent,
+  loginUser,
   startSocialAuth,
 } from "@/lib/auth";
 
@@ -39,7 +39,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await loginAgent(
+      await loginUser(
         {
           email: email.trim(),
           password,
@@ -49,7 +49,7 @@ export default function LoginPage() {
         }
       );
 
-      setSuccess(response.message || t("auth.login.success"));
+      setSuccess(t("auth.login.success"));
       router.push("/profile");
     } catch (submitError) {
       const message =

@@ -870,11 +870,11 @@ const resources = {
           terms: "I agree to the Terms of Use and Privacy Policy.",
           submitting: "Creating account...",
           submit: "Create account",
-          passwordMinError: "Password must be at least 8 characters.",
+          passwordMinError: "Password must be at least 10 characters.",
           passwordMatchError: "Password and confirm password must match.",
           acceptTermsError: "Please accept the terms to continue.",
           success:
-            "Registration submitted. You can now sign in from the login page.",
+            "Registration complete. You are now signed in.",
           error: "Registration failed.",
         },
       },
@@ -1733,7 +1733,7 @@ const resources = {
           terms: "Acepto los Terminos de uso y la Politica de privacidad.",
           submitting: "Creando cuenta...",
           submit: "Crear cuenta",
-          passwordMinError: "La contrasena debe tener al menos 8 caracteres.",
+          passwordMinError: "La contrasena debe tener al menos 10 caracteres.",
           passwordMatchError:
             "La contrasena y la confirmacion deben coincidir.",
           acceptTermsError: "Acepta los terminos para continuar.",

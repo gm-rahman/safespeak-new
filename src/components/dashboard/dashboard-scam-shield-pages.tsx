@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   IconAlertTriangle,
@@ -20,6 +20,12 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
+
+import {
+  getMediaAssetImageUrl,
+  listPublishedMediaAssets,
+  type MediaAssetItem,
+} from "@/lib/media-assets";
 
 import { interFont } from "./dashboard-shared";
 
@@ -274,6 +280,25 @@ function ScamShieldRiskPage() {
 
 function ScamShieldAssetsPage() {
   const { t } = useTranslation();
+  const [mediaAssets, setMediaAssets] = useState<MediaAssetItem[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void listPublishedMediaAssets().then((assets) => {
+      if (isMounted) {
+        setMediaAssets(assets);
+      }
+    }).catch(() => {
+      if (isMounted) {
+        setMediaAssets([]);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -387,6 +412,39 @@ function ScamShieldAssetsPage() {
                 </Link>
               </div>
             </article>
+
+            {mediaAssets.map((asset) => (
+              <article
+                key={asset.id}
+                className="overflow-hidden rounded-[12px] border border-[#e2eaf4] bg-white"
+              >
+                <div className="flex flex-col sm:flex-row">
+                  <div className="h-40 bg-[#edf3fb] sm:h-auto sm:w-[168px] sm:shrink-0">
+                    <img
+                      src={getMediaAssetImageUrl(asset)}
+                      alt={asset.title}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0 px-3 py-3 sm:px-4 sm:py-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[25px] font-extrabold leading-none text-[#1f2a3a]">
+                        {asset.title}
+                      </p>
+                      <span className="inline-flex h-5 items-center rounded-full bg-[#ecf3ff] px-2 text-[8px] font-bold uppercase tracking-[0.08em] text-[#2c66b0]">
+                        {asset.category}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-semibold leading-[1.5] text-[#374b64]">
+                      {asset.subtitle}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-[1.5] text-[#6a7e96]">
+                      {asset.bodyText}
+                    </p>
+                  </div>
+                </div>
+              </article>
+            ))}
           </div>
         </article>
       </div>

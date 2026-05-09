@@ -26,51 +26,19 @@ export default function Profile() {
   const profileRows = useMemo(() => {
     if (!session) return [];
     return [
+      { label: "Full Name", value: session.user.fullName },
       { label: "Email", value: session.user.email },
       { label: "Role", value: session.user.role },
-      { label: "Referral Code", value: session.user.referralCode ?? "-" },
-      { label: "License Number", value: session.profile.licenseNumber },
-      { label: "Brokerage Name", value: session.profile.brokerageName },
-      { label: "Title", value: session.profile.title },
-      { label: "Active", value: session.profile.isActive ? "Yes" : "No" },
-      {
-        label: "Accepting Requests",
-        value: session.profile.acceptingRequests ? "Yes" : "No",
-      },
-      {
-        label: "Email Subscription",
-        value: session.profile.emailSubscriptionEnabled
-          ? "Enabled"
-          : "Disabled",
-      },
-      {
-        label: "Total Renters Referred",
-        value: String(session.profile.totalRentersReferred),
-      },
-      {
-        label: "Active Referrals",
-        value: String(session.profile.activeReferrals),
-      },
-      { label: "Total Matches", value: String(session.profile.totalMatches) },
-      {
-        label: "Successful Matches",
-        value: String(session.profile.successfulMatches),
-      },
-      {
-        label: "Grant Access Count",
-        value: String(session.profile.grantAccessCount),
-      },
-      {
-        label: "Has Grant Access",
-        value: session.profile.hasGrantAccess ? "Yes" : "No",
-      },
+      { label: "Status", value: session.user.status },
+      { label: "Email Verified", value: session.user.isEmailVerified ? "Yes" : "No" },
+      { label: "Last Login", value: session.user.lastLoginAt ? new Date(session.user.lastLoginAt).toLocaleString() : "-" },
       {
         label: "Created At",
-        value: new Date(session.profile.createdAt).toLocaleString(),
+        value: new Date(session.user.createdAt).toLocaleString(),
       },
       {
         label: "Updated At",
-        value: new Date(session.profile.updatedAt).toLocaleString(),
+        value: new Date(session.user.updatedAt).toLocaleString(),
       },
     ];
   }, [session]);
@@ -93,8 +61,7 @@ export default function Profile() {
             No active session found.
           </p>
           <p className="text-sm text-[#64748b]">
-            Login first to load full agent details (license number, brokerage
-            name, title, and more).
+            Login first to load your SafeSpeak account details.
           </p>
           <a
             href="/login"
@@ -115,7 +82,6 @@ export default function Profile() {
           description={session.user.email}
           avatarProps={{
             showFallback: true,
-            src: session.profile.profileImageUrl || "",
           }}
         />
 
@@ -125,13 +91,10 @@ export default function Profile() {
           </Chip>
           <Chip
             size="sm"
-            color={session.profile.isActive ? "success" : "warning"}
+            color={session.user.status === "active" ? "success" : "warning"}
             variant="flat"
           >
-            {session.profile.isActive ? "Active" : "Inactive"}
-          </Chip>
-          <Chip size="sm" color="default" variant="flat">
-            Expires: {session.expiresIn}
+            {session.user.status}
           </Chip>
         </div>
 
