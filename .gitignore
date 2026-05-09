@@ -11,11 +11,14 @@
 
 # next.js
 /.next/
+/.next-dev/
 /out/
 .next
+.next-dev
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -32,6 +35,10 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# generated caches
+.turbo/
+.cache/
 
 # typescript
 *.tsbuildinfo
