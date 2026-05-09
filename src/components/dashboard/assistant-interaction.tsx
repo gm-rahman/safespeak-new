@@ -1,24 +1,35 @@
 "use client";
 
 import Image from "next/image";
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { IconMapPin, IconMicrophone } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
 import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
+import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
-const TYPING_IDLE_TIMEOUT_MS = 450;
+type RecordingErrorCode =
+  | "audio-capture"
+  | "network"
+  | "no-speech"
+  | "not-allowed"
+  | "service-not-allowed";
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
-  confidence: number;
 };
 
 type SpeechRecognitionResultLike = {
   isFinal: boolean;
-  length: number;
   [index: number]: SpeechRecognitionAlternativeLike;
 };
 
@@ -32,21 +43,6 @@ type SpeechRecognitionEventLike = {
   results: SpeechRecognitionResultListLike;
 };
 
-type SpeechRecognitionErrorCode =
-  | "aborted"
-  | "audio-capture"
-  | "bad-grammar"
-  | "language-not-supported"
-  | "network"
-  | "no-speech"
-  | "not-allowed"
-  | "service-not-allowed";
-
-type SpeechRecognitionErrorEventLike = {
-  error: SpeechRecognitionErrorCode;
-  message?: string;
-};
-
 interface SpeechRecognitionLike {
   continuous: boolean;
   interimResults: boolean;
@@ -56,7 +52,7 @@ interface SpeechRecognitionLike {
   stop: () => void;
   abort: () => void;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onerror: (() => void) | null;
   onend: (() => void) | null;
 }
 
@@ -67,8 +63,8 @@ type SpeechWindow = Window & {
   webkitSpeechRecognition?: SpeechRecognitionConstructor;
 };
 
-function getSpeechErrorMessage(
-  errorCode: SpeechRecognitionErrorCode,
+function getRecordingErrorMessage(
+  errorCode: RecordingErrorCode,
   t: (key: string) => string
 ): string {
   switch (errorCode) {
@@ -86,6 +82,14 @@ function getSpeechErrorMessage(
   }
 }
 
+function getPreferredRecordingMimeType(): string | undefined {
+  const supportedTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+
+  return supportedTypes.find((mimeType) =>
+    MediaRecorder.isTypeSupported(mimeType)
+  );
+}
+
 export function AssistantInteraction({
   isRecording = false,
   headlineClassName,
@@ -95,46 +99,74 @@ export function AssistantInteraction({
 }) {
   const { t, i18n } = useTranslation();
   const [message, setMessage] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
   const [isRecordingActive, setIsRecordingActive] = useState(isRecording);
-  const [isSpeechSupported, setIsSpeechSupported] = useState(true);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [finalTranscript, setFinalTranscript] = useState("");
-  const [interimTranscript, setInterimTranscript] = useState("");
+  const [liveTranscript, setLiveTranscript] = useState("");
 
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const shouldResumeRecordingRef = useRef(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const shouldProcessRecordingRef = useRef(false);
+  const liveRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const liveFinalTranscriptRef = useRef("");
 
-  const transcriptText = useMemo(() => {
-    return [finalTranscript, interimTranscript]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-  }, [finalTranscript, interimTranscript]);
-  const showTranscriptPanel = isRecordingActive || Boolean(speechError);
-  const speechRecognitionLang = useMemo(() => {
+  const transcriptText = useMemo(
+    () => (finalTranscript || liveTranscript).trim(),
+    [finalTranscript, liveTranscript]
+  );
+  const showTranscriptPanel =
+    isRecordingActive || isTranscribing || Boolean(speechError);
+  const transcriptionLanguage = useMemo(() => {
     return i18n.resolvedLanguage === "es" || i18n.language === "es"
-      ? "es-ES"
-      : "en-US";
+      ? "es"
+      : "en";
   }, [i18n.language, i18n.resolvedLanguage]);
+  const livePreviewLanguage =
+    transcriptionLanguage === "es" ? "es-ES" : "en-US";
 
-  useEffect(() => {
+  const cleanupRecording = () => {
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+    mediaRecorderRef.current = null;
+  };
+
+  const stopLiveTranscriptPreview = () => {
+    if (!liveRecognitionRef.current) {
+      return;
+    }
+
+    liveRecognitionRef.current.onend = null;
+    liveRecognitionRef.current.onresult = null;
+    liveRecognitionRef.current.onerror = null;
+
+    try {
+      liveRecognitionRef.current.stop();
+    } catch {
+      liveRecognitionRef.current.abort();
+    }
+
+    liveRecognitionRef.current = null;
+  };
+
+  const startLiveTranscriptPreview = () => {
     const recognitionCtor =
       (window as SpeechWindow).SpeechRecognition ??
       (window as SpeechWindow).webkitSpeechRecognition;
 
     if (!recognitionCtor) {
-      setIsSpeechSupported(false);
-      setSpeechError(t("dashboard.assistant.speechErrors.unsupported"));
       return;
     }
+
+    stopLiveTranscriptPreview();
 
     const recognition = new recognitionCtor();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = speechRecognitionLang;
+    recognition.lang = livePreviewLanguage;
     recognition.maxAlternatives = 1;
+    liveFinalTranscriptRef.current = "";
 
     recognition.onresult = (event) => {
       let finalChunk = "";
@@ -160,64 +192,37 @@ export function AssistantInteraction({
       }
 
       if (finalChunk) {
-        setFinalTranscript((previous) => `${previous} ${finalChunk}`.trim());
+        liveFinalTranscriptRef.current =
+          `${liveFinalTranscriptRef.current} ${finalChunk}`.trim();
       }
 
-      setInterimTranscript(interimChunk);
+      setLiveTranscript(
+        [liveFinalTranscriptRef.current, interimChunk].filter(Boolean).join(" ")
+      );
     };
 
-    recognition.onerror = (event) => {
-      shouldResumeRecordingRef.current = false;
-      setIsRecordingActive(false);
-      setInterimTranscript("");
-      setSpeechError(getSpeechErrorMessage(event.error, t));
+    recognition.onerror = () => {
+      liveRecognitionRef.current = null;
     };
 
-    recognition.onend = () => {
-      if (shouldResumeRecordingRef.current) {
-        try {
-          recognition.start();
-          setIsRecordingActive(true);
-          return;
-        } catch {
-          shouldResumeRecordingRef.current = false;
-        }
-      }
+    liveRecognitionRef.current = recognition;
 
-      setIsRecordingActive(false);
-      setInterimTranscript("");
-    };
-
-    recognitionRef.current = recognition;
-
-    return () => {
-      shouldResumeRecordingRef.current = false;
-      recognition.abort();
-      recognitionRef.current = null;
-    };
-  }, [speechRecognitionLang, t]);
-
-  useEffect(() => {
-    if (!recognitionRef.current) {
-      return;
+    try {
+      recognition.start();
+    } catch {
+      liveRecognitionRef.current = null;
     }
-
-    recognitionRef.current.lang = speechRecognitionLang;
-  }, [speechRecognitionLang]);
-
-  useEffect(() => {
-    if (!isRecordingActive || isTyping || !transcriptText) {
-      return;
-    }
-
-    setMessage(transcriptText);
-  }, [isRecordingActive, isTyping, transcriptText]);
+  };
 
   useEffect(() => {
     return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
+      if (mediaRecorderRef.current?.state === "recording") {
+        shouldProcessRecordingRef.current = false;
+        mediaRecorderRef.current.stop();
       }
+
+      stopLiveTranscriptPreview();
+      cleanupRecording();
     };
   }, []);
 
@@ -238,47 +243,130 @@ export function AssistantInteraction({
     };
   }, [showTranscriptPanel]);
 
-  const startVoiceRecording = () => {
-    const recognition = recognitionRef.current;
+  const handleRecordedAudio = async (mimeType: string) => {
+    const audioBlob = new Blob(audioChunksRef.current, {
+      type: mimeType || "audio/webm",
+    });
 
-    if (!recognition) {
+    shouldProcessRecordingRef.current = false;
+    audioChunksRef.current = [];
+    cleanupRecording();
+
+    if (!audioBlob.size) {
+      setIsTranscribing(false);
+      setSpeechError(getRecordingErrorMessage("no-speech", t));
+      return;
+    }
+
+    try {
+      const transcription = await transcribeAssistantVoice(
+        audioBlob,
+        transcriptionLanguage
+      );
+      const transcript = transcription.transcript.trim();
+
+      if (!transcript) {
+        setSpeechError(getRecordingErrorMessage("no-speech", t));
+        return;
+      }
+
+      setFinalTranscript(transcript);
+      setMessage((currentMessage) =>
+        [currentMessage.trim(), transcript].filter(Boolean).join(" ")
+      );
+    } catch (error) {
+      setSpeechError(
+        error instanceof Error
+          ? error.message
+          : getRecordingErrorMessage("network", t)
+      );
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    if (
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
       setSpeechError(t("dashboard.assistant.speechErrors.unsupported"));
       return;
     }
 
     setSpeechError(null);
     setFinalTranscript("");
-    setInterimTranscript("");
-    shouldResumeRecordingRef.current = true;
+    setLiveTranscript("");
+    setIsTranscribing(false);
+    audioChunksRef.current = [];
+    shouldProcessRecordingRef.current = true;
 
     try {
-      recognition.start();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getPreferredRecordingMimeType();
+      const mediaRecorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined
+      );
+
+      recordingStreamRef.current = stream;
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onerror = () => {
+        shouldProcessRecordingRef.current = false;
+        setIsRecordingActive(false);
+        setIsTranscribing(false);
+        cleanupRecording();
+        setSpeechError(getRecordingErrorMessage("audio-capture", t));
+      };
+
+      mediaRecorder.onstop = () => {
+        setIsRecordingActive(false);
+
+        if (!shouldProcessRecordingRef.current) {
+          audioChunksRef.current = [];
+          cleanupRecording();
+          return;
+        }
+
+        setIsTranscribing(true);
+        void handleRecordedAudio(
+          mediaRecorder.mimeType || mimeType || "audio/webm"
+        );
+      };
+
+      mediaRecorder.start();
+      startLiveTranscriptPreview();
       setIsRecordingActive(true);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "InvalidStateError") {
-        return;
-      }
-
-      shouldResumeRecordingRef.current = false;
-      setIsRecordingActive(false);
-      setSpeechError(t("dashboard.assistant.speechErrors.startFailed"));
+      stopLiveTranscriptPreview();
+      cleanupRecording();
+      const errorCode =
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? "not-allowed"
+          : "audio-capture";
+      setSpeechError(getRecordingErrorMessage(errorCode, t));
     }
   };
 
   const stopVoiceRecording = () => {
-    shouldResumeRecordingRef.current = false;
-    setIsRecordingActive(false);
-    setInterimTranscript("");
+    const mediaRecorder = mediaRecorderRef.current;
 
-    if (!recognitionRef.current) {
+    stopLiveTranscriptPreview();
+
+    if (!mediaRecorder || mediaRecorder.state === "inactive") {
+      cleanupRecording();
+      setIsRecordingActive(false);
       return;
     }
 
-    try {
-      recognitionRef.current.stop();
-    } catch {
-      // no-op: recognition might already be stopping
-    }
+    mediaRecorder.stop();
   };
 
   const toggleVoiceRecording = () => {
@@ -287,30 +375,18 @@ export function AssistantInteraction({
       return;
     }
 
-    startVoiceRecording();
+    void startVoiceRecording();
   };
 
   const handleMessageChange = (event: ChangeEvent<HTMLInputElement>) => {
     setMessage(event.target.value);
-    setIsTyping(true);
-
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-
-    typingTimeoutRef.current = setTimeout(() => {
-      setIsTyping(false);
-    }, TYPING_IDLE_TIMEOUT_MS);
   };
 
-  const handleMessageBlur = () => {
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    if (isRecordingActive || isTranscribing || !message.trim()) {
+      event.preventDefault();
     }
-    setIsTyping(false);
-  };
 
-  const handleSubmit = () => {
     if (isRecordingActive) {
       stopVoiceRecording();
     }
@@ -341,6 +417,10 @@ export function AssistantInteraction({
             <p className="mt-1 max-h-[74px] overflow-y-auto text-[11px] leading-[1.45] text-[#c24141]">
               {speechError}
             </p>
+          ) : isTranscribing ? (
+            <p className="mt-1 max-h-[74px] overflow-y-auto text-[11px] leading-[1.45] text-[#60728a]">
+              {t("dashboard.assistant.transcribing")}
+            </p>
           ) : (
             <p className="mt-1 max-h-[74px] overflow-y-auto text-[11px] leading-[1.45] text-[#60728a]">
               {transcriptText || t("dashboard.assistant.listening")}
@@ -365,19 +445,18 @@ export function AssistantInteraction({
               name="message"
               value={message}
               onChange={handleMessageChange}
-              onBlur={handleMessageBlur}
               placeholder={t("dashboard.assistant.typeYourResponse")}
               className="h-10 min-w-[180px] flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-xs text-[#1f2937] outline-none placeholder:text-[#95a3b8] focus:border-[#d3deea]"
             />
             <button
               type="button"
               onClick={toggleVoiceRecording}
-              disabled={!isSpeechSupported}
+              disabled={isTranscribing}
               aria-label={t("dashboard.assistant.toggleMicrophone")}
               aria-pressed={isRecordingActive}
               className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${
                 isRecordingActive ? "bg-[#de3838] text-white" : "text-[#8b97a8]"
-              } ${!isSpeechSupported ? "cursor-not-allowed opacity-40" : ""}`}
+              } ${isTranscribing ? "cursor-not-allowed opacity-40" : ""}`}
             >
               <IconMicrophone size={14} />
             </button>
@@ -436,17 +515,17 @@ export function AssistantInteraction({
             <button
               type="button"
               onClick={toggleVoiceRecording}
-              disabled={!isSpeechSupported}
+              disabled={isTranscribing}
               className={`inline-flex h-[54px] shrink-0 items-center justify-center rounded-full bg-[#f59e0b] px-8 text-[11px] font-bold text-white sm:min-w-[188px] ${
-                !isSpeechSupported ? "cursor-not-allowed opacity-45" : ""
+                isTranscribing ? "cursor-not-allowed opacity-45" : ""
               }`}
             >
               <span className="mr-1" aria-hidden>
                 &bull;
               </span>
-              {isSpeechSupported
-                ? t("dashboard.assistant.tapToStartRecording")
-                : t("dashboard.assistant.speechNotSupported")}
+              {isTranscribing
+                ? t("dashboard.assistant.transcribing")
+                : t("dashboard.assistant.tapToStartRecording")}
             </button>
           </div>
         )}
