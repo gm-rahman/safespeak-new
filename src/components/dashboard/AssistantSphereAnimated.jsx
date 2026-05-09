@@ -148,7 +148,7 @@ export default function AssistantSphereAnimated({
   const resolvedImageSrc = resolveImageSrc(imageSrc);
   const baseSizeClassName = fillParent
     ? "h-full w-full"
-    : "h-[220px] w-[220px] sm:h-[260px] sm:w-[260px] xl:h-[311.31px] xl:w-[311.31px]";
+    : "h-[176px] w-[176px] sm:h-[208px] sm:w-[208px] xl:h-[240px] xl:w-[240px]";
   const wrapperClassName =
     `relative ${baseSizeClassName} ${styles.wrapper} ${className}`.trim();
 

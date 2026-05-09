@@ -221,6 +221,23 @@ export function AssistantInteraction({
     };
   }, []);
 
+  useEffect(() => {
+    if (showTranscriptPanel) {
+      return;
+    }
+
+    const previousBodyOverflowY = document.body.style.overflowY;
+    const previousDocumentOverflowY = document.documentElement.style.overflowY;
+
+    document.body.style.overflowY = "hidden";
+    document.documentElement.style.overflowY = "hidden";
+
+    return () => {
+      document.body.style.overflowY = previousBodyOverflowY;
+      document.documentElement.style.overflowY = previousDocumentOverflowY;
+    };
+  }, [showTranscriptPanel]);
+
   const startVoiceRecording = () => {
     const recognition = recognitionRef.current;
 
@@ -299,8 +316,10 @@ export function AssistantInteraction({
     }
   };
 
+  const recordingSpacingClass = showTranscriptPanel ? "mt-5 sm:mt-6" : "mt-7";
+
   return (
-    <div className="flex flex-1 flex-col items-center px-2 pb-2 pt-6 sm:px-4 sm:pb-4 sm:pt-7">
+    <div className="flex flex-1 flex-col items-center px-2 pb-2 pt-4 sm:px-4 sm:pb-4 sm:pt-5">
       <AssistantSphereAnimated alt={t("dashboard.assistant.sphereAlt")} />
 
       <p className={headlineClassName}>
@@ -312,23 +331,27 @@ export function AssistantInteraction({
       </p>
 
       {showTranscriptPanel && (
-        <div className="mt-[40px] w-full max-w-[430px] rounded-[14px] border border-[#e0e7f2] bg-white px-4 py-4 text-center shadow-[0_8px_18px_rgba(15,23,42,0.04)] sm:px-5 sm:py-5">
+        <div
+          className={`${recordingSpacingClass} w-full max-w-[430px] rounded-[14px] border border-[#e0e7f2] bg-white px-4 py-4 text-center shadow-[0_8px_18px_rgba(15,23,42,0.04)] sm:px-5 sm:py-5`}
+        >
           <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#253f6f]">
             {t("dashboard.assistant.realTimeTranscript")}
           </p>
           {speechError ? (
-            <p className="mt-1 text-[11px] leading-[1.45] text-[#c24141]">
+            <p className="mt-1 max-h-[74px] overflow-y-auto text-[11px] leading-[1.45] text-[#c24141]">
               {speechError}
             </p>
           ) : (
-            <p className="mt-1 text-[11px] leading-[1.45] text-[#60728a]">
+            <p className="mt-1 max-h-[74px] overflow-y-auto text-[11px] leading-[1.45] text-[#60728a]">
               {transcriptText || t("dashboard.assistant.listening")}
             </p>
           )}
         </div>
       )}
 
-      <div className="mt-[40px] w-full max-w-[1120px]">
+      <div
+        className={`${recordingSpacingClass} mb-[188px] w-full max-w-[1120px] sm:mb-[198px] lg:mb-[188px]`}
+      >
         <form
           action="/dashboard"
           method="get"
@@ -336,7 +359,7 @@ export function AssistantInteraction({
           className="rounded-[20px] border border-[#dbe6f2] bg-white p-2"
         >
           <input type="hidden" name="view" value="assistantconversation" />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
             <input
               type="text"
               name="message"
@@ -344,7 +367,7 @@ export function AssistantInteraction({
               onChange={handleMessageChange}
               onBlur={handleMessageBlur}
               placeholder={t("dashboard.assistant.typeYourResponse")}
-              className="h-10 flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-xs text-[#1f2937] outline-none placeholder:text-[#95a3b8] focus:border-[#d3deea]"
+              className="h-10 min-w-[180px] flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-xs text-[#1f2937] outline-none placeholder:text-[#95a3b8] focus:border-[#d3deea]"
             />
             <button
               type="button"
@@ -375,7 +398,7 @@ export function AssistantInteraction({
               <button
                 type="button"
                 onClick={stopVoiceRecording}
-                className="inline-flex h-8 items-center rounded-full bg-[#de3838] px-4 text-[10px] font-bold text-white sm:h-9 sm:px-5 sm:text-[11px]"
+                className="inline-flex h-9 shrink-0 items-center rounded-full bg-[#de3838] px-4 text-[10px] font-bold text-white sm:h-9 sm:px-5 sm:text-[11px]"
               >
                 <span className="mr-1" aria-hidden>
                   &bull;
@@ -414,7 +437,7 @@ export function AssistantInteraction({
               type="button"
               onClick={toggleVoiceRecording}
               disabled={!isSpeechSupported}
-              className={`inline-flex h-[54px] items-center rounded-full bg-[#f59e0b] px-8 text-[11px] font-bold text-white ${
+              className={`inline-flex h-[54px] shrink-0 items-center justify-center rounded-full bg-[#f59e0b] px-8 text-[11px] font-bold text-white sm:min-w-[188px] ${
                 !isSpeechSupported ? "cursor-not-allowed opacity-45" : ""
               }`}
             >

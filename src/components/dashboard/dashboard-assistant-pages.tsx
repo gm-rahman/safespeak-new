@@ -39,7 +39,7 @@ function SafeSpeakAssistantPage({
 
         <AssistantInteraction
           isRecording={isRecording}
-          headlineClassName={`${interFont.className} mt-[40px] max-w-[510px] text-center text-[36px] font-semibold leading-[40px] tracking-[0] text-[#24364f]`}
+          headlineClassName={`${interFont.className} mt-6 max-w-[460px] text-center text-[28px] font-semibold leading-[32px] tracking-[0] text-[#24364f] sm:text-[30px] sm:leading-[34px] xl:text-[32px] xl:leading-[36px]`}
         />
       </div>
     </div>
