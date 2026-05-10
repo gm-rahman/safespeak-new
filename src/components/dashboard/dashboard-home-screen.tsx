@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 
 import { DashboardShell } from "./dashboard-layout";
 import type { HomeView } from "./dashboard-types";
@@ -158,12 +159,14 @@ export default function DashboardHomeScreen({
   assistantMessage,
   reportId,
   assistantCategory,
+  assistantTopic,
 }: {
   homeView?: HomeView;
   assistantRecording?: boolean;
   assistantMessage?: string;
   reportId?: string;
   assistantCategory?: AssistantIncidentCategory;
+  assistantTopic?: DashboardCardFlowId;
 }) {
   const page =
     homeView === "microeducation" ? (
@@ -176,14 +179,16 @@ export default function DashboardHomeScreen({
       <SafeSpeakAssistantConversationPage
         initialMessage={assistantMessage}
         initialCategory={assistantCategory}
+        initialTopic={assistantTopic}
       />
     ) : homeView === "assistant" ? (
       <SafeSpeakAssistantPage
         isRecording={assistantRecording}
         initialCategory={assistantCategory}
+        initialTopic={assistantTopic}
       />
     ) : homeView === "scamshieldintake" ? (
-      <ScamShieldIntakePage />
+      <ScamShieldIntakePage initialTopic={assistantTopic} />
     ) : homeView === "scamshieldrisk" ? (
       <ScamShieldRiskPage />
     ) : homeView === "scamshieldassets" ? (
@@ -203,7 +208,11 @@ export default function DashboardHomeScreen({
     ) : homeView === "reportsubmissiondetailedexplanations" ? (
       <ReportSubmissionDetailedExplanationsPage />
     ) : homeView === "reportsubmissiondetails" ? (
-      <ReportSubmissionDetailsPage />
+      <ReportSubmissionDetailsPage
+        initialCategory={assistantCategory}
+        initialTopic={assistantTopic}
+        initialMessage={assistantMessage}
+      />
     ) : homeView === "reportsubmissionevidence" ? (
       <ReportSubmissionEvidencePage />
     ) : homeView === "reportsubmissionreview" ? (

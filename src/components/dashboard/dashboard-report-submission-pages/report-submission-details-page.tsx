@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 
 import {
   IconChevronRight,
@@ -10,10 +11,33 @@ import {
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
+import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import {
+  getDashboardCardFlow,
+  type DashboardCardFlowId,
+} from "@/lib/dashboard-card-flows";
+
 import { ReportSubmissionFrame } from "./report-submission-frame";
 
-function ReportSubmissionDetailsPage() {
+function ReportSubmissionDetailsPage({
+  initialCategory,
+  initialTopic,
+  initialMessage,
+}: {
+  initialCategory?: AssistantIncidentCategory;
+  initialTopic?: DashboardCardFlowId;
+  initialMessage?: string;
+}) {
   const { t } = useTranslation();
+  const contextFlow = useMemo(
+    () => (initialTopic ? getDashboardCardFlow(initialTopic) : null),
+    [initialTopic]
+  );
+  const defaultIncidentTitle =
+    initialCategory && contextFlow
+      ? `${contextFlow.title} incident report`
+      : t("dashboard.reportSubmission.incidentTitleValue");
+  const defaultSummary = initialMessage?.trim() || t("dashboard.reportSubmission.summaryValue");
 
   return (
     <ReportSubmissionFrame
@@ -24,6 +48,16 @@ function ReportSubmissionDetailsPage() {
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[1.65fr_1fr]">
         <article className="space-y-3 rounded-[14px] border border-[#e3ebf4] bg-[#f9fbfe] p-4">
+          {contextFlow ? (
+            <div className="rounded-[12px] border border-[#d8e4f2] bg-white px-3 py-2">
+              <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Preselected context
+              </p>
+              <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
+                {contextFlow.title}
+              </p>
+            </div>
+          ) : null}
           <div>
             <label
               htmlFor="incident-title"
@@ -33,7 +67,7 @@ function ReportSubmissionDetailsPage() {
             </label>
             <input
               id="incident-title"
-              defaultValue={t("dashboard.reportSubmission.incidentTitleValue")}
+              defaultValue={defaultIncidentTitle}
               className="mt-1 h-10 w-full rounded-xl border border-[#d7e1ee] bg-white px-3 text-xs font-semibold text-[#1f2a3a] outline-none"
             />
           </div>
@@ -77,7 +111,7 @@ function ReportSubmissionDetailsPage() {
             <textarea
               id="incident-summary"
               rows={5}
-              defaultValue={t("dashboard.reportSubmission.summaryValue")}
+              defaultValue={defaultSummary}
               className="mt-1 w-full resize-none rounded-xl border border-[#d7e1ee] bg-white px-3 py-2 text-xs leading-[1.55] text-[#1f2a3a] outline-none"
             />
           </div>

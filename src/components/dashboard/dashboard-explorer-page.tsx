@@ -16,6 +16,8 @@ import {
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
+import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+
 import abuseImage from "@/assets/abuse.png";
 import bottomLeft from "@/assets/bottom-left.svg?url";
 import domesticViolanceImage from "@/assets/domestic-violance.jpg";
@@ -76,8 +78,63 @@ function ExplorerSupportCard({
   );
 }
 
-export function ExplorerPage() {
+function getExplorerContextCopy(
+  category?: AssistantIncidentCategory,
+  focus?: string
+): { title: string; body: string } | null {
+  if (!category) {
+    return null;
+  }
+
+  if (category === "domestic_violence") {
+    return {
+      title: focus === "safety_plan" ? "Domestic violence safety planning" : "Domestic violence support",
+      body:
+        focus === "safety_plan"
+          ? "Use these support services to think through safe contact, trusted people, and immediate next steps."
+          : "These services can help you find domestic violence support while keeping control over what you share.",
+    };
+  }
+
+  if (category === "racial_abuse") {
+    return {
+      title: "Racial abuse support",
+      body:
+        "These services can help with safe reporting, community support, and options for documenting what happened.",
+    };
+  }
+
+  if (category === "migrant_challenges") {
+    return {
+      title:
+        focus === "interpreter_guidance" ? "Interpreter and migrant support" : "Migrant support services",
+      body:
+        focus === "interpreter_guidance"
+          ? "These services may help you ask for interpreter access and find culturally appropriate support."
+          : "These services may help with migrant-related safety, community, housing, or workplace support.",
+    };
+  }
+
+  if (category === "cyber_scam") {
+    return {
+      title: "Online safety support",
+      body:
+        "Use ScamShield first for analysis, then use these services for follow-up safety or support guidance if needed.",
+    };
+  }
+
+  return null;
+}
+
+export function ExplorerPage({
+  category,
+  focus,
+}: {
+  category?: AssistantIncidentCategory;
+  focus?: string;
+}) {
   const { t } = useTranslation();
+  const contextCopy = getExplorerContextCopy(category, focus);
   const filters = [
     t("dashboard.explorer.filterLanguage"),
     t("dashboard.explorer.filterRegion"),
@@ -129,6 +186,17 @@ export function ExplorerPage() {
             ))}
           </div>
         </div>
+
+        {contextCopy ? (
+          <article className="mx-auto mt-5 max-w-[760px] rounded-[18px] border border-[#dce6f2] bg-white px-5 py-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#3f7de0]">
+              {contextCopy.title}
+            </p>
+            <p className="mt-2 text-[12px] leading-[1.6] text-[#60728a]">
+              {contextCopy.body}
+            </p>
+          </article>
+        ) : null}
 
         <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           <ExplorerSupportCard

@@ -6,23 +6,19 @@ import bottomRight from "@/assets/bottomRightSM.svg?url";
 import sphereAdv from "@/assets/sphere-adv.svg?url";
 import topLeftSM from "@/assets/topLeftSM.svg?url";
 import topRightSM from "@/assets/topRightSM.svg?url";
+import { getDashboardCardEntryHref } from "@/lib/dashboard-card-flows";
 
 function SMDasboardHome() {
+  const domesticViolenceHref = getDashboardCardEntryHref("domestic_violence");
+  const racialAbuseHref = getDashboardCardEntryHref("racial_abuse");
+  const cyberScamHref = getDashboardCardEntryHref("cyber_scam");
+  const migrantChallengesHref = getDashboardCardEntryHref("migrant_challenges");
+  const generalAssistantHref = getDashboardCardEntryHref("general_assistant");
+
   return (
     <div className="mx-auto w-full px-4 pb-5 pt-2 lg:hidden">
       <div className="relative grid w-full grid-cols-2 gap-4 gap-y-4">
-        <Link
-          href={{
-            pathname: "/dashboard",
-            query: {
-              view: "assistantconversation",
-              category: "domestic_violence",
-              message:
-                "I need help related to domestic violence and want guidance on what to do next.",
-            },
-          }}
-          className="relative aspect-[172/230] overflow-visible"
-        >
+        <Link href={domesticViolenceHref} className="relative aspect-[172/230] overflow-visible">
           <Image
             src={topLeftSM}
             alt="Domestic violence card"
@@ -31,18 +27,7 @@ function SMDasboardHome() {
           />
         </Link>
 
-        <Link
-          href={{
-            pathname: "/dashboard",
-            query: {
-              view: "assistantconversation",
-              category: "racial_abuse",
-              message:
-                "I want help reporting racial abuse and understanding the safest next steps.",
-            },
-          }}
-          className="relative aspect-[172/230] w-full overflow-visible"
-        >
+        <Link href={racialAbuseHref} className="relative aspect-[172/230] w-full overflow-visible">
           <Image
             src={topRightSM}
             alt="Racial abuse card"
@@ -51,13 +36,7 @@ function SMDasboardHome() {
           />
         </Link>
 
-        <Link
-          href={{
-            pathname: "/dashboard",
-            query: { view: "scamshieldintake" },
-          }}
-          className="relative aspect-[172/230] overflow-visible"
-        >
+        <Link href={cyberScamHref} className="relative aspect-[172/230] overflow-visible">
           <Image
             src={bottomLeft}
             alt="Cyber scam card"
@@ -66,18 +45,7 @@ function SMDasboardHome() {
           />
         </Link>
 
-        <Link
-          href={{
-            pathname: "/dashboard",
-            query: {
-              view: "assistantconversation",
-              category: "migrant_challenges",
-              message:
-                "I need support with a migrant-related challenge and want guidance I can understand clearly.",
-            },
-          }}
-          className="relative aspect-[172/230] overflow-visible"
-        >
+        <Link href={migrantChallengesHref} className="relative aspect-[172/230] overflow-visible">
           <Image
             src={bottomRight}
             alt="Migrant challenges card"
@@ -87,10 +55,7 @@ function SMDasboardHome() {
         </Link>
 
         <Link
-          href={{
-            pathname: "/dashboard",
-            query: { view: "assistant" },
-          }}
+          href={generalAssistantHref}
           className="absolute left-1/2 top-[30%] z-20 h-[40%] w-[55%] -translate-x-1/2 rounded-full"
           aria-label="Report an incident"
         >

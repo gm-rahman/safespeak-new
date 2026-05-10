@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   IconAlertCircle,
+  IconArrowRight,
   IconChevronLeft,
   IconLoader2,
   IconMicrophone,
@@ -15,6 +16,12 @@ import { useTranslation } from "react-i18next";
 import sendIcon from "@/assets/sendIcon.svg?url";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import {
+  getDashboardActionHref,
+  getDashboardAssistantTopicChips,
+  getDashboardCardFlow,
+  type DashboardCardFlowId,
+} from "@/lib/dashboard-card-flows";
 import {
   type AssistantConversationMessage,
   type AssistantTimeline,
@@ -29,6 +36,7 @@ import {
   clearAssistantTriageSource,
   saveAssistantTriageSource,
 } from "@/lib/assistant-triage";
+import { triggerQuickExit } from "@/lib/safety";
 
 import { interFont } from "./dashboard-shared";
 
@@ -158,15 +166,23 @@ function getContinueReportSubmissionHref(
 function SafeSpeakAssistantPage({
   isRecording = false,
   initialCategory,
+  initialTopic,
 }: {
   isRecording?: boolean;
   initialCategory?: AssistantIncidentCategory;
+  initialTopic?: DashboardCardFlowId;
 }) {
   const { t } = useTranslation();
   const handleCancel = () => {
     clearAssistantConversationDraft();
     clearAssistantTriageSource();
   };
+  const assistantFlow = initialTopic ? getDashboardCardFlow(initialTopic) : null;
+  const assistantTopicChips = getDashboardAssistantTopicChips();
+  const startWithTopicHref =
+    assistantFlow?.starterPrompt
+      ? getDashboardActionHref(assistantFlow.id, "talk_with_assistant")
+      : null;
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -191,8 +207,115 @@ function SafeSpeakAssistantPage({
         <AssistantInteraction
           isRecording={isRecording}
           initialCategory={initialCategory}
+          initialTopic={initialTopic}
           headlineClassName={`${interFont.className} mt-6 max-w-[460px] text-center text-[28px] font-semibold leading-[32px] tracking-[0] text-[#24364f] sm:text-[30px] sm:leading-[34px] xl:text-[32px] xl:leading-[36px]`}
         />
+
+        {assistantFlow ? (
+          <article className="-mt-[158px] mx-auto w-full max-w-[1120px] rounded-[24px] border border-[#dce6f2] bg-white/96 p-4 shadow-[0_16px_34px_rgba(15,23,42,0.08)] backdrop-blur sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-[760px]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#3f7de0]">
+                  {assistantFlow.title}
+                </p>
+                <p className="mt-2 text-sm leading-[1.65] text-[#5f6f86]">
+                  {assistantFlow.starterPrompt ??
+                    "Choose how you want to begin. Nothing is submitted until you decide to continue."}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {assistantFlow.disclaimers.map((disclaimer) => (
+                    <span
+                      key={disclaimer}
+                      className="rounded-full border border-[#d6e2f0] bg-[#f8fbff] px-3 py-1.5 text-[10px] font-semibold text-[#51657f]"
+                    >
+                      {disclaimer}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {startWithTopicHref ? (
+                <Link
+                  href={startWithTopicHref}
+                  className="inline-flex h-11 shrink-0 items-center justify-center rounded-full bg-[#0f5d9f] px-5 text-[12px] font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.25)] transition hover:bg-[#0b528d]"
+                >
+                  Start with this topic
+                  <IconArrowRight size={14} className="ml-1.5" />
+                </Link>
+              ) : null}
+            </div>
+
+            {assistantFlow.nextActions.length > 0 ? (
+              <div className="mt-4 grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+                {assistantFlow.nextActions.map((action) => {
+                  if (action.id === "quick_exit") {
+                    return (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onClick={() => triggerQuickExit()}
+                        className="rounded-[18px] border border-[#f1d6d6] bg-[#fff7f7] p-3 text-left transition hover:border-[#eabcbc] hover:bg-[#fff2f2]"
+                      >
+                        <p className="text-[12px] font-bold text-[#1f2a3a]">{action.label}</p>
+                        <p className="mt-1 text-[10px] leading-[1.55] text-[#7688a0]">
+                          {action.description}
+                        </p>
+                      </button>
+                    );
+                  }
+
+                  const actionHref = getDashboardActionHref(assistantFlow.id, action.id);
+
+                  if (!actionHref) {
+                    return null;
+                  }
+
+                  return (
+                    <Link
+                      key={action.id}
+                      href={actionHref}
+                      className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-3 text-left transition hover:border-[#c5d8ec] hover:bg-[#f7fbff]"
+                    >
+                      <p className="text-[12px] font-bold text-[#1f2a3a]">{action.label}</p>
+                      <p className="mt-1 text-[10px] leading-[1.55] text-[#7688a0]">
+                        {action.description}
+                      </p>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {assistantFlow.id === "general_assistant" ? (
+              <div className="mt-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7d8ea5]">
+                  Choose a topic
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {assistantTopicChips.map((topicChip) => {
+                    const resolvedChipHref = topicChip.starterPrompt
+                      ? getDashboardActionHref(topicChip.id, "talk_with_assistant")
+                      : null;
+
+                    if (!resolvedChipHref) {
+                      return null;
+                    }
+
+                    return (
+                      <Link
+                        key={topicChip.id}
+                        href={resolvedChipHref}
+                        className="rounded-full border border-[#d6e2f0] bg-white px-3 py-2 text-[11px] font-semibold text-[#42566f] transition hover:border-[#bfd1e6] hover:bg-[#f8fbff]"
+                      >
+                        {topicChip.title}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </article>
+        ) : null}
       </div>
     </div>
   );
@@ -201,9 +324,11 @@ function SafeSpeakAssistantPage({
 function SafeSpeakAssistantConversationPage({
   initialMessage,
   initialCategory,
+  initialTopic,
 }: {
   initialMessage?: string;
   initialCategory?: AssistantIncidentCategory;
+  initialTopic?: DashboardCardFlowId;
 }) {
   const { t } = useTranslation();
   const seededMessage = initialMessage?.trim();

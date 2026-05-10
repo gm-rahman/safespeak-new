@@ -4,6 +4,10 @@ import {
   isAssistantIncidentCategory,
   type AssistantIncidentCategory,
 } from "@/lib/assistant-categories";
+import {
+  isDashboardCardFlowId,
+  type DashboardCardFlowId,
+} from "@/lib/dashboard-card-flows";
 
 type DashboardPageSearchParams = {
   view?: string | string[];
@@ -11,6 +15,7 @@ type DashboardPageSearchParams = {
   message?: string | string[];
   reportId?: string | string[];
   category?: string | string[];
+  topic?: string | string[];
 };
 
 type DashboardPageProps = {
@@ -26,6 +31,7 @@ export default async function DashboardPage({
   const rawMessage = resolved.message;
   const rawReportId = resolved.reportId;
   const rawCategory = resolved.category;
+  const rawTopic = resolved.topic;
   const view = Array.isArray(rawView) ? rawView[0] : rawView;
   const recording = Array.isArray(rawRecording)
     ? rawRecording[0]
@@ -33,9 +39,13 @@ export default async function DashboardPage({
   const message = Array.isArray(rawMessage) ? rawMessage[0] : rawMessage;
   const reportId = Array.isArray(rawReportId) ? rawReportId[0] : rawReportId;
   const categoryValue = Array.isArray(rawCategory) ? rawCategory[0] : rawCategory;
+  const topicValue = Array.isArray(rawTopic) ? rawTopic[0] : rawTopic;
   const assistantRecording = recording === "1";
   const assistantCategory: AssistantIncidentCategory | undefined =
     isAssistantIncidentCategory(categoryValue) ? categoryValue : undefined;
+  const assistantTopic: DashboardCardFlowId | undefined = isDashboardCardFlowId(topicValue)
+    ? topicValue
+    : undefined;
   let homeView: HomeView = "overview";
 
   if (view === "microeducation") {
@@ -85,6 +95,7 @@ export default async function DashboardPage({
       assistantMessage={message}
       reportId={reportId}
       assistantCategory={assistantCategory}
+      assistantTopic={assistantTopic}
     />
   );
 }

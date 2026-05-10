@@ -28,6 +28,7 @@ import {
   saveReportMetadata,
 } from "@/lib/report-metadata";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
 type RecordingErrorCode =
@@ -107,10 +108,12 @@ export function AssistantInteraction({
   isRecording = false,
   headlineClassName,
   initialCategory,
+  initialTopic,
 }: {
   isRecording?: boolean;
   headlineClassName: string;
   initialCategory?: AssistantIncidentCategory;
+  initialTopic?: DashboardCardFlowId;
 }) {
   const { t, i18n } = useTranslation();
   const [message, setMessage] = useState("");
@@ -518,6 +521,7 @@ export function AssistantInteraction({
           {initialCategory ? (
             <input type="hidden" name="category" value={initialCategory} />
           ) : null}
+          {initialTopic ? <input type="hidden" name="topic" value={initialTopic} /> : null}
           {reportMetadata ? (
             <input type="hidden" name="metadataCapture" value="1" />
           ) : null}

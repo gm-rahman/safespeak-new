@@ -21,6 +21,8 @@ import {
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
+import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
+
 import {
   getMediaAssetImageUrl,
   listPublishedMediaAssets,
@@ -29,7 +31,11 @@ import {
 
 import { interFont } from "./dashboard-shared";
 
-function ScamShieldIntakePage() {
+function ScamShieldIntakePage({
+  initialTopic,
+}: {
+  initialTopic?: DashboardCardFlowId;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -52,6 +58,17 @@ function ScamShieldIntakePage() {
         </div>
 
         <article className="mt-3 overflow-hidden rounded-[16px] border border-[#dce5f1] bg-[#f4f7fc] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+          {initialTopic === "cyber_scam" || initialTopic === "scamshield" ? (
+            <div className="border-b border-[#e2eaf5] bg-white px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#3f7de0]">
+                Cyber scam context
+              </p>
+              <p className="mt-1 text-[11px] leading-[1.55] text-[#60728a]">
+                Paste suspicious text, upload a screenshot, or continue to the next step to review scam risk indicators.
+              </p>
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-1 gap-3 p-3 sm:p-4 lg:grid-cols-[1fr_1fr]">
             <article className="rounded-[14px] border border-[#e2eaf4] bg-white p-3 sm:p-4">
               <label

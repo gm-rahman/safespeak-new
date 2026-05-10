@@ -13,6 +13,7 @@ import sphereAdv from "@/assets/sphere-adv.svg?url";
 import topLeft from "@/assets/top-left.svg?url";
 import topMask from "@/assets/top-mask.svg?url";
 import topRight from "@/assets/top-right.svg?url";
+import { getDashboardCardEntryHref } from "@/lib/dashboard-card-flows";
 
 import { interFont, localIntelligenceMapSrc } from "./dashboard-shared";
 import AssistantSphereAnimated from "./AssistantSphereAnimated";
@@ -20,41 +21,14 @@ import SMDasboardHome from "./sm-dashboard-home";
 
 function HomeDashboardPage() {
   const { t } = useTranslation();
-  const assistantViewHref = {
-    pathname: "/dashboard",
-    query: { view: "assistant" },
-  } as const;
-  const domesticViolenceHref = {
-    pathname: "/dashboard",
-    query: {
-      view: "assistantconversation",
-      category: "domestic_violence",
-      message:
-        "I need help related to domestic violence and want guidance on what to do next.",
-    },
-  } as const;
-  const racialAbuseHref = {
-    pathname: "/dashboard",
-    query: {
-      view: "assistantconversation",
-      category: "racial_abuse",
-      message:
-        "I want help reporting racial abuse and understanding the safest next steps.",
-    },
-  } as const;
-  const migrantChallengesHref = {
-    pathname: "/dashboard",
-    query: {
-      view: "assistantconversation",
-      category: "migrant_challenges",
-      message:
-        "I need support with a migrant-related challenge and want guidance I can understand clearly.",
-    },
-  } as const;
-  const scamShieldHref = {
-    pathname: "/dashboard",
-    query: { view: "scamshieldintake" },
-  } as const;
+  const domesticViolenceHref = getDashboardCardEntryHref("domestic_violence");
+  const generalAssistantHref = getDashboardCardEntryHref("general_assistant");
+  const racialAbuseHref = getDashboardCardEntryHref("racial_abuse");
+  const cyberScamHref = getDashboardCardEntryHref("cyber_scam");
+  const migrantChallengesHref = getDashboardCardEntryHref("migrant_challenges");
+  const scamShieldHref = getDashboardCardEntryHref("scamshield");
+  const resourcesHref = getDashboardCardEntryHref("resources");
+  const microCardsHref = getDashboardCardEntryHref("micro_cards");
 
   return (
     <div className="mx-auto w-full max-w-[1184px] px-2 pb-4 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -73,7 +47,7 @@ function HomeDashboardPage() {
           </Link>
 
           <Link
-            href={racialAbuseHref}
+            href={generalAssistantHref}
             className="notch-bl duration-[250ms] group relative block overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-6 lg:h-[280px] xl:h-[340px] xl:rounded-[30px] xl:border-[0.99px] 2xl:h-[390.4221px]"
           >
             <Image
@@ -85,7 +59,7 @@ function HomeDashboardPage() {
           </Link>
 
           <Link
-            href={scamShieldHref}
+            href={racialAbuseHref}
             className="notch-bl duration-[250ms] group relative block overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-3 lg:h-[280px] xl:h-[340px] xl:rounded-[30px] xl:border-[0.99px] 2xl:h-[390.4221px]"
           >
             <Image
@@ -97,7 +71,7 @@ function HomeDashboardPage() {
           </Link>
 
           <Link
-            href={migrantChallengesHref}
+            href={cyberScamHref}
             className="duration-[250ms] group relative mr-2 block w-full overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-6 lg:aspect-[547/407] xl:rounded-[30px] xl:rounded-tr-[64px] xl:border-[0.99px]"
           >
             <Image
@@ -109,7 +83,7 @@ function HomeDashboardPage() {
           </Link>
 
           <Link
-            href={assistantViewHref}
+            href={migrantChallengesHref}
             className="duration-[250ms] group relative ml-2 block w-full overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-6 lg:aspect-[547/407] xl:rounded-[30px] xl:rounded-tl-[64px] xl:border-[0.99px]"
           >
             <Image
@@ -124,10 +98,7 @@ function HomeDashboardPage() {
         <div className="grid grid-cols-1 gap-[var(--dashboard-card-gap)] md:grid-cols-2 lg:mt-6 xl:grid-cols-[262px_357.34px_1fr]">
           <div className="grid grid-cols-1 gap-[var(--dashboard-card-gap)] xl:grid-rows-2">
             <Link
-              href={{
-                pathname: "/dashboard",
-                query: { view: "scamshieldintake" },
-              }}
+              href={scamShieldHref}
               className="relative block min-h-[190px] w-full overflow-hidden rounded-[24px] border border-white/20 bg-[#004D73] p-5 transition hover:brightness-110 sm:min-h-[220px] sm:p-6 xl:h-[220px] xl:rounded-[40px] 2xl:h-[238px]"
             >
               <p className="text-[18px] font-semibold uppercase tracking-[0.18em] text-[#77c6df]">
@@ -159,7 +130,7 @@ function HomeDashboardPage() {
             </Link>
 
             <Link
-              href="/dashboard/explorer"
+              href={resourcesHref}
               className="relative block min-h-[190px] w-full overflow-hidden rounded-[24px] bg-[#FFC107] p-5 transition hover:brightness-105 sm:min-h-[220px] sm:p-6 xl:h-[220px] xl:rounded-[40px] 2xl:h-[238px]"
             >
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#171717]">
@@ -178,10 +149,7 @@ function HomeDashboardPage() {
           </div>
 
           <Link
-            href={{
-              pathname: "/dashboard",
-              query: { view: "microeducation" },
-            }}
+            href={microCardsHref}
             className="relative block min-h-[280px] w-full overflow-hidden rounded-[24px] bg-[#FF8F00] px-5 pb-5 pt-5 transition hover:brightness-105 sm:min-h-[360px] sm:px-6 sm:pb-6 sm:pt-[23.25px] xl:h-[440px] xl:rounded-[40px] 2xl:h-[500px]"
           >
             <h4
@@ -242,7 +210,7 @@ function HomeDashboardPage() {
         </div>
 
         <Link
-          href={assistantViewHref}
+          href={generalAssistantHref}
           className="absolute left-1/2 z-20 hidden -translate-x-1/2 lg:top-[clamp(176px,18vw,195px)] lg:block lg:h-[clamp(184px,19vw,236px)] lg:w-[clamp(184px,19vw,220px)] xl:top-[245px] xl:h-[248px] xl:w-[248px] 2xl:top-[279px] 2xl:h-[270px] 2xl:w-[270px]"
         >
           <AssistantSphereAnimated
