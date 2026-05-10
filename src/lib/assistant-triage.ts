@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api";
+import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import {
   ensureAssistantConsent,
   getAssistantAuthHeaders,
@@ -14,6 +15,7 @@ export type AssistantTriageSource = {
   timeline: AssistantTimeline;
   narrative: string;
   updatedAt: string;
+  incidentCategory?: AssistantIncidentCategory;
 };
 
 export type AssistantTriageApiResult = {
@@ -59,6 +61,7 @@ export function buildAssistantTriageNarrative(
 export function saveAssistantTriageSource(input: {
   conversation: AssistantConversationMessage[];
   timeline: AssistantTimeline;
+  incidentCategory?: AssistantIncidentCategory;
 }): void {
   if (typeof window === "undefined") {
     return;
@@ -69,6 +72,7 @@ export function saveAssistantTriageSource(input: {
     timeline: input.timeline,
     narrative: buildAssistantTriageNarrative(input.conversation),
     updatedAt: new Date().toISOString(),
+    incidentCategory: input.incidentCategory,
   };
 
   window.sessionStorage.setItem(
@@ -96,6 +100,14 @@ export function getAssistantTriageSource(): AssistantTriageSource | null {
   }
 }
 
+export function clearAssistantTriageSource(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(ASSISTANT_TRIAGE_CONTEXT_KEY);
+}
+
 export async function fetchAssistantTriageReport(
   source: AssistantTriageSource,
   language?: string
@@ -111,6 +123,7 @@ export async function fetchAssistantTriageReport(
       narrative: source.narrative,
       structuredFields: source.timeline,
       language,
+      incidentCategory: source.incidentCategory,
     },
   });
 

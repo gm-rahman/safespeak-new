@@ -2,6 +2,8 @@
 
 import dynamic from "next/dynamic";
 
+import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+
 import { DashboardShell } from "./dashboard-layout";
 import type { HomeView } from "./dashboard-types";
 
@@ -155,11 +157,13 @@ export default function DashboardHomeScreen({
   assistantRecording = false,
   assistantMessage,
   reportId,
+  assistantCategory,
 }: {
   homeView?: HomeView;
   assistantRecording?: boolean;
   assistantMessage?: string;
   reportId?: string;
+  assistantCategory?: AssistantIncidentCategory;
 }) {
   const page =
     homeView === "microeducation" ? (
@@ -169,9 +173,15 @@ export default function DashboardHomeScreen({
     ) : homeView === "microcarddetail" ? (
       <MicroCardDetailPage />
     ) : homeView === "assistantconversation" ? (
-      <SafeSpeakAssistantConversationPage initialMessage={assistantMessage} />
+      <SafeSpeakAssistantConversationPage
+        initialMessage={assistantMessage}
+        initialCategory={assistantCategory}
+      />
     ) : homeView === "assistant" ? (
-      <SafeSpeakAssistantPage isRecording={assistantRecording} />
+      <SafeSpeakAssistantPage
+        isRecording={assistantRecording}
+        initialCategory={assistantCategory}
+      />
     ) : homeView === "scamshieldintake" ? (
       <ScamShieldIntakePage />
     ) : homeView === "scamshieldrisk" ? (

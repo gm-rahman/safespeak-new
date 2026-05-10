@@ -24,13 +24,44 @@ function HomeDashboardPage() {
     pathname: "/dashboard",
     query: { view: "assistant" },
   } as const;
+  const domesticViolenceHref = {
+    pathname: "/dashboard",
+    query: {
+      view: "assistantconversation",
+      category: "domestic_violence",
+      message:
+        "I need help related to domestic violence and want guidance on what to do next.",
+    },
+  } as const;
+  const racialAbuseHref = {
+    pathname: "/dashboard",
+    query: {
+      view: "assistantconversation",
+      category: "racial_abuse",
+      message:
+        "I want help reporting racial abuse and understanding the safest next steps.",
+    },
+  } as const;
+  const migrantChallengesHref = {
+    pathname: "/dashboard",
+    query: {
+      view: "assistantconversation",
+      category: "migrant_challenges",
+      message:
+        "I need support with a migrant-related challenge and want guidance I can understand clearly.",
+    },
+  } as const;
+  const scamShieldHref = {
+    pathname: "/dashboard",
+    query: { view: "scamshieldintake" },
+  } as const;
 
   return (
     <div className="mx-auto w-full max-w-[1184px] px-2 pb-4 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
       <div className="relative mx-auto w-full [--dashboard-card-gap:12px] sm:[--dashboard-card-gap:16px] lg:[--dashboard-card-gap:20px] xl:[--dashboard-card-gap:24px]">
         <div className="hidden lg:grid lg:grid-cols-12 lg:gap-y-[var(--dashboard-card-gap)]">
           <Link
-            href={assistantViewHref}
+            href={domesticViolenceHref}
             className="notch-bl duration-[250ms] group relative block overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-3 lg:h-[280px] xl:h-[340px] xl:rounded-[30px] xl:border-[0.99px] 2xl:h-[390.4221px]"
           >
             <Image
@@ -42,7 +73,7 @@ function HomeDashboardPage() {
           </Link>
 
           <Link
-            href={assistantViewHref}
+            href={racialAbuseHref}
             className="notch-bl duration-[250ms] group relative block overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-6 lg:h-[280px] xl:h-[340px] xl:rounded-[30px] xl:border-[0.99px] 2xl:h-[390.4221px]"
           >
             <Image
@@ -54,7 +85,7 @@ function HomeDashboardPage() {
           </Link>
 
           <Link
-            href={assistantViewHref}
+            href={scamShieldHref}
             className="notch-bl duration-[250ms] group relative block overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-3 lg:h-[280px] xl:h-[340px] xl:rounded-[30px] xl:border-[0.99px] 2xl:h-[390.4221px]"
           >
             <Image
@@ -66,7 +97,7 @@ function HomeDashboardPage() {
           </Link>
 
           <Link
-            href={assistantViewHref}
+            href={migrantChallengesHref}
             className="duration-[250ms] group relative mr-2 block w-full overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-6 lg:aspect-[547/407] xl:rounded-[30px] xl:rounded-tr-[64px] xl:border-[0.99px]"
           >
             <Image

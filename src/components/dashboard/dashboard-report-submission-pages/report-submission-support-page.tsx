@@ -81,22 +81,78 @@ function toDisplayLabel(value: string): string {
     .join(" ");
 }
 
+function getCategorySupportType(
+  incidentCategory?: AssistantTriageSource["incidentCategory"]
+): string | null {
+  switch (incidentCategory) {
+    case "domestic_violence":
+      return "Domestic Violence Support";
+    case "racial_abuse":
+      return "Racial Abuse Support";
+    case "migrant_challenges":
+      return "Migrant Support";
+    case "cyber_scam":
+      return "Scam Safety Support";
+    default:
+      return null;
+  }
+}
+
+function shouldPreferCategorySupportType(
+  source: AssistantTriageSource | null,
+  triageResult: AssistantTriageApiResult | null
+): boolean {
+  const hasImpact =
+    typeof source?.timeline.impact === "string" &&
+    source.timeline.impact.trim().length > 0;
+  const hasUrgentSafetySignal =
+    normalizeBooleanLike(triageResult?.immediateSafetyFlag) ||
+    normalizeBooleanLike(source?.timeline.unsafe_now) ||
+    triageResult?.severitySignal === "urgent";
+
+  return Boolean(source?.incidentCategory) && !hasImpact && !hasUrgentSafetySignal;
+}
+
 function buildSupportType(
   triageResult: AssistantTriageApiResult | null,
   source: AssistantTriageSource | null,
   fallback: string
 ): string {
-  if (typeof triageResult?.primarySupportNeed === "string" && triageResult.primarySupportNeed.trim()) {
-    return triageResult.primarySupportNeed.trim();
+  const normalizedPrimarySupportNeed =
+    typeof triageResult?.primarySupportNeed === "string" &&
+    triageResult.primarySupportNeed.trim()
+      ? triageResult.primarySupportNeed.trim()
+      : "";
+  const hasImpact =
+    typeof source?.timeline.impact === "string" && source.timeline.impact.trim().length > 0;
+  const categorySupportType = getCategorySupportType(source?.incidentCategory);
+
+  if (categorySupportType && shouldPreferCategorySupportType(source, triageResult)) {
+    return categorySupportType;
+  }
+
+  if (
+    normalizedPrimarySupportNeed &&
+    !(
+      normalizedPrimarySupportNeed.toLowerCase() === "mental health support" &&
+      source?.incidentCategory &&
+      !hasImpact
+    )
+  ) {
+    return normalizedPrimarySupportNeed;
   }
 
   const categories = normalizeStringList(triageResult?.suggestedSupportCategories);
 
-  if (categories.length > 0) {
+  if (categories.length > 0 && !categorySupportType) {
     return toDisplayLabel(categories[0]);
   }
 
-  if (typeof source?.timeline.impact === "string" && source.timeline.impact.trim()) {
+  if (categorySupportType) {
+    return categorySupportType;
+  }
+
+  if (hasImpact) {
     return "Mental Health Support";
   }
 
@@ -105,6 +161,44 @@ function buildSupportType(
   }
 
   return fallback;
+}
+
+function buildSpecialtyTag(
+  triageResult: AssistantTriageApiResult | null,
+  source: AssistantTriageSource | null,
+  supportType: string
+): string {
+  if (shouldPreferCategorySupportType(source, triageResult)) {
+    switch (source?.incidentCategory) {
+      case "domestic_violence":
+        return "domestic violence";
+      case "racial_abuse":
+        return "racial abuse";
+      case "migrant_challenges":
+        return "migrant support";
+      case "cyber_scam":
+        return "cyber scam";
+      default:
+        break;
+    }
+  }
+
+  if (typeof triageResult?.specialtyTag === "string" && triageResult.specialtyTag.trim()) {
+    return triageResult.specialtyTag.trim();
+  }
+
+  switch (source?.incidentCategory) {
+    case "domestic_violence":
+      return "domestic violence";
+    case "racial_abuse":
+      return "racial abuse";
+    case "migrant_challenges":
+      return "migrant support";
+    case "cyber_scam":
+      return "cyber scam";
+    default:
+      return supportType.toLowerCase();
+  }
 }
 
 function buildAssessmentBody(
@@ -251,9 +345,7 @@ function ReportSubmissionSupportPage() {
       triageResult?.severitySignal === "high";
 
     return {
-      specialtyTag:
-        (typeof triageResult?.specialtyTag === "string" && triageResult.specialtyTag.trim()) ||
-        supportType.toLowerCase(),
+      specialtyTag: buildSpecialtyTag(triageResult, triageSource, supportType),
       supportType,
       assessmentBody: buildAssessmentBody(
         triageResult,

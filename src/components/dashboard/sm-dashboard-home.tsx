@@ -11,41 +11,80 @@ function SMDasboardHome() {
   return (
     <div className="mx-auto w-full px-4 pb-5 pt-2 lg:hidden">
       <div className="relative grid w-full grid-cols-2 gap-4 gap-y-4">
-        <article className="relative aspect-[172/230] overflow-visible">
+        <Link
+          href={{
+            pathname: "/dashboard",
+            query: {
+              view: "assistantconversation",
+              category: "domestic_violence",
+              message:
+                "I need help related to domestic violence and want guidance on what to do next.",
+            },
+          }}
+          className="relative aspect-[172/230] overflow-visible"
+        >
           <Image
             src={topLeftSM}
             alt="Domestic violence card"
             fill
             className="object-contain"
           />
-        </article>
+        </Link>
 
-        <article className="relative aspect-[172/230] w-full overflow-visible">
+        <Link
+          href={{
+            pathname: "/dashboard",
+            query: {
+              view: "assistantconversation",
+              category: "racial_abuse",
+              message:
+                "I want help reporting racial abuse and understanding the safest next steps.",
+            },
+          }}
+          className="relative aspect-[172/230] w-full overflow-visible"
+        >
           <Image
             src={topRightSM}
             alt="Racial abuse card"
             fill
             className="object-contain"
           />
-        </article>
+        </Link>
 
-        <article className="relative aspect-[172/230] overflow-visible">
+        <Link
+          href={{
+            pathname: "/dashboard",
+            query: { view: "scamshieldintake" },
+          }}
+          className="relative aspect-[172/230] overflow-visible"
+        >
           <Image
             src={bottomLeft}
             alt="Cyber scam card"
             fill
             className="object-cover"
           />
-        </article>
+        </Link>
 
-        <article className="relative aspect-[172/230] overflow-visible">
+        <Link
+          href={{
+            pathname: "/dashboard",
+            query: {
+              view: "assistantconversation",
+              category: "migrant_challenges",
+              message:
+                "I need support with a migrant-related challenge and want guidance I can understand clearly.",
+            },
+          }}
+          className="relative aspect-[172/230] overflow-visible"
+        >
           <Image
             src={bottomRight}
             alt="Migrant challenges card"
             fill
             className="object-cover"
           />
-        </article>
+        </Link>
 
         <Link
           href={{

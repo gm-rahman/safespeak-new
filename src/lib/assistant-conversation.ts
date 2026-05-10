@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api";
+import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import { getAuthSession } from "@/lib/auth";
 
 const ANONYMOUS_SESSION_KEY = "safespeak_anonymous_session";
@@ -157,6 +158,7 @@ export async function sendTimelineAssistantMessage(input: {
   conversation: AssistantConversationMessage[];
   timeline: AssistantTimeline;
   language?: string;
+  incidentCategory?: AssistantIncidentCategory;
 }): Promise<TimelineAssistantResponse> {
   const normalizedInput = {
     ...input,

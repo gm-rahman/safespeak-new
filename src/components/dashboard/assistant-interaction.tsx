@@ -27,6 +27,7 @@ import {
   clearReportMetadata,
   saveReportMetadata,
 } from "@/lib/report-metadata";
+import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
 type RecordingErrorCode =
@@ -105,9 +106,11 @@ function getPreferredRecordingMimeType(): string | undefined {
 export function AssistantInteraction({
   isRecording = false,
   headlineClassName,
+  initialCategory,
 }: {
   isRecording?: boolean;
   headlineClassName: string;
+  initialCategory?: AssistantIncidentCategory;
 }) {
   const { t, i18n } = useTranslation();
   const [message, setMessage] = useState("");
@@ -512,6 +515,9 @@ export function AssistantInteraction({
           className="rounded-[20px] border border-[#dbe6f2] bg-white p-2"
         >
           <input type="hidden" name="view" value="assistantconversation" />
+          {initialCategory ? (
+            <input type="hidden" name="category" value={initialCategory} />
+          ) : null}
           {reportMetadata ? (
             <input type="hidden" name="metadataCapture" value="1" />
           ) : null}

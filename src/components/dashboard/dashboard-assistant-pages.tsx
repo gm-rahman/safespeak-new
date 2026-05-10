@@ -14,12 +14,21 @@ import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
+import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import {
   type AssistantConversationMessage,
   type AssistantTimeline,
   sendTimelineAssistantMessage,
 } from "@/lib/assistant-conversation";
-import { saveAssistantTriageSource } from "@/lib/assistant-triage";
+import {
+  clearAssistantConversationDraft,
+  getAssistantConversationDraft,
+  saveAssistantConversationDraft,
+} from "@/lib/assistant-draft";
+import {
+  clearAssistantTriageSource,
+  saveAssistantTriageSource,
+} from "@/lib/assistant-triage";
 
 import { interFont } from "./dashboard-shared";
 
@@ -125,12 +134,39 @@ function buildAssistantBubbleContent(
   return `${trimmedAssistantMessage} ${trimmedNextQuestion}`;
 }
 
+function getContinueReportSubmissionHref(
+  incidentCategory?: AssistantIncidentCategory
+) {
+  if (incidentCategory) {
+    return {
+      pathname: "/dashboard",
+      query: {
+        view: "reportsubmissionsupport",
+        category: incidentCategory,
+      },
+    } as const;
+  }
+
+  return {
+    pathname: "/dashboard",
+    query: {
+      view: "reportsubmissiondetails",
+    },
+  } as const;
+}
+
 function SafeSpeakAssistantPage({
   isRecording = false,
+  initialCategory,
 }: {
   isRecording?: boolean;
+  initialCategory?: AssistantIncidentCategory;
 }) {
   const { t } = useTranslation();
+  const handleCancel = () => {
+    clearAssistantConversationDraft();
+    clearAssistantTriageSource();
+  };
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -145,6 +181,7 @@ function SafeSpeakAssistantPage({
           </Link>
           <Link
             href="/dashboard"
+            onClick={handleCancel}
             className="text-xs font-medium text-[#7b8798]"
           >
             {t("common.cancel")}
@@ -153,6 +190,7 @@ function SafeSpeakAssistantPage({
 
         <AssistantInteraction
           isRecording={isRecording}
+          initialCategory={initialCategory}
           headlineClassName={`${interFont.className} mt-6 max-w-[460px] text-center text-[28px] font-semibold leading-[32px] tracking-[0] text-[#24364f] sm:text-[30px] sm:leading-[34px] xl:text-[32px] xl:leading-[36px]`}
         />
       </div>
@@ -162,34 +200,46 @@ function SafeSpeakAssistantPage({
 
 function SafeSpeakAssistantConversationPage({
   initialMessage,
+  initialCategory,
 }: {
   initialMessage?: string;
+  initialCategory?: AssistantIncidentCategory;
 }) {
   const { t } = useTranslation();
   const seededMessage = initialMessage?.trim();
+  const existingDraft = getAssistantConversationDraft();
   const [input, setInput] = useState("");
-  const [timeline, setTimeline] = useState<AssistantTimeline>(emptyTimeline);
-  const [messages, setMessages] = useState<AssistantConversationMessage[]>(() =>
-    [
-      {
-        role: "assistant",
-        content: t("dashboard.assistant.conversation.botPromptWho"),
-      },
-      seededMessage
-        ? {
-            role: "user" as const,
-            content: seededMessage,
-          }
-        : null,
-    ].filter(Boolean) as AssistantConversationMessage[]
+  const [timeline, setTimeline] = useState<AssistantTimeline>(
+    existingDraft?.timeline ?? emptyTimeline
   );
-  const [isSending, setIsSending] = useState(Boolean(seededMessage));
+  const [messages, setMessages] = useState<AssistantConversationMessage[]>(() =>
+    existingDraft?.messages ??
+      ([
+        {
+          role: "assistant",
+          content: t("dashboard.assistant.conversation.botPromptWho"),
+        },
+        seededMessage
+          ? {
+              role: "user" as const,
+              content: seededMessage,
+            }
+          : null,
+      ].filter(Boolean) as AssistantConversationMessage[])
+  );
+  const [isSending, setIsSending] = useState(
+    Boolean(seededMessage) && !existingDraft
+  );
   const [error, setError] = useState<string | null>(null);
   const hasSentInitialRef = useRef(false);
   const latestMessagesRef = useRef(messages);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const timelineEndRef = useRef<HTMLDivElement | null>(null);
-  const [timelineFieldOrder, setTimelineFieldOrder] = useState<string[]>([]);
+  const [timelineFieldOrder, setTimelineFieldOrder] = useState<string[]>(
+    existingDraft?.timelineFieldOrder ?? []
+  );
+  const continueReportSubmissionHref =
+    getContinueReportSubmissionHref(initialCategory);
 
   useEffect(() => {
     latestMessagesRef.current = messages;
@@ -199,8 +249,15 @@ function SafeSpeakAssistantConversationPage({
     saveAssistantTriageSource({
       conversation: messages,
       timeline,
+      incidentCategory: initialCategory,
     });
-  }, [messages, timeline]);
+    saveAssistantConversationDraft({
+      messages,
+      timeline,
+      timelineFieldOrder,
+      incidentCategory: initialCategory,
+    });
+  }, [initialCategory, messages, timeline, timelineFieldOrder]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -236,6 +293,7 @@ function SafeSpeakAssistantConversationPage({
           message,
           conversation,
           timeline,
+          incidentCategory: initialCategory,
         });
         const isFirstFollowUp =
           conversation.length === 2 &&
@@ -243,7 +301,8 @@ function SafeSpeakAssistantConversationPage({
           conversation[0]?.content ===
             t("dashboard.assistant.conversation.botPromptWho") &&
           conversation[1]?.role === "user" &&
-          shouldForceFirstWhoQuestion(message);
+          shouldForceFirstWhoQuestion(message) &&
+          !initialCategory;
         const assistantContent = isFirstFollowUp
           ? t("dashboard.assistant.conversation.botQuestionWho")
           : buildAssistantBubbleContent(
@@ -292,17 +351,22 @@ function SafeSpeakAssistantConversationPage({
         setIsSending(false);
       }
     },
-    [t, timeline]
+    [initialCategory, t, timeline]
   );
 
   useEffect(() => {
-    if (!seededMessage || hasSentInitialRef.current) {
+    if (!seededMessage || hasSentInitialRef.current || existingDraft) {
       return;
     }
 
     hasSentInitialRef.current = true;
     void requestAssistantTurn(seededMessage, latestMessagesRef.current);
-  }, [requestAssistantTurn, seededMessage]);
+  }, [existingDraft, requestAssistantTurn, seededMessage]);
+
+  const handleCancel = () => {
+    clearAssistantConversationDraft();
+    clearAssistantTriageSource();
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -349,6 +413,7 @@ function SafeSpeakAssistantConversationPage({
           </Link>
           <Link
             href="/dashboard"
+            onClick={handleCancel}
             className="text-xs font-medium text-[#7b8798]"
           >
             {t("common.cancel")}
@@ -514,7 +579,7 @@ function SafeSpeakAssistantConversationPage({
 
             <div className="border-t border-[#edf2f7] pt-4">
                 <Link
-                  href="/dashboard?view=reportsubmissionsupport"
+                  href={continueReportSubmissionHref}
                   className="inline-flex h-11 items-center rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.25)] transition hover:bg-[#0b528d]"
                 >
                   {t("dashboard.assistant.continueToReportSubmission")}

@@ -1,11 +1,16 @@
 import DashboardHomeScreen from "@/components/dashboard/dashboard-home-screen";
 import type { HomeView } from "@/components/dashboard/dashboard-types";
+import {
+  isAssistantIncidentCategory,
+  type AssistantIncidentCategory,
+} from "@/lib/assistant-categories";
 
 type DashboardPageSearchParams = {
   view?: string | string[];
   recording?: string | string[];
   message?: string | string[];
   reportId?: string | string[];
+  category?: string | string[];
 };
 
 type DashboardPageProps = {
@@ -20,13 +25,17 @@ export default async function DashboardPage({
   const rawRecording = resolved.recording;
   const rawMessage = resolved.message;
   const rawReportId = resolved.reportId;
+  const rawCategory = resolved.category;
   const view = Array.isArray(rawView) ? rawView[0] : rawView;
   const recording = Array.isArray(rawRecording)
     ? rawRecording[0]
     : rawRecording;
   const message = Array.isArray(rawMessage) ? rawMessage[0] : rawMessage;
   const reportId = Array.isArray(rawReportId) ? rawReportId[0] : rawReportId;
+  const categoryValue = Array.isArray(rawCategory) ? rawCategory[0] : rawCategory;
   const assistantRecording = recording === "1";
+  const assistantCategory: AssistantIncidentCategory | undefined =
+    isAssistantIncidentCategory(categoryValue) ? categoryValue : undefined;
   let homeView: HomeView = "overview";
 
   if (view === "microeducation") {
@@ -75,6 +84,7 @@ export default async function DashboardPage({
       assistantRecording={assistantRecording}
       assistantMessage={message}
       reportId={reportId}
+      assistantCategory={assistantCategory}
     />
   );
 }
