@@ -24,23 +24,6 @@ import { interFont } from "./dashboard-shared";
 
 const emptyTimeline: AssistantTimeline = {};
 
-const preferredTimelineFieldOrder = [
-  "who",
-  "relationship",
-  "what",
-  "where",
-  "when",
-  "how",
-  "frequency",
-  "impact",
-  "threats",
-  "injuries",
-  "witnesses",
-  "evidence",
-  "actions_taken",
-  "unsafe_now",
-] as const;
-
 const timelineFieldLabelMap: Record<string, string> = {
   who: "Who",
   relationship: "Relationship",
@@ -70,29 +53,31 @@ function formatTimelineFieldLabel(key: string): string {
 }
 
 function sortTimelineEntries(
-  timeline: AssistantTimeline
+  timeline: AssistantTimeline,
+  fieldOrder: string[]
 ): Array<[string, string]> {
-  return Object.entries(timeline)
-    .filter(([, value]) => value.trim().length > 0)
-    .sort(([leftKey], [rightKey]) => {
-      const leftIndex = preferredTimelineFieldOrder.indexOf(
-        leftKey as (typeof preferredTimelineFieldOrder)[number]
-      );
-      const rightIndex = preferredTimelineFieldOrder.indexOf(
-        rightKey as (typeof preferredTimelineFieldOrder)[number]
-      );
+  const filteredEntries = Object.entries(timeline).filter(
+    ([, value]) => value.trim().length > 0
+  );
 
-      const normalizedLeftIndex =
-        leftIndex === -1 ? preferredTimelineFieldOrder.length : leftIndex;
-      const normalizedRightIndex =
-        rightIndex === -1 ? preferredTimelineFieldOrder.length : rightIndex;
+  return filteredEntries.sort(([leftKey], [rightKey]) => {
+    const leftIndex = fieldOrder.indexOf(leftKey);
+    const rightIndex = fieldOrder.indexOf(rightKey);
 
-      if (normalizedLeftIndex !== normalizedRightIndex) {
-        return normalizedLeftIndex - normalizedRightIndex;
-      }
+    if (leftIndex === -1 && rightIndex === -1) {
+      return 0;
+    }
 
-      return leftKey.localeCompare(rightKey);
-    });
+    if (leftIndex === -1) {
+      return 1;
+    }
+
+    if (rightIndex === -1) {
+      return -1;
+    }
+
+    return leftIndex - rightIndex;
+  });
 }
 
 function SafeSpeakAssistantPage({
@@ -157,10 +142,20 @@ function SafeSpeakAssistantConversationPage({
   const [error, setError] = useState<string | null>(null);
   const hasSentInitialRef = useRef(false);
   const latestMessagesRef = useRef(messages);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const timelineEndRef = useRef<HTMLDivElement | null>(null);
+  const [timelineFieldOrder, setTimelineFieldOrder] = useState<string[]>([]);
 
   useEffect(() => {
     latestMessagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, [messages, isSending, error]);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -190,10 +185,40 @@ function SafeSpeakAssistantConversationPage({
           conversation,
           timeline,
         });
-        const assistantContent =
-          response.nextQuestion?.trim() || response.assistantMessage;
+        const isFirstFollowUp =
+          conversation.length === 2 &&
+          conversation[0]?.role === "assistant" &&
+          conversation[0]?.content ===
+            t("dashboard.assistant.conversation.botPromptWho") &&
+          conversation[1]?.role === "user";
+        const assistantContent = isFirstFollowUp
+          ? t("dashboard.assistant.conversation.botQuestionWho")
+          : response.nextQuestion?.trim() || response.assistantMessage;
 
-        setTimeline(response.timeline);
+        setTimeline((currentTimeline) => {
+          const nextTimeline = response.timeline;
+          const nextKeys = Object.entries(nextTimeline)
+            .filter(([, value]) => value.trim().length > 0)
+            .map(([key]) => key);
+
+          setTimelineFieldOrder((currentOrder) => {
+            const mergedOrder = [...currentOrder];
+
+            nextKeys.forEach((key) => {
+              const hadValue =
+                typeof currentTimeline[key] === "string" &&
+                currentTimeline[key].trim().length > 0;
+
+              if (!hadValue && !mergedOrder.includes(key)) {
+                mergedOrder.push(key);
+              }
+            });
+
+            return mergedOrder.filter((key) => nextKeys.includes(key));
+          });
+
+          return nextTimeline;
+        });
         setMessages((currentMessages) => [
           ...currentMessages,
           {
@@ -211,7 +236,7 @@ function SafeSpeakAssistantConversationPage({
         setIsSending(false);
       }
     },
-    [timeline]
+    [t, timeline]
   );
 
   useEffect(() => {
@@ -245,8 +270,15 @@ function SafeSpeakAssistantConversationPage({
     void requestAssistantTurn(message, nextMessages);
   };
 
-  const timelineEntries = sortTimelineEntries(timeline);
+  const timelineEntries = sortTimelineEntries(timeline, timelineFieldOrder);
   const timelineFieldCount = timelineEntries.length;
+
+  useEffect(() => {
+    timelineEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, [timelineEntries, isSending, error]);
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 xl:flex-1 xl:overflow-hidden">
@@ -301,6 +333,7 @@ function SafeSpeakAssistantConversationPage({
                   {error}
                 </div>
               ) : null}
+              <div ref={messagesEndRef} aria-hidden="true" />
               </div>
             </div>
 
@@ -314,7 +347,7 @@ function SafeSpeakAssistantConversationPage({
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   placeholder={t("dashboard.assistant.typeYourResponse")}
-                  className="h-11 flex-1 rounded-full bg-[#f6f9fc] px-4 text-sm text-[#1f2937] outline-none placeholder:text-[#95a3b8]"
+                  className="h-11 flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-sm text-[#1f2937] outline-none placeholder:text-[#95a3b8] transition-[background-color,box-shadow,border-color] duration-150 focus:border-white/70 focus:bg-white focus:shadow-[0_8px_22px_rgba(148,163,184,0.12)] focus-visible:outline-none"
                 />
                 <button
                   type="button"
@@ -415,9 +448,12 @@ function SafeSpeakAssistantConversationPage({
                 </div>
               )}
 
-              <div className="rounded-[18px] border border-dashed border-[#e3e9f2] bg-[#fbfdff] p-6 text-center text-[10px] text-[#c0c9d6]">
-                {t("dashboard.assistant.conversation.moreFields")}
-              </div>
+              {timelineEntries.length < 2 ? (
+                <div className="rounded-[18px] border border-dashed border-[#e3e9f2] bg-[#fbfdff] p-6 text-center text-[10px] text-[#c0c9d6]">
+                  {t("dashboard.assistant.conversation.moreFields")}
+                </div>
+              ) : null}
+              <div ref={timelineEndRef} aria-hidden="true" />
             </div>
 
             <div className="border-t border-[#edf2f7] pt-4">

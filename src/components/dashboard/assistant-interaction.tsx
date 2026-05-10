@@ -522,7 +522,7 @@ export function AssistantInteraction({
               value={message}
               onChange={handleMessageChange}
               placeholder={t("dashboard.assistant.typeYourResponse")}
-              className="h-10 min-w-[180px] flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-xs text-[#1f2937] outline-none placeholder:text-[#95a3b8] focus:border-[#d3deea]"
+              className="h-10 min-w-[180px] flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-xs text-[#1f2937] outline-none placeholder:text-[#95a3b8] transition-[background-color,box-shadow,border-color] duration-150 focus:border-white/70 focus:bg-white focus:shadow-[0_8px_22px_rgba(148,163,184,0.12)] focus-visible:outline-none"
             />
             <button
               type="button"

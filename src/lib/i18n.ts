@@ -388,7 +388,8 @@ const resources = {
           },
           conversation: {
             botPromptWho:
-              "I'm helping you structure your report. Who was involved in this incident?",
+              "I'm helping you structure your report.",
+            botQuestionWho: "Who was involved in this incident?",
             defaultUserReply:
               "It was a manager from the logistics department and two witnesses.",
             botPromptWhere:
@@ -1246,7 +1247,8 @@ const resources = {
           },
           conversation: {
             botPromptWho:
-              "Te ayudo a estructurar tu reporte. Quien estuvo involucrado en este incidente?",
+              "Te ayudo a estructurar tu reporte.",
+            botQuestionWho: "Quien estuvo involucrado en este incidente?",
             defaultUserReply:
               "Fue un gerente del departamento de logistica y dos testigos.",
             botPromptWhere:

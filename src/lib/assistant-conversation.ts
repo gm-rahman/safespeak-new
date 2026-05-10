@@ -3,6 +3,7 @@ import { getAuthSession } from "@/lib/auth";
 
 const ANONYMOUS_SESSION_KEY = "safespeak_anonymous_session";
 const SAFE_SPEAK_SESSION_HEADER = "X-SafeSpeak-Session";
+const MAX_TIMELINE_CONVERSATION_MESSAGES = 100;
 
 export type AssistantConversationMessage = {
   role: "assistant" | "user";
@@ -12,6 +13,16 @@ export type AssistantConversationMessage = {
 export type AssistantTimeline = {
   [key: string]: string;
 };
+
+function trimConversationForTimelineAssistant(
+  conversation: AssistantConversationMessage[]
+): AssistantConversationMessage[] {
+  if (conversation.length <= MAX_TIMELINE_CONVERSATION_MESSAGES) {
+    return conversation;
+  }
+
+  return conversation.slice(-MAX_TIMELINE_CONVERSATION_MESSAGES);
+}
 
 export type TimelineAssistantResponse = {
   assistantMessage: string;
@@ -147,6 +158,10 @@ export async function sendTimelineAssistantMessage(input: {
   timeline: AssistantTimeline;
   language?: string;
 }): Promise<TimelineAssistantResponse> {
+  const normalizedInput = {
+    ...input,
+    conversation: trimConversationForTimelineAssistant(input.conversation),
+  };
   const headers = await getAssistantAuthHeaders();
 
   await ensureAssistantConsent(headers);
@@ -159,7 +174,7 @@ export async function sendTimelineAssistantMessage(input: {
       {
         method: "POST",
         headers,
-        body: input,
+        body: normalizedInput,
       }
     );
   } catch (error) {
@@ -173,7 +188,7 @@ export async function sendTimelineAssistantMessage(input: {
       {
         method: "POST",
         headers,
-        body: input,
+        body: normalizedInput,
       }
     );
   }
