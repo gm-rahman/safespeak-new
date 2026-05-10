@@ -37,6 +37,17 @@ export interface SafeSpeakProfile {
   shareProfileInReferral: boolean;
 }
 
+export type BackendSafeSpeakProfile = {
+  preferredLanguage?: string;
+  interpreterLanguage?: string;
+  jurisdiction?: string;
+  lga?: string;
+  culturalProfile?: string;
+  faithProfile?: string;
+  communityProfile?: string;
+  referralSharingPreference?: boolean;
+};
+
 export const SAFESPEAK_PROFILE_STORAGE_KEY = "safespeak_user_profile";
 export const SAFESPEAK_PROFILE_EVENT = "safespeak-profile-updated";
 
@@ -167,4 +178,49 @@ export function saveSafeSpeakProfile(profile: SafeSpeakProfile): void {
     JSON.stringify(normalized)
   );
   window.dispatchEvent(new CustomEvent(SAFESPEAK_PROFILE_EVENT));
+}
+
+export function mapBackendProfileToSafeSpeakProfile(
+  value?: BackendSafeSpeakProfile | null
+): SafeSpeakProfile {
+  const culturalProfile = value?.culturalProfile;
+  const faithProfile = value?.faithProfile;
+  const communityProfile = value?.communityProfile;
+  const interpreterLanguage = value?.interpreterLanguage;
+  const nextCulturalProfile = isCultureOption(culturalProfile ?? "")
+    ? (culturalProfile as SafeSpeakCultureOption)
+    : defaultSafeSpeakProfile.culturalProfile;
+  const nextFaithProfile = isFaithOption(faithProfile ?? "")
+    ? (faithProfile as SafeSpeakFaithOption)
+    : defaultSafeSpeakProfile.faithProfile;
+  const nextCommunityProfile = isCommunityOption(communityProfile ?? "")
+    ? (communityProfile as SafeSpeakCommunityOption)
+    : defaultSafeSpeakProfile.communityBackground;
+  const nextInterpreterLanguage = isInterpreterLanguage(interpreterLanguage ?? "")
+    ? (interpreterLanguage as SafeSpeakInterpreterLanguage)
+    : defaultSafeSpeakProfile.interpreterLanguage;
+
+  return {
+    culturalProfile: nextCulturalProfile,
+    faithProfile: nextFaithProfile,
+    communityBackground: nextCommunityProfile,
+    interpreterLanguage: nextInterpreterLanguage,
+    shareProfileInReferral:
+      typeof value?.referralSharingPreference === "boolean"
+        ? value.referralSharingPreference
+        : defaultSafeSpeakProfile.shareProfileInReferral,
+  };
+}
+
+export function mapSafeSpeakProfileToBackend(
+  profile: SafeSpeakProfile
+): BackendSafeSpeakProfile {
+  return {
+    preferredLanguage: "en",
+    interpreterLanguage: profile.interpreterLanguage,
+    culturalProfile: profile.culturalProfile,
+    faithProfile: profile.faithProfile,
+    communityProfile: profile.communityBackground,
+    referralSharingPreference: profile.shareProfileInReferral,
+  };
 }

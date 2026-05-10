@@ -157,6 +157,7 @@ export default function DashboardHomeScreen({
   homeView = "overview",
   assistantRecording = false,
   assistantMessage,
+  assistantPrefillMessage,
   reportId,
   assistantCategory,
   assistantTopic,
@@ -164,6 +165,7 @@ export default function DashboardHomeScreen({
   homeView?: HomeView;
   assistantRecording?: boolean;
   assistantMessage?: string;
+  assistantPrefillMessage?: string;
   reportId?: string;
   assistantCategory?: AssistantIncidentCategory;
   assistantTopic?: DashboardCardFlowId;
@@ -178,6 +180,7 @@ export default function DashboardHomeScreen({
     ) : homeView === "assistantconversation" ? (
       <SafeSpeakAssistantConversationPage
         initialMessage={assistantMessage}
+        initialPrefillMessage={assistantPrefillMessage}
         initialCategory={assistantCategory}
         initialTopic={assistantTopic}
       />

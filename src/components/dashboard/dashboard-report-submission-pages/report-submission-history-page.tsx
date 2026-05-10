@@ -2,22 +2,26 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
+  IconAlertCircle,
   IconChevronLeft,
   IconChevronRight,
   IconCircleCheckFilled,
   IconCircleDotFilled,
   IconHeartFilled,
+  IconLoader2,
   IconLockFilled,
   IconSearch,
   IconShieldFilled,
 } from "@tabler/icons-react";
 
 import {
-  type IncidentReportStatus,
-  incidentReports,
-} from "../dashboard-shared";
+  getReportStatus,
+  listReports,
+  type ReportRecord,
+} from "@/lib/reports-client";
 
 type HistoryStatus = "ACTION REQUIRED" | "SUBMITTED" | "DRAFT";
 
@@ -31,49 +35,80 @@ type HistoryReport = {
   iconWrapClassName: string;
 };
 
-const historyMetaByStatus: Record<
-  IncidentReportStatus,
-  {
-    historyStatus: HistoryStatus;
-    team: string;
-    icon: ReactNode;
-    iconWrapClassName: string;
+function normalizeHistoryStatus(status?: string): HistoryStatus {
+  if (status === "submitted") {
+    return "SUBMITTED";
   }
-> = {
-  "in-review": {
-    historyStatus: "ACTION REQUIRED",
-    team: "Legal Compliance Dept.",
-    icon: <IconShieldFilled size={14} />,
-    iconWrapClassName: "bg-[#ece7ff] text-[#5d61f6]",
-  },
-  submitted: {
-    historyStatus: "SUBMITTED",
-    team: "Mental Health Team",
-    icon: <IconHeartFilled size={14} />,
-    iconWrapClassName: "bg-[#ffe9ea] text-[#f26161]",
-  },
-  draft: {
-    historyStatus: "DRAFT",
-    team: "Campus Security",
-    icon: <IconLockFilled size={14} />,
-    iconWrapClassName: "bg-[#d4f4ed] text-[#0a9d8d]",
-  },
-};
 
-const historyReports: HistoryReport[] = incidentReports.map((report) => {
-  const meta = historyMetaByStatus[report.status];
-  const [datePart] = report.createdAt.split(" - ");
+  if (status === "in_review" || status === "in-review") {
+    return "ACTION REQUIRED";
+  }
+
+  return "DRAFT";
+}
+
+function getHistoryMeta(status: HistoryStatus): {
+  team: string;
+  icon: ReactNode;
+  iconWrapClassName: string;
+} {
+  if (status === "ACTION REQUIRED") {
+    return {
+      team: "SafeSpeak review queue",
+      icon: <IconShieldFilled size={14} />,
+      iconWrapClassName: "bg-[#ece7ff] text-[#5d61f6]",
+    };
+  }
+
+  if (status === "SUBMITTED") {
+    return {
+      team: "Submitted to SafeSpeak",
+      icon: <IconHeartFilled size={14} />,
+      iconWrapClassName: "bg-[#ffe9ea] text-[#f26161]",
+    };
+  }
 
   return {
-    id: report.id,
-    status: meta.historyStatus,
-    title: report.title,
+    team: "Draft saved safely",
+    icon: <IconLockFilled size={14} />,
+    iconWrapClassName: "bg-[#d4f4ed] text-[#0a9d8d]",
+  };
+}
+
+function formatHistoryDate(value?: string) {
+  if (!value) {
+    return "DATE UNAVAILABLE";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value.toUpperCase();
+  }
+
+  return date
+    .toLocaleDateString("en-AU", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+    .toUpperCase();
+}
+
+function toHistoryReport(report: ReportRecord, resolvedStatus?: string): HistoryReport {
+  const historyStatus = normalizeHistoryStatus(resolvedStatus ?? report.status);
+  const meta = getHistoryMeta(historyStatus);
+
+  return {
+    id: report._id,
+    status: historyStatus,
+    title: report.context || report.incidentType || "SafeSpeak report",
     team: meta.team,
-    date: datePart.toUpperCase(),
+    date: formatHistoryDate(report.updatedAt ?? report.createdAt),
     icon: meta.icon,
     iconWrapClassName: meta.iconWrapClassName,
   };
-});
+}
 
 const statusClassNames: Record<HistoryReport["status"], string> = {
   "ACTION REQUIRED": "bg-[#fff1de] text-[#9a6a2e]",
@@ -82,6 +117,92 @@ const statusClassNames: Record<HistoryReport["status"], string> = {
 };
 
 function ReportSubmissionHistoryPage() {
+  const [reports, setReports] = useState<HistoryReport[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeFilter, setActiveFilter] = useState<
+    "all" | "draft" | "action_required"
+  >("all");
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void (async () => {
+      try {
+        const reportRecords = await listReports();
+        const reportsWithStatuses = await Promise.all(
+          reportRecords.map(async (report) => {
+            try {
+              const status = await getReportStatus(report._id);
+              return toHistoryReport(report, status.current);
+            } catch {
+              return toHistoryReport(report);
+            }
+          })
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        setReports(reportsWithStatuses);
+        setLoadError(null);
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error ? error.message : "Report history could not be loaded."
+        );
+        setReports([]);
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const filteredReports = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    return reports.filter((report) => {
+      if (activeFilter === "draft" && report.status !== "DRAFT") {
+        return false;
+      }
+
+      if (
+        activeFilter === "action_required" &&
+        report.status !== "ACTION REQUIRED"
+      ) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return (
+        report.title.toLowerCase().includes(normalizedSearch) ||
+        report.team.toLowerCase().includes(normalizedSearch) ||
+        report.id.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [activeFilter, reports, searchTerm]);
+
+  const submittedCount = reports.filter(
+    (report) => report.status === "SUBMITTED"
+  ).length;
+  const actionRequiredCount = reports.filter(
+    (report) => report.status === "ACTION REQUIRED"
+  ).length;
+
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
       <div className="mx-auto w-full max-w-[1184px]">
@@ -121,25 +242,75 @@ function ReportSubmissionHistoryPage() {
             />
             <input
               type="text"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search reports..."
-              className="h-10 w-full rounded-[12px] border border-[#dce6f2] bg-white px-9 text-xs text-[#1f2a3a] outline-none placeholder:text-[#96a7bc] focus:border-[#cbd9ea]"
+              className="h-10 w-full rounded-[12px] border border-[#dce6f2] bg-white px-9 text-xs text-[#1f2a3a] outline-none placeholder:text-[#96a7bc]"
             />
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-8 items-center rounded-full bg-[#2f87ff] px-3 text-[10px] font-bold text-white">
+            <button
+              type="button"
+              onClick={() => setActiveFilter("all")}
+              className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-bold ${
+                activeFilter === "all"
+                  ? "bg-[#2f87ff] text-white"
+                  : "bg-white text-[#60728a]"
+              }`}
+            >
               All Reports
-            </span>
-            <span className="inline-flex h-8 items-center rounded-full bg-white px-3 text-[10px] font-semibold text-[#60728a]">
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveFilter("draft")}
+              className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-semibold ${
+                activeFilter === "draft"
+                  ? "bg-[#2f87ff] text-white"
+                  : "bg-white text-[#60728a]"
+              }`}
+            >
               Drafts
-            </span>
-            <span className="inline-flex h-8 items-center rounded-full bg-white px-3 text-[10px] font-semibold text-[#60728a]">
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveFilter("action_required")}
+              className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-semibold ${
+                activeFilter === "action_required"
+                  ? "bg-[#2f87ff] text-white"
+                  : "bg-white text-[#60728a]"
+              }`}
+            >
               In Review
-            </span>
+            </button>
           </div>
 
           <div className="mt-3 space-y-3">
-            {historyReports.map((report, index) => (
+            {loadError ? (
+              <div className="rounded-md border border-[#F4C7C3] bg-[#FFF7F6] px-3 py-2 text-xs text-[#B42318]">
+                <span className="inline-flex items-center gap-1.5">
+                  <IconAlertCircle size={12} />
+                  {loadError}
+                </span>
+              </div>
+            ) : null}
+
+            {isLoading ? (
+              <div className="rounded-md bg-white px-3 py-8 text-center text-sm text-[#607B90]">
+                <span className="inline-flex items-center gap-2">
+                  <IconLoader2 size={14} className="animate-spin" />
+                  Loading reports...
+                </span>
+              </div>
+            ) : null}
+
+            {!isLoading && filteredReports.length === 0 ? (
+              <div className="rounded-md bg-white px-3 py-8 text-center text-sm text-[#607B90]">
+                No reports matched this view.
+              </div>
+            ) : null}
+
+            {filteredReports.map((report, index) => (
               <Link
                 key={report.id}
                 href={`/dashboard/reports/${report.id}`}
@@ -190,7 +361,7 @@ function ReportSubmissionHistoryPage() {
               </span>
               <div>
                 <p className="text-[28px] font-extrabold leading-none text-[#1f2a3a]">
-                  12
+                  {reports.length}
                 </p>
                 <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-[#7f8fa4]">
                   Total Active
@@ -204,14 +375,20 @@ function ReportSubmissionHistoryPage() {
               </span>
               <div>
                 <p className="text-[28px] font-extrabold leading-none text-[#1f2a3a]">
-                  48
+                  {submittedCount}
                 </p>
                 <p className="text-[8px] font-bold uppercase tracking-[0.1em] text-[#7f8fa4]">
-                  Archived
+                  Submitted
                 </p>
               </div>
             </article>
           </div>
+
+          <p className="mt-3 text-[10px] text-[#7f8fa4]">
+            {actionRequiredCount} report
+            {actionRequiredCount === 1 ? "" : "s"} currently need review or
+            follow-up.
+          </p>
         </article>
       </div>
     </div>

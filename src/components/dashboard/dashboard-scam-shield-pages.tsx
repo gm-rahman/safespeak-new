@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   IconAlertTriangle,
   IconArrowRight,
-  IconAt,
   IconBuildingBank,
   IconChevronLeft,
   IconChevronRight,
@@ -22,12 +22,30 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import {
+  ConsentRequiredError,
+  grantConsent,
+  type ConsentRequirement,
+} from "@/lib/consent";
 
 import {
   getMediaAssetImageUrl,
   listPublishedMediaAssets,
   type MediaAssetItem,
 } from "@/lib/media-assets";
+import {
+  analyzeScamEmail,
+  analyzeScamScreenshot,
+  analyzeScamText,
+  checkScamUrl,
+  generateScamReportDraft,
+  submitScamReport,
+} from "@/lib/scamshield-client";
+import {
+  getScamShieldFlowState,
+  mergeScamShieldFlowState,
+} from "@/lib/scamshield-flow";
 
 import { interFont } from "./dashboard-shared";
 
@@ -37,6 +55,58 @@ function ScamShieldIntakePage({
   initialTopic?: DashboardCardFlowId;
 }) {
   const { t } = useTranslation();
+  const router = useRouter();
+  const existingState = getScamShieldFlowState();
+  const [messageContent, setMessageContent] = useState(existingState?.inputText ?? "");
+  const [inputMode, setInputMode] = useState<
+    "text" | "url" | "email" | "screenshot"
+  >(existingState?.inputMode ?? "text");
+  const [intakeError, setIntakeError] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [pendingConsentRequirement, setPendingConsentRequirement] =
+    useState<ConsentRequirement | null>(null);
+  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
+
+  const runAnalysis = async () => {
+    const trimmedInput = messageContent.trim();
+
+    if (!trimmedInput) {
+      setIntakeError("Add suspicious text, a URL, or an email body before analysis.");
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setIntakeError(null);
+
+    try {
+      const analysis =
+        inputMode === "url"
+          ? await checkScamUrl({ url: trimmedInput })
+          : inputMode === "email"
+            ? await analyzeScamEmail({ body: trimmedInput })
+            : inputMode === "screenshot"
+              ? await analyzeScamScreenshot({ imageText: trimmedInput })
+              : await analyzeScamText({ text: trimmedInput, language: "en" });
+
+      mergeScamShieldFlowState({
+        inputText: trimmedInput,
+        inputMode,
+        analysis,
+      });
+      router.push("/dashboard?view=scamshieldrisk");
+    } catch (error) {
+      if (error instanceof ConsentRequiredError) {
+        setPendingConsentRequirement(error.requirement);
+        return;
+      }
+
+      setIntakeError(
+        error instanceof Error ? error.message : "Scam analysis could not be completed."
+      );
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -71,6 +141,29 @@ function ScamShieldIntakePage({
 
           <div className="grid grid-cols-1 gap-3 p-3 sm:p-4 lg:grid-cols-[1fr_1fr]">
             <article className="rounded-[14px] border border-[#e2eaf4] bg-white p-3 sm:p-4">
+              <div className="mb-3 flex flex-wrap gap-2">
+                {[
+                  ["text", "Paste text"],
+                  ["url", "Check URL"],
+                  ["email", "Analyze email"],
+                  ["screenshot", "Screenshot text"],
+                ].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() =>
+                      setInputMode(mode as "text" | "url" | "email" | "screenshot")
+                    }
+                    className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-bold ${
+                      inputMode === mode
+                        ? "bg-[#0f5d9f] text-white"
+                        : "bg-[#f4f7fb] text-[#60728a]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <label
                 htmlFor="scam-message-content"
                 className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#6f88a8]"
@@ -81,6 +174,8 @@ function ScamShieldIntakePage({
                 <textarea
                   id="scam-message-content"
                   rows={15}
+                  value={messageContent}
+                  onChange={(event) => setMessageContent(event.target.value)}
                   placeholder={t(
                     "dashboard.scamShield.messageContentPlaceholder"
                   )}
@@ -98,6 +193,11 @@ function ScamShieldIntakePage({
             </article>
 
             <aside className="space-y-3">
+              {intakeError ? (
+                <div className="rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-3 text-[11px] text-[#b45353]">
+                  {intakeError}
+                </div>
+              ) : null}
               <article className="rounded-[14px] border border-[#e2eaf4] bg-white p-4 text-center">
                 <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#ecf4ff] text-[#0f5d9f]">
                   <IconPhoto size={20} />
@@ -161,17 +261,54 @@ function ScamShieldIntakePage({
             </aside>
           </div>
 
+          {pendingConsentRequirement ? (
+            <div className="px-3 pb-3 sm:px-4">
+              <ConsentRequiredCard
+                requirement={pendingConsentRequirement}
+                isSubmitting={isGrantingConsent}
+                onAllow={() => {
+                  void (async () => {
+                    setIsGrantingConsent(true);
+
+                    try {
+                      await grantConsent(
+                        { process_with_ai: true },
+                        pendingConsentRequirement.source
+                      );
+                      setPendingConsentRequirement(null);
+                      await runAnalysis();
+                    } catch (error) {
+                      setIntakeError(
+                        error instanceof Error
+                          ? error.message
+                          : "Consent could not be saved."
+                      );
+                    } finally {
+                      setIsGrantingConsent(false);
+                    }
+                  })();
+                }}
+                onDecline={() => {
+                  setPendingConsentRequirement(null);
+                }}
+              />
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-2 border-t border-[#e2eaf5] bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
             <p className="text-[10px] font-medium text-[#6c7f96]">
               {t("dashboard.scamShield.readyForAnalysis")}
             </p>
-            <Link
-              href="/dashboard?view=scamshieldrisk"
+            <button
+              type="button"
+              onClick={() => {
+                void runAnalysis();
+              }}
               className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-[#ff9900] px-7 text-[11px] font-bold uppercase tracking-[0.02em] text-white shadow-[0_8px_18px_rgba(255,153,0,0.33)]"
             >
               <IconShieldFilled size={12} />
-              {t("dashboard.scamShield.analyzeNow")}
-            </Link>
+              {isAnalyzing ? "Analyzing..." : t("dashboard.scamShield.analyzeNow")}
+            </button>
           </div>
         </article>
       </div>
@@ -181,6 +318,23 @@ function ScamShieldIntakePage({
 
 function ScamShieldRiskPage() {
   const { t } = useTranslation();
+  const analysis = getScamShieldFlowState()?.analysis;
+  const isDemoFallback = !analysis;
+  const riskScore = Math.round((analysis?.riskScore ?? 85) * 100) / 100;
+  const riskLevel = analysis?.riskLevel ?? "high";
+  const confidence = analysis?.confidence ?? "medium";
+  const redFlags = analysis?.redFlags?.length
+    ? analysis.redFlags
+    : [
+        t("dashboard.scamShield.urgentLanguage"),
+        t("dashboard.scamShield.suspiciousSender"),
+      ];
+  const recommendations = analysis?.recommendations?.length
+    ? analysis.recommendations
+    : [
+        t("dashboard.scamShield.urgentLanguageBody"),
+        t("dashboard.scamShield.suspiciousSenderBody"),
+      ];
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -202,18 +356,23 @@ function ScamShieldRiskPage() {
         </div>
 
         <article className="mt-3 rounded-[16px] border border-[#dce5f1] bg-[#f4f7fc] p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-4">
+          {isDemoFallback ? (
+            <div className="mb-3 rounded-[12px] border border-[#ffe0b2] bg-[#fff7ed] px-3 py-3 text-[11px] leading-[1.55] text-[#9a5b12]">
+              Backend scam analysis was not available for this session. These values are a clearly marked demo preview only and are not a live SafeSpeak result.
+            </div>
+          ) : null}
           <article className="rounded-[14px] border border-[#e3eaf5] bg-white px-4 py-5 text-center sm:px-6 sm:py-6">
             <p className="text-[58px] font-black leading-none text-[#cf2f34]">
-              85%
+              {riskScore}%
             </p>
             <p className="mt-1 text-[8px] font-bold uppercase tracking-[0.18em] text-[#ba9ea3]">
-              {t("dashboard.scamShield.highRiskLabel")}
+              {riskLevel} risk | {confidence} confidence
             </p>
             <p className="mt-2 text-[26px] font-extrabold leading-none text-[#cf2f34]">
-              {t("dashboard.scamShield.highRiskDetected")}
+              {analysis?.summary ?? t("dashboard.scamShield.highRiskDetected")}
             </p>
             <p className="mx-auto mt-2 max-w-[540px] text-xs leading-[1.5] text-[#61748f]">
-              {t("dashboard.scamShield.highRiskDetectedBody")}
+              {analysis?.summary ?? t("dashboard.scamShield.highRiskDetectedBody")}
             </p>
           </article>
 
@@ -222,21 +381,25 @@ function ScamShieldRiskPage() {
               {t("dashboard.scamShield.detectedRedFlags")}
             </h3>
             <span className="inline-flex h-5 items-center rounded-full bg-[#ffe9e9] px-2 text-[9px] font-bold uppercase tracking-[0.07em] text-[#df4a4a]">
-              {t("dashboard.scamShield.twoFound")}
+              {redFlags.length} found
             </span>
           </div>
 
           <div className="mt-2 space-y-2">
-            <article className="flex items-start gap-3 rounded-xl border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4">
+            {redFlags.map((flag, index) => (
+            <article
+              key={`${flag}-${index}`}
+              className="flex items-start gap-3 rounded-xl border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4"
+            >
               <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#fff6e5] text-[#f59e0b]">
                 <IconAlertTriangle size={13} />
               </span>
               <div className="min-w-0">
                 <p className="text-xs font-bold text-[#1f2a3a]">
-                  {t("dashboard.scamShield.urgentLanguage")}
+                  {flag}
                 </p>
                 <p className="mt-1 text-[11px] leading-[1.45] text-[#64748b]">
-                  {t("dashboard.scamShield.urgentLanguageBody")}
+                  {recommendations[index] ?? t("dashboard.scamShield.highRiskDetectedBody")}
                 </p>
                 <span className="mt-2 inline-flex items-center gap-1 text-[9px] font-semibold text-[#2c66b0]">
                   {t("dashboard.scamShield.howToStaySafe")}
@@ -244,24 +407,7 @@ function ScamShieldRiskPage() {
                 </span>
               </div>
             </article>
-
-            <article className="flex items-start gap-3 rounded-xl border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4">
-              <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#fff6e5] text-[#f59e0b]">
-                <IconAt size={13} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-[#1f2a3a]">
-                  {t("dashboard.scamShield.suspiciousSender")}
-                </p>
-                <p className="mt-1 text-[11px] leading-[1.45] text-[#64748b]">
-                  {t("dashboard.scamShield.suspiciousSenderBody")}
-                </p>
-                <span className="mt-2 inline-flex items-center gap-1 text-[9px] font-semibold text-[#2c66b0]">
-                  {t("dashboard.scamShield.howToStaySafe")}
-                  <IconArrowRight size={10} />
-                </span>
-              </div>
-            </article>
+            ))}
           </div>
 
           <div className="mt-4 flex justify-center">
@@ -471,10 +617,86 @@ function ScamShieldAssetsPage() {
 
 function ScamShieldAgencyPage() {
   const { t } = useTranslation();
+  const router = useRouter();
+  const flowState = getScamShieldFlowState();
   const [expandedSection, setExpandedSection] = useState<
     "accc" | "reportCyber" | "bank" | null
   >("accc");
   const [privacyConsentEnabled, setPrivacyConsentEnabled] = useState(false);
+  const [draftSummary, setDraftSummary] = useState(flowState?.reportDraft?.draft ?? "");
+  const [agencyError, setAgencyError] = useState<string | null>(null);
+  const [pendingConsentRequirement, setPendingConsentRequirement] =
+    useState<ConsentRequirement | null>(null);
+  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const analysisSummary = flowState?.analysis?.summary ?? "";
+
+  useEffect(() => {
+    if (!flowState?.analysis?._id) {
+      return;
+    }
+
+    let isActive = true;
+
+    void generateScamReportDraft({
+      analysisId: flowState.analysis._id,
+    })
+      .then((draft) => {
+        if (!isActive) {
+          return;
+        }
+
+        setDraftSummary(draft.draft ?? draft.summary ?? "");
+        mergeScamShieldFlowState({
+          reportDraft: draft,
+        });
+      })
+      .catch(() => {
+        if (isActive) {
+          setDraftSummary(analysisSummary);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [analysisSummary, flowState?.analysis?._id]);
+
+  const handleSubmitToAgency = async () => {
+    if (!flowState?.analysis?._id) {
+      setAgencyError("Run a ScamShield analysis before preparing agency submission.");
+      return;
+    }
+
+    setIsSubmittingReport(true);
+    setAgencyError(null);
+
+    try {
+      const submittedAnalysis = await submitScamReport({
+        analysisId: flowState.analysis._id,
+        destination: expandedSection === "bank" ? "bank" : "scamwatch",
+        consentToShare: privacyConsentEnabled,
+      });
+      mergeScamShieldFlowState({
+        analysis: submittedAnalysis,
+        submitted: true,
+      });
+      router.push("/dashboard?view=reportsubmissionreview");
+    } catch (error) {
+      if (error instanceof ConsentRequiredError) {
+        setPendingConsentRequirement(error.requirement);
+        return;
+      }
+
+      setAgencyError(
+        error instanceof Error
+          ? error.message
+          : "Agency submission could not be prepared."
+      );
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
 
   return (
     <div className="px-2 pt-2 sm:px-4 sm:pt-4">
@@ -507,7 +729,23 @@ function ScamShieldAgencyPage() {
             >
               {t("dashboard.scamShield.prefilledAgencyReportsAnalyzerBody")}
             </p>
+            {draftSummary ? (
+              <div className="mt-4 rounded-[12px] border border-[#e2eaf5] bg-[#f8fbff] px-4 py-3 text-left">
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                  Generated draft
+                </p>
+                <p className="mt-2 text-[11px] leading-[1.6] text-[#50627a]">
+                  {draftSummary}
+                </p>
+              </div>
+            ) : null}
           </article>
+
+          {agencyError ? (
+            <div className="mt-3 rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-3 text-[11px] text-[#b45353]">
+              {agencyError}
+            </div>
+          ) : null}
 
           <div className="mt-3 space-y-3">
             <article className="overflow-hidden rounded-[12px] border border-[#e2eaf4] bg-white">
@@ -698,15 +936,55 @@ function ScamShieldAgencyPage() {
           </article>
 
           <Link
-            href="/dashboard?view=reportsubmissionreview"
+            href="#"
+            onClick={(event) => {
+              event.preventDefault();
+              void handleSubmitToAgency();
+            }}
             className="mt-3 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-full bg-[#ff9800] px-6 text-[12px] font-bold text-white shadow-[0_8px_18px_rgba(255,152,0,0.34)]"
           >
             <IconArrowRight size={13} />
-            {t("dashboard.scamShield.submitAllReports")}
+            {isSubmittingReport
+              ? "Submitting..."
+              : t("dashboard.scamShield.submitAllReports")}
           </Link>
           <p className="mt-2 text-center text-[8px] font-semibold uppercase tracking-[0.08em] text-[#9aabc0]">
             {t("dashboard.scamShield.encryptedSubmissionNotice")}
           </p>
+
+          {pendingConsentRequirement ? (
+            <div className="mt-3">
+              <ConsentRequiredCard
+                requirement={pendingConsentRequirement}
+                isSubmitting={isGrantingConsent}
+                onAllow={() => {
+                  void (async () => {
+                    setIsGrantingConsent(true);
+
+                    try {
+                      await grantConsent(
+                        { share_with_agencies: true },
+                        pendingConsentRequirement.source
+                      );
+                      setPendingConsentRequirement(null);
+                      await handleSubmitToAgency();
+                    } catch (error) {
+                      setAgencyError(
+                        error instanceof Error
+                          ? error.message
+                          : "Consent could not be saved."
+                      );
+                    } finally {
+                      setIsGrantingConsent(false);
+                    }
+                  })();
+                }}
+                onDecline={() => {
+                  setPendingConsentRequirement(null);
+                }}
+              />
+            </div>
+          ) : null}
         </article>
       </div>
     </div>

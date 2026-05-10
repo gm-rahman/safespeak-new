@@ -382,7 +382,7 @@ export function getDashboardActionHref(
           view: "assistantconversation",
           topic: flow.id,
           category,
-          message,
+          prefillMessage: message,
         },
       };
     case "understand_reporting_options":
@@ -392,7 +392,7 @@ export function getDashboardActionHref(
           view: "assistantconversation",
           topic: flow.id,
           category,
-          message:
+          prefillMessage:
             flowId === "racial_abuse"
               ? "I want to understand my safe reporting options after racial abuse."
               : flowId === "migrant_challenges"

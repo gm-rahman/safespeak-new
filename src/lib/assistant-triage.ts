@@ -1,7 +1,7 @@
 import { apiRequest } from "@/lib/api";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import { consentRequirements, ensureConsent } from "@/lib/consent";
 import {
-  ensureAssistantConsent,
   getAssistantAuthHeaders,
   type AssistantConversationMessage,
   type AssistantTimeline,
@@ -114,7 +114,7 @@ export async function fetchAssistantTriageReport(
 ): Promise<AssistantTriageApiResult> {
   const headers = await getAssistantAuthHeaders();
 
-  await ensureAssistantConsent(headers);
+  await ensureConsent(consentRequirements.triage, headers);
 
   const response = await apiRequest<TriageReportResponse>("/ai/triage-report", {
     method: "POST",

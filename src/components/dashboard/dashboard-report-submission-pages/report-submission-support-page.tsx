@@ -16,6 +16,12 @@ import {
 import { useTranslation } from "react-i18next";
 
 import {
+  ConsentRequiredError,
+  grantConsent,
+  type ConsentRequirement,
+} from "@/lib/consent";
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import {
   fetchAssistantTriageReport,
   getAssistantTriageSource,
   type AssistantTriageApiResult,
@@ -284,6 +290,9 @@ function ReportSubmissionSupportPage() {
   const [triageResult, setTriageResult] = useState<AssistantTriageApiResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pendingConsentRequirement, setPendingConsentRequirement] =
+    useState<ConsentRequirement | null>(null);
+  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
 
   useEffect(() => {
     const source = getAssistantTriageSource();
@@ -309,6 +318,12 @@ function ReportSubmissionSupportPage() {
         setTriageResult(result);
         setLoadError(null);
       } catch (error) {
+        if (error instanceof ConsentRequiredError) {
+          setPendingConsentRequirement(error.requirement);
+          setLoadError(null);
+          return;
+        }
+
         if (!isActive) {
           return;
         }
@@ -327,6 +342,31 @@ function ReportSubmissionSupportPage() {
       isActive = false;
     };
   }, []);
+
+  const handleAllowTriageConsent = async () => {
+    if (!pendingConsentRequirement || !triageSource) {
+      return;
+    }
+
+    setIsGrantingConsent(true);
+
+    try {
+      await grantConsent({ process_with_ai: true }, pendingConsentRequirement.source);
+      const result = await fetchAssistantTriageReport(triageSource);
+      setTriageResult(result);
+      setPendingConsentRequirement(null);
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Triage explanation could not be loaded."
+      );
+    } finally {
+      setIsGrantingConsent(false);
+      setIsLoading(false);
+    }
+  };
 
   const viewModel = useMemo<TriageViewModel>(() => {
     const supportType = buildSupportType(
@@ -398,6 +438,21 @@ function ReportSubmissionSupportPage() {
           {loadError ? (
             <div className="mb-3 rounded-[14px] border border-[#fde2e2] bg-[#fff5f5] px-4 py-3 text-[11px] text-[#b45353]">
               {loadError}
+            </div>
+          ) : null}
+          {pendingConsentRequirement ? (
+            <div className="mb-3">
+              <ConsentRequiredCard
+                requirement={pendingConsentRequirement}
+                isSubmitting={isGrantingConsent}
+                onAllow={() => {
+                  void handleAllowTriageConsent();
+                }}
+                onDecline={() => {
+                  setPendingConsentRequirement(null);
+                  setIsLoading(false);
+                }}
+              />
             </div>
           ) : null}
           <h2 className="text-[28px] font-extrabold leading-[1.02] text-[#0f4f95] sm:text-[34px]">

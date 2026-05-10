@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   IconAlertCircle,
@@ -14,8 +14,14 @@ import {
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import {
+  ConsentRequiredError,
+  grantConsent,
+  type ConsentRequirement,
+} from "@/lib/consent";
 import {
   getDashboardActionHref,
   getDashboardAssistantTopicChips,
@@ -159,6 +165,20 @@ function getContinueReportSubmissionHref(
     pathname: "/dashboard",
     query: {
       view: "reportsubmissiondetails",
+    },
+  } as const;
+}
+
+function getAssistantEntryHref(
+  initialTopic?: DashboardCardFlowId,
+  initialCategory?: AssistantIncidentCategory
+) {
+  return {
+    pathname: "/dashboard",
+    query: {
+      view: "assistant",
+      topic: initialTopic,
+      category: initialCategory,
     },
   } as const;
 }
@@ -323,21 +343,40 @@ function SafeSpeakAssistantPage({
 
 function SafeSpeakAssistantConversationPage({
   initialMessage,
+  initialPrefillMessage,
   initialCategory,
   initialTopic,
 }: {
   initialMessage?: string;
+  initialPrefillMessage?: string;
   initialCategory?: AssistantIncidentCategory;
   initialTopic?: DashboardCardFlowId;
 }) {
   const { t } = useTranslation();
+  type ConversationUiMessage = AssistantConversationMessage & {
+    responseMeta?: {
+      disclaimer?: string;
+      citations?: Array<{
+        title: string;
+        publisher?: string;
+        url?: string;
+        jurisdiction?: string;
+        sectionRef?: string;
+      }>;
+      confidence?: string;
+      reviewStatus?: string;
+      ragUnavailable?: boolean;
+      pendingHumanReview?: boolean;
+    };
+  };
   const seededMessage = initialMessage?.trim();
+  const seededPrefillMessage = initialPrefillMessage?.trim();
   const existingDraft = getAssistantConversationDraft();
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(seededPrefillMessage ?? "");
   const [timeline, setTimeline] = useState<AssistantTimeline>(
     existingDraft?.timeline ?? emptyTimeline
   );
-  const [messages, setMessages] = useState<AssistantConversationMessage[]>(() =>
+  const [messages, setMessages] = useState<ConversationUiMessage[]>(() =>
     existingDraft?.messages ??
       ([
         {
@@ -355,9 +394,16 @@ function SafeSpeakAssistantConversationPage({
   const [isSending, setIsSending] = useState(
     Boolean(seededMessage) && !existingDraft
   );
+  const [pendingConsentRequirement, setPendingConsentRequirement] =
+    useState<ConsentRequirement | null>(null);
+  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasSentInitialRef = useRef(false);
   const latestMessagesRef = useRef(messages);
+  const pendingAssistantTurnRef = useRef<{
+    message: string;
+    conversation: AssistantConversationMessage[];
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const timelineEndRef = useRef<HTMLDivElement | null>(null);
   const [timelineFieldOrder, setTimelineFieldOrder] = useState<string[]>(
@@ -365,24 +411,35 @@ function SafeSpeakAssistantConversationPage({
   );
   const continueReportSubmissionHref =
     getContinueReportSubmissionHref(initialCategory);
+  const assistantEntryHref = getAssistantEntryHref(initialTopic, initialCategory);
 
   useEffect(() => {
     latestMessagesRef.current = messages;
   }, [messages]);
 
+  const conversationMessages = useMemo<AssistantConversationMessage[]>(
+    () => messages.map(({ role, content }) => ({ role, content })),
+    [messages]
+  );
+
   useEffect(() => {
     saveAssistantTriageSource({
-      conversation: messages,
+      conversation: conversationMessages,
       timeline,
       incidentCategory: initialCategory,
     });
     saveAssistantConversationDraft({
-      messages,
+      messages: conversationMessages,
       timeline,
       timelineFieldOrder,
       incidentCategory: initialCategory,
     });
-  }, [initialCategory, messages, timeline, timelineFieldOrder]);
+  }, [
+    conversationMessages,
+    initialCategory,
+    timeline,
+    timelineFieldOrder,
+  ]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -412,6 +469,11 @@ function SafeSpeakAssistantConversationPage({
     ) => {
       setIsSending(true);
       setError(null);
+      setPendingConsentRequirement(null);
+      pendingAssistantTurnRef.current = {
+        message,
+        conversation,
+      };
 
       try {
         const response = await sendTimelineAssistantMessage({
@@ -464,9 +526,26 @@ function SafeSpeakAssistantConversationPage({
           {
             role: "assistant",
             content: assistantContent,
+            responseMeta: {
+              disclaimer: response.disclaimer,
+              citations: response.citations,
+              confidence: response.confidence,
+              reviewStatus: response.reviewStatus,
+              ragUnavailable: response.rag?.unavailable,
+              pendingHumanReview:
+                response.reviewStatus === "pending_human_review",
+            },
           },
         ]);
+        pendingAssistantTurnRef.current = null;
+        setPendingConsentRequirement(null);
       } catch (requestError) {
+        if (requestError instanceof ConsentRequiredError) {
+          setPendingConsentRequirement(requestError.requirement);
+          setError(null);
+          return;
+        }
+
         setError(
           requestError instanceof Error
             ? requestError.message
@@ -515,6 +594,38 @@ function SafeSpeakAssistantConversationPage({
     void requestAssistantTurn(message, nextMessages);
   };
 
+  const handleAllowAssistantConsent = useCallback(async () => {
+    if (!pendingConsentRequirement) {
+      return;
+    }
+
+    setIsGrantingConsent(true);
+    setError(null);
+
+    try {
+      await grantConsent(
+        { process_with_ai: true },
+        pendingConsentRequirement.source
+      );
+      setPendingConsentRequirement(null);
+
+      if (pendingAssistantTurnRef.current) {
+        await requestAssistantTurn(
+          pendingAssistantTurnRef.current.message,
+          pendingAssistantTurnRef.current.conversation
+        );
+      }
+    } catch (grantError) {
+      setError(
+        grantError instanceof Error
+          ? grantError.message
+          : "Consent could not be saved."
+      );
+    } finally {
+      setIsGrantingConsent(false);
+    }
+  }, [pendingConsentRequirement, requestAssistantTurn]);
+
   const timelineEntries = sortTimelineEntries(timeline, timelineFieldOrder);
   const timelineFieldCount = timelineEntries.length;
 
@@ -530,7 +641,7 @@ function SafeSpeakAssistantConversationPage({
       <div className="mx-auto flex w-full max-w-[1360px] flex-col xl:h-full xl:min-h-0">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           <Link
-            href="/dashboard?view=assistant"
+            href={assistantEntryHref}
             className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
           >
             <IconChevronLeft size={14} />
@@ -554,14 +665,77 @@ function SafeSpeakAssistantConversationPage({
                   key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
                   className={message.role === "user" ? "flex justify-end" : ""}
                 >
+                  <div className="max-w-[min(88%,540px)]">
                   <div
-                    className={`inline-flex max-w-[min(88%,540px)] rounded-[20px] bg-white px-4 py-2.5 text-[11px] leading-[1.55] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
+                    className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-2.5 text-[11px] leading-[1.55] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
                       message.role === "user"
                         ? "rounded-tr-[8px] text-[#314256]"
                         : "rounded-tl-[8px] text-[#5f6f86]"
                     }`}
                   >
                     {message.content}
+                  </div>
+                  {message.role === "assistant" && message.responseMeta ? (
+                    <div className="mt-2 rounded-[16px] border border-[#dce6f2] bg-white/92 px-3 py-3 text-[10px] leading-[1.55] text-[#60728a] shadow-[0_8px_18px_rgba(148,163,184,0.1)]">
+                      <p className="font-semibold text-[#42566f]">
+                        {message.responseMeta.disclaimer ??
+                          "SafeSpeak provides general information only."}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {message.responseMeta.confidence ? (
+                          <span className="rounded-full bg-[#eef4ff] px-2 py-1 font-semibold text-[#3f7de0]">
+                            Confidence: {message.responseMeta.confidence}
+                          </span>
+                        ) : null}
+                        {message.responseMeta.pendingHumanReview ? (
+                          <span className="rounded-full bg-[#fff4e5] px-2 py-1 font-semibold text-[#c77700]">
+                            This response may need human review.
+                          </span>
+                        ) : null}
+                      </div>
+                      {message.responseMeta.ragUnavailable ? (
+                        <p className="mt-2 text-[#8b5e3c]">
+                          SafeSpeak does not have enough approved authoritative sources for this answer yet.
+                        </p>
+                      ) : null}
+                      {message.responseMeta.citations?.length ? (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#8fa0b6]">
+                            Sources
+                          </p>
+                          {message.responseMeta.citations.map((citation) => (
+                            <div
+                              key={`${citation.title}-${citation.url ?? citation.sectionRef ?? ""}`}
+                              className="rounded-[12px] border border-[#ebf0f5] bg-[#f8fbff] px-3 py-2"
+                            >
+                              <p className="font-semibold text-[#1f2a3a]">
+                                {citation.title}
+                              </p>
+                              <p className="mt-1 text-[#6d7f96]">
+                                {[
+                                  citation.publisher,
+                                  citation.jurisdiction,
+                                  citation.sectionRef,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" | ")}
+                              </p>
+                              {citation.url ? (
+                                <a
+                                  href={citation.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="mt-1 inline-flex text-[#0f5d9f] underline"
+                                >
+                                  View source
+                                </a>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   </div>
                 </div>
               ))}
@@ -578,6 +752,20 @@ function SafeSpeakAssistantConversationPage({
                   <IconAlertCircle size={12} />
                   {error}
                 </div>
+              ) : null}
+
+              {pendingConsentRequirement ? (
+                <ConsentRequiredCard
+                  requirement={pendingConsentRequirement}
+                  isSubmitting={isGrantingConsent}
+                  onAllow={() => {
+                    void handleAllowAssistantConsent();
+                  }}
+                  onDecline={() => {
+                    setPendingConsentRequirement(null);
+                    setIsSending(false);
+                  }}
+                />
               ) : null}
               <div ref={messagesEndRef} aria-hidden="true" />
               </div>

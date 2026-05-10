@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   IconArrowLeft,
@@ -14,7 +14,19 @@ import {
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import {
+  ConsentRequiredError,
+  grantConsent,
+  type ConsentRequirement,
+} from "@/lib/consent";
 import { useSafeSpeakProfile } from "@/hooks/use-safespeak-profile";
+import {
+  createWarmReferral,
+  getSupportService,
+  listAdvocates,
+  type SupportServiceRecord,
+} from "@/lib/support-client";
 import { cn } from "@/lib/utils";
 
 const explorerServiceIds = [
@@ -75,6 +87,13 @@ export function ExplorerServiceDetailsPage({
   const [includeIncidentSummary, setIncludeIncidentSummary] = useState(true);
   const [isReferralPrepared, setIsReferralPrepared] = useState(false);
   const [copiedReferral, setCopiedReferral] = useState(false);
+  const [serviceRecord, setServiceRecord] = useState<SupportServiceRecord | null>(null);
+  const [serviceError, setServiceError] = useState<string | null>(null);
+  const [pendingConsentRequirement, setPendingConsentRequirement] =
+    useState<ConsentRequirement | null>(null);
+  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
+  const [isSubmittingReferral, setIsSubmittingReferral] = useState(false);
+  const [advocateCount, setAdvocateCount] = useState(0);
   const selectedServiceId: ExplorerServiceId = isExplorerServiceId(serviceId)
     ? serviceId
     : "community-support";
@@ -127,6 +146,42 @@ export function ExplorerServiceDetailsPage({
     `Warm referral request - ${selectedService.title}`
   )}&body=${encodeURIComponent(referralNotes)}`;
 
+  useEffect(() => {
+    let isActive = true;
+
+    void getSupportService(serviceId ?? selectedServiceId)
+      .then((service) => {
+        if (isActive) {
+          setServiceRecord(service);
+        }
+      })
+      .catch((error) => {
+        if (isActive) {
+          setServiceError(
+            error instanceof Error
+              ? error.message
+              : "Support service details could not be loaded."
+          );
+        }
+      });
+
+    void listAdvocates()
+      .then((advocates) => {
+        if (isActive) {
+          setAdvocateCount(advocates.length);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setAdvocateCount(0);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedServiceId, serviceId]);
+
   const copyReferralNotes = async () => {
     if (typeof navigator === "undefined" || !navigator.clipboard) {
       return;
@@ -138,6 +193,34 @@ export function ExplorerServiceDetailsPage({
     window.setTimeout(() => {
       setCopiedReferral(false);
     }, 1800);
+  };
+
+  const prepareWarmReferral = async () => {
+    setIsSubmittingReferral(true);
+    setServiceError(null);
+
+    try {
+      await createWarmReferral({
+        serviceId: serviceId ?? selectedServiceId,
+        contactPreference: "email",
+        safeContact: emailValue,
+        notes: referralNotes,
+      });
+      setIsReferralPrepared(true);
+    } catch (error) {
+      if (error instanceof ConsentRequiredError) {
+        setPendingConsentRequirement(error.requirement);
+        return;
+      }
+
+      setServiceError(
+        error instanceof Error
+          ? error.message
+          : "Warm referral could not be prepared."
+      );
+    } finally {
+      setIsSubmittingReferral(false);
+    }
   };
 
   return (
@@ -164,10 +247,10 @@ export function ExplorerServiceDetailsPage({
             </div>
 
             <h1 className="mt-4 text-[30px] font-extrabold leading-[1.05] text-[#1f2a3a] sm:text-[46px]">
-              {selectedService.title}
+              {serviceRecord?.name ?? selectedService.title}
             </h1>
             <p className="mt-1 text-sm font-medium text-[#5b79bd]">
-              {selectedService.subtitle}
+              {serviceRecord?.description ?? selectedService.subtitle}
             </p>
 
             <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#dff4e5] px-3 py-1 text-[11px] font-semibold text-[#1a8b3c]">
@@ -180,6 +263,11 @@ export function ExplorerServiceDetailsPage({
         </section>
 
         <section className="mt-3 rounded-[16px] border border-[#dae3f0] bg-white px-4 py-4 sm:px-6">
+          {serviceError ? (
+            <div className="mb-3 rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#b45353]">
+              {serviceError}
+            </div>
+          ) : null}
           <h2 className="text-sm font-bold text-[#2b3d58]">
             {t("dashboard.explorer.serviceDetails.contactInformation")}
           </h2>
@@ -187,17 +275,17 @@ export function ExplorerServiceDetailsPage({
             <ContactInfoItem
               icon={<IconPhone size={13} />}
               label={t("dashboard.explorer.serviceDetails.phone")}
-              value={t("dashboard.explorer.serviceDetails.phoneValue")}
+              value={serviceRecord?.phone ?? t("dashboard.explorer.serviceDetails.phoneValue")}
             />
             <ContactInfoItem
               icon={<IconMail size={13} />}
               label={t("dashboard.explorer.serviceDetails.email")}
-              value={t("dashboard.explorer.serviceDetails.emailValue")}
+              value={serviceRecord?.email ?? t("dashboard.explorer.serviceDetails.emailValue")}
             />
             <ContactInfoItem
               icon={<IconLanguage size={13} />}
               label={t("dashboard.explorer.serviceDetails.languages")}
-              value={`${t("dashboard.explorer.serviceDetails.languagesValue")} | ${profile.interpreterLanguage}`}
+              value={`${serviceRecord?.languages?.join(", ") ?? t("dashboard.explorer.serviceDetails.languagesValue")} | ${profile.interpreterLanguage}`}
             />
           </div>
         </section>
@@ -263,15 +351,50 @@ export function ExplorerServiceDetailsPage({
 
               <button
                 type="button"
-                onClick={() => setIsReferralPrepared(true)}
+                onClick={() => {
+                  void prepareWarmReferral();
+                }}
                 className="mt-5 inline-flex h-[46px] w-full items-center justify-center gap-2 rounded-full bg-[#ff9800] px-5 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(255,152,0,0.36)] transition hover:bg-[#eb8d00]"
               >
-                {t("dashboard.explorer.serviceDetails.sendReferral")}
+                {isSubmittingReferral
+                  ? "Preparing referral..."
+                  : t("dashboard.explorer.serviceDetails.sendReferral")}
                 <IconArrowRight size={16} />
               </button>
             </div>
           </div>
         </section>
+
+        {pendingConsentRequirement ? (
+          <section className="mt-3">
+            <ConsentRequiredCard
+              requirement={pendingConsentRequirement}
+              isSubmitting={isGrantingConsent}
+              onAllow={() => {
+                void (async () => {
+                  setIsGrantingConsent(true);
+
+                  try {
+                    await grantConsent({ warm_referral: true }, pendingConsentRequirement.source);
+                    setPendingConsentRequirement(null);
+                    await prepareWarmReferral();
+                  } catch (error) {
+                    setServiceError(
+                      error instanceof Error
+                        ? error.message
+                        : "Consent could not be saved."
+                    );
+                  } finally {
+                    setIsGrantingConsent(false);
+                  }
+                })();
+              }}
+              onDecline={() => {
+                setPendingConsentRequirement(null);
+              }}
+            />
+          </section>
+        ) : null}
 
         {isReferralPrepared ? (
           <section className="mt-3 rounded-[16px] border border-[#cde7d6] bg-[#f5fff8] px-4 py-5 sm:px-6">
@@ -288,6 +411,11 @@ export function ExplorerServiceDetailsPage({
                     ? "The referral will include a concise incident summary, immediate safety needs, and the user's preferred contact method."
                     : "The referral will include the user's preferred contact method only. Incident details can be shared later if the user decides it is safe."}
                 </p>
+                {advocateCount > 0 ? (
+                  <p className="mt-2 text-[11px] text-[#60728a]">
+                    {advocateCount} advocate options are available for follow-up support if needed.
+                  </p>
+                ) : null}
                 <div className="mt-4 rounded-[14px] border border-[#d8ebe0] bg-white px-4 py-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8092aa]">
                     Referral preview

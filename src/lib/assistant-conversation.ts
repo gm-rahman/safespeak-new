@@ -1,9 +1,7 @@
 import { apiRequest } from "@/lib/api";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import { getAuthSession } from "@/lib/auth";
-
-const ANONYMOUS_SESSION_KEY = "safespeak_anonymous_session";
-const SAFE_SPEAK_SESSION_HEADER = "X-SafeSpeak-Session";
+import { consentRequirements, ensureConsent } from "@/lib/consent";
+import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
 const MAX_TIMELINE_CONVERSATION_MESSAGES = 100;
 
 export type AssistantConversationMessage = {
@@ -49,108 +47,13 @@ export type TimelineAssistantResponse = {
   interactionId?: string;
 };
 
-type AnonymousSessionData = {
-  sessionToken: string;
-};
-
-type AnonymousSessionResponse = {
-  sessionToken: string;
-};
-
-type CurrentConsentResponse = {
-  consent: {
-    process_with_ai?: boolean;
-  };
-};
-
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
   });
 
-function getStoredAnonymousSession(): AnonymousSessionData | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const raw = window.sessionStorage.getItem(ANONYMOUS_SESSION_KEY);
-
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw) as AnonymousSessionData;
-  } catch {
-    window.sessionStorage.removeItem(ANONYMOUS_SESSION_KEY);
-    return null;
-  }
-}
-
-function saveAnonymousSession(session: AnonymousSessionData): void {
-  window.sessionStorage.setItem(ANONYMOUS_SESSION_KEY, JSON.stringify(session));
-}
-
-async function getAnonymousSessionToken(): Promise<string> {
-  const storedSession = getStoredAnonymousSession();
-
-  if (storedSession?.sessionToken) {
-    return storedSession.sessionToken;
-  }
-
-  const response = await apiRequest<AnonymousSessionResponse>(
-    "/sessions/anonymous",
-    {
-      method: "POST",
-      body: {
-        language: "en",
-        safetyGateAccepted: true,
-      },
-    }
-  );
-
-  saveAnonymousSession({ sessionToken: response.data.sessionToken });
-  return response.data.sessionToken;
-}
-
 export async function getAssistantAuthHeaders(): Promise<HeadersInit> {
-  const authSession = getAuthSession();
-
-  if (authSession?.tokens.accessToken) {
-    return {
-      Authorization: `Bearer ${authSession.tokens.accessToken}`,
-    };
-  }
-
-  const sessionToken = await getAnonymousSessionToken();
-
-  return {
-    [SAFE_SPEAK_SESSION_HEADER]: sessionToken,
-  };
-}
-
-export async function ensureAssistantConsent(headers: HeadersInit): Promise<void> {
-  const currentConsent = await apiRequest<CurrentConsentResponse>(
-    "/consents/current",
-    {
-      headers,
-    }
-  );
-
-  if (currentConsent.data.consent.process_with_ai) {
-    return;
-  }
-
-  await apiRequest<CurrentConsentResponse>("/consents/update", {
-    method: "POST",
-    headers,
-    body: {
-      flags: {
-        process_with_ai: true,
-      },
-      source: "assistant_timeline_builder",
-    },
-  });
+  return getSessionAwareAuthHeaders();
 }
 
 export async function sendTimelineAssistantMessage(input: {
@@ -166,7 +69,7 @@ export async function sendTimelineAssistantMessage(input: {
   };
   const headers = await getAssistantAuthHeaders();
 
-  await ensureAssistantConsent(headers);
+  await ensureConsent(consentRequirements.aiAssistant, headers);
 
   let response;
 

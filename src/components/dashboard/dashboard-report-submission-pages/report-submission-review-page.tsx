@@ -1,18 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
+  IconAlertCircle,
   IconBoltFilled,
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
   IconClock,
+  IconLoader2,
   IconPencil,
   IconPlus,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
+
+import {
+  getReport,
+  getReportStatus,
+  getReportTimeline,
+  updateReport,
+} from "@/lib/reports-client";
+import { getReportFlowDraft } from "@/lib/report-flow";
 
 type TimelineEntry = {
   id: string;
@@ -58,9 +69,15 @@ const manualEntryTypes: Array<TimelineEntry["chip"]> = [
 
 function ReportSubmissionReviewPage() {
   const { t } = useTranslation();
+  const router = useRouter();
+  const reportDraft = useMemo(() => getReportFlowDraft(), []);
   const [timelineEntries, setTimelineEntries] = useState(
     initialTimelineEntries
   );
+  const [reportStatus, setReportStatus] = useState<string>("draft");
+  const [isLoading, setIsLoading] = useState(Boolean(reportDraft?.reportId));
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(
     initialTimelineEntries[0]?.id ?? null
   );
@@ -68,6 +85,97 @@ function ReportSubmissionReviewPage() {
   const [manualEntryType, setManualEntryType] =
     useState<TimelineEntry["chip"]>("What");
   const [manualEntryValue, setManualEntryValue] = useState("");
+
+  useEffect(() => {
+    const reportId = reportDraft?.reportId;
+
+    if (!reportId) {
+      return;
+    }
+
+    let isActive = true;
+
+    void (async () => {
+      try {
+        const [report, status, timeline] = await Promise.all([
+          getReport(reportId),
+          getReportStatus(reportId),
+          getReportTimeline(reportId),
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        const structuredFields = report.structuredFields ?? {};
+        const backendEntries: TimelineEntry[] = [
+          structuredFields.who
+            ? {
+                id: "who",
+                chip: "Who",
+                value: String(structuredFields.who),
+              }
+            : null,
+          structuredFields.what ?? report.originalNarrative
+            ? {
+                id: "what",
+                chip: "What",
+                value: String(structuredFields.what ?? report.originalNarrative),
+              }
+            : null,
+          structuredFields.where
+            ? {
+                id: "where",
+                chip: "Where",
+                value: String(structuredFields.where),
+              }
+            : null,
+          structuredFields.when
+            ? {
+                id: "when",
+                chip: "When",
+                value: String(structuredFields.when),
+              }
+            : null,
+        ].filter((entry): entry is TimelineEntry => Boolean(entry));
+
+        setTimelineEntries(
+          backendEntries.length
+            ? backendEntries
+            : timeline.length
+              ? timeline.map((item, index) => ({
+                  id: String(item._id ?? index),
+                  chip: (["Who", "What", "Where", "When"][index % 4] as TimelineEntry["chip"]),
+                  value: JSON.stringify(item),
+                }))
+              : initialTimelineEntries
+        );
+        setExpandedEntryId(
+          backendEntries[0]?.id ?? initialTimelineEntries[0]?.id ?? null
+        );
+        setReportStatus(status.current);
+        setLoadError(null);
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Report draft could not be loaded."
+        );
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [reportDraft?.reportId]);
 
   const toggleEntry = (entryId: string) => {
     setExpandedEntryId((currentEntryId) =>
@@ -104,6 +212,31 @@ function ReportSubmissionReviewPage() {
     setTimelineEntries((currentEntries) => [...currentEntries, newEntry]);
     setExpandedEntryId(entryId);
     closeManualEntry();
+  };
+
+  const handleSubmitReport = async () => {
+    if (!reportDraft?.reportId) {
+      router.push("/dashboard?view=reportsubmissionsuccess");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setLoadError(null);
+
+    try {
+      await updateReport(reportDraft.reportId, {
+        status: "submitted",
+      });
+      router.push("/dashboard?view=reportsubmissionsuccess");
+    } catch (error) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Report could not be updated."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -143,6 +276,24 @@ function ReportSubmissionReviewPage() {
           </header>
 
           <article className="mx-auto min-h-[700px] w-full max-w-[1136px] bg-transparent">
+            {loadError ? (
+              <div className="mb-4 rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#b45353]">
+                <span className="inline-flex items-center gap-1.5">
+                  <IconAlertCircle size={12} />
+                  {loadError}
+                </span>
+              </div>
+            ) : null}
+            <div className="mb-4 flex items-center justify-between rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
+              <p className="text-[11px] font-semibold text-[#1f2a3a]">
+                Current backend status: {reportStatus}
+              </p>
+              {reportDraft?.reportId ? (
+                <p className="text-[10px] text-[#8ea0b8]">
+                  Reference {reportDraft.reportId.slice(-6)}
+                </p>
+              ) : null}
+            </div>
             <div className="relative">
               <span className="pointer-events-none absolute bottom-[76px] left-[10px] top-[12px] w-px bg-[#d5deea]" />
               <div className="space-y-3">
@@ -242,6 +393,13 @@ function ReportSubmissionReviewPage() {
                 })}
               </div>
 
+              {isLoading ? (
+                <div className="mt-4 inline-flex items-center gap-2 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3 text-[11px] text-[#60728a]">
+                  <IconLoader2 size={14} className="animate-spin" />
+                  Loading report draft...
+                </div>
+              ) : null}
+
               {isManualEntryOpen ? (
                 <form
                   onSubmit={handleManualEntrySubmit}
@@ -319,13 +477,20 @@ function ReportSubmissionReviewPage() {
             </div>
 
             <div className="mt-5 flex justify-center">
-              <Link
-                href="/dashboard?view=reportsubmissionsuccess"
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSubmitReport();
+                }}
+                disabled={isSubmitting}
                 className="inline-flex h-[44px] w-full max-w-[392px] items-center justify-center rounded-[8px] bg-[#ff9800] px-8 text-[11px] font-bold text-white shadow-[0_8px_20px_rgba(255,152,0,0.34)]"
               >
+                {isSubmitting ? (
+                  <IconLoader2 size={14} className="mr-1 animate-spin" />
+                ) : null}
                 {t("dashboard.reportSubmission.submitReport")}
                 <IconChevronRight size={14} className="ml-1" />
-              </Link>
+              </button>
             </div>
           </article>
         </div>

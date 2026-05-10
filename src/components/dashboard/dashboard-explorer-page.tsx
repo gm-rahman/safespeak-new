@@ -2,14 +2,17 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
 import {
+  IconAlertCircle,
   IconBellFilled,
   IconChevronDown,
   IconChevronLeft,
   IconCompassFilled,
   IconFolderFilled,
   IconHomeFilled,
+  IconLoader2,
   IconMicrophone,
   IconSearch,
   IconShieldFilled,
@@ -17,6 +20,11 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import {
+  getSupportRecommendations,
+  listSupportServices,
+  type SupportServiceRecord,
+} from "@/lib/support-client";
 
 import abuseImage from "@/assets/abuse.png";
 import bottomLeft from "@/assets/bottom-left.svg?url";
@@ -135,11 +143,72 @@ export function ExplorerPage({
 }) {
   const { t } = useTranslation();
   const contextCopy = getExplorerContextCopy(category, focus);
+  const [services, setServices] = useState<SupportServiceRecord[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const filters = [
     t("dashboard.explorer.filterLanguage"),
     t("dashboard.explorer.filterRegion"),
     t("dashboard.explorer.filterServiceType"),
   ];
+  const recommendationNeeds = useMemo(() => {
+    switch (category) {
+      case "domestic_violence":
+        return focus === "safety_plan" ? ["crisis"] : ["counselling", "legal"];
+      case "racial_abuse":
+        return ["legal", "community"];
+      case "migrant_challenges":
+        return ["community", "health"];
+      case "cyber_scam":
+        return ["legal"];
+      default:
+        return [];
+    }
+  }, [category, focus]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void (async () => {
+      try {
+        const nextServices =
+          category || focus
+            ? await getSupportRecommendations({
+                needs: recommendationNeeds,
+                jurisdiction: "NSW",
+                language: "en",
+              })
+            : await listSupportServices({ jurisdiction: "NSW", language: "en" });
+
+        if (!isActive) {
+          return;
+        }
+
+        setServices(nextServices);
+        setLoadError(null);
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Support services could not be loaded."
+        );
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [category, focus, recommendationNeeds]);
+
+  const dynamicServices = services.slice(0, 6);
 
   return (
     <div className="px-2 pb-5 pt-2 sm:px-4 sm:pb-8 sm:pt-4">
@@ -196,6 +265,45 @@ export function ExplorerPage({
               {contextCopy.body}
             </p>
           </article>
+        ) : null}
+
+        {loadError ? (
+          <div className="mx-auto mt-4 max-w-[760px] rounded-[16px] border border-[#fde2e2] bg-[#fff5f5] px-4 py-3 text-[11px] text-[#b45353]">
+            <span className="inline-flex items-center gap-1.5">
+              <IconAlertCircle size={12} />
+              {loadError}
+            </span>
+          </div>
+        ) : null}
+
+        {isLoading ? (
+          <div className="mx-auto mt-4 inline-flex items-center gap-2 rounded-[16px] border border-[#dce6f2] bg-white px-4 py-3 text-[11px] text-[#60728a]">
+            <IconLoader2 size={14} className="animate-spin" />
+            Loading support services...
+          </div>
+        ) : null}
+
+        {dynamicServices.length > 0 ? (
+          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {dynamicServices.map((service, index) => (
+              <ExplorerSupportCard
+                key={service._id ?? service.id ?? `${service.name}-${index}`}
+                title={service.name}
+                subtitle={
+                  service.description ||
+                  service.type ||
+                  service.jurisdiction ||
+                  "Support service"
+                }
+                icon={<IconShieldFilled size={10} />}
+                gradientClassName="bg-[linear-gradient(135deg,#0f5d9f_0%,#1d72d8_100%)]"
+                href={{
+                  pathname: "/dashboard/explorer/service-details",
+                  query: { service: service.id ?? service._id },
+                }}
+              />
+            ))}
+          </div>
         ) : null}
 
         <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">

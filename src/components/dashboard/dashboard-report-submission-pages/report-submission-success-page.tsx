@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   IconBoltFilled,
@@ -13,7 +14,23 @@ import {
   IconShare,
 } from "@tabler/icons-react";
 
+import { getReportStatus } from "@/lib/reports-client";
+import { getReportFlowDraft } from "@/lib/report-flow";
+
 function ReportSubmissionSuccessPage() {
+  const reportDraft = useMemo(() => getReportFlowDraft(), []);
+  const [reportStatus, setReportStatus] = useState<string>("submitted");
+
+  useEffect(() => {
+    if (!reportDraft?.reportId) {
+      return;
+    }
+
+    void getReportStatus(reportDraft.reportId)
+      .then((status) => setReportStatus(status.current))
+      .catch(() => setReportStatus("submitted"));
+  }, [reportDraft?.reportId]);
+
   return (
     <div className="px-6 pb-12 pt-12">
       <div className="mx-auto flex w-full max-w-[1184px] flex-col">
@@ -45,6 +62,17 @@ function ReportSubmissionSuccessPage() {
             are tailored to your current situation and location to ensure you
             understand your rights and the process ahead.
           </p>
+          <div className="mt-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3 text-center">
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+              SafeSpeak reference
+            </p>
+            <p className="mt-1 text-[14px] font-bold text-[#1f2a3a]">
+              {reportDraft?.reportId ?? "Draft only"}
+            </p>
+            <p className="mt-1 text-[10px] text-[#60728a]">
+              Current status: {reportStatus}
+            </p>
+          </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr]">
             <article className="rounded-[12px] border border-[#e3ebf4] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
@@ -156,7 +184,9 @@ function ReportSubmissionSuccessPage() {
           </div>
 
           <p className="mt-4 text-center text-[9px] text-[#a4b1c4]">
-            Info saved securely to local storage.
+            {reportDraft?.reportId
+              ? "Report status is now synced with SafeSpeak."
+              : "This draft remains local until a backend report is created."}
           </p>
         </article>
       </div>

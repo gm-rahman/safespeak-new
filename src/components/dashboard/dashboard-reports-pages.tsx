@@ -1,28 +1,45 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import {
+  IconAlertCircle,
   IconChevronLeft,
   IconChevronRight,
   IconFolderFilled,
+  IconLoader2,
   IconSearch,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
+import {
+  getReport,
+  getReportTimeline,
+  listReports,
+  type ReportRecord,
+} from "@/lib/reports-client";
 import { cn } from "@/lib/utils";
 
-import {
-  findIncidentReport,
-  incidentReports,
-  localIntelligenceMapSrc,
-} from "./dashboard-shared";
-import type { IncidentReport, IncidentReportStatus } from "./dashboard-shared";
+import { localIntelligenceMapSrc } from "./dashboard-shared";
 
-function ReportStatusChip({ status }: { status: IncidentReportStatus }) {
+function normalizeReportStatus(status?: string): "in-review" | "submitted" | "draft" {
+  if (status === "submitted") {
+    return "submitted";
+  }
+
+  if (status === "in_review" || status === "in-review") {
+    return "in-review";
+  }
+
+  return "draft";
+}
+
+function ReportStatusChip({ status }: { status?: string }) {
   const { t } = useTranslation();
+  const normalizedStatus = normalizeReportStatus(status);
   const statusStyles: Record<
-    IncidentReportStatus,
+    "in-review" | "submitted" | "draft",
     { label: string; className: string; iconWrapClassName: string }
   > = {
     "in-review": {
@@ -42,7 +59,7 @@ function ReportStatusChip({ status }: { status: IncidentReportStatus }) {
     },
   };
 
-  const styles = statusStyles[status];
+  const styles = statusStyles[normalizedStatus];
 
   return (
     <span
@@ -61,6 +78,41 @@ function ReportStatusChip({ status }: { status: IncidentReportStatus }) {
 
 function ReportsHistoryPage() {
   const { t } = useTranslation();
+  const [reports, setReports] = useState<ReportRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void listReports()
+      .then((result) => {
+        if (!isActive) {
+          return;
+        }
+
+        setReports(result);
+        setLoadError(null);
+      })
+      .catch((error) => {
+        if (!isActive) {
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error ? error.message : "Reports could not be loaded."
+        );
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -119,20 +171,32 @@ function ReportsHistoryPage() {
           </div>
 
           <div className="mt-3 space-y-2">
-            {incidentReports.map((report) => (
+            {loadError ? (
+              <div className="rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-3 text-[11px] text-[#b45353]">
+                <span className="inline-flex items-center gap-1.5">
+                  <IconAlertCircle size={12} />
+                  {loadError}
+                </span>
+              </div>
+            ) : null}
+            {isLoading ? (
+              <div className="inline-flex items-center gap-2 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3 text-[11px] text-[#60728a]">
+                <IconLoader2 size={14} className="animate-spin" />
+                Loading reports...
+              </div>
+            ) : null}
+            {reports.map((report) => (
               <Link
-                key={report.id}
-                href={`/dashboard/reports/${report.id}`}
+                key={report._id}
+                href={`/dashboard/reports/${report._id}`}
                 className="group flex items-center justify-between rounded-[14px] border border-[#e3ebf5] bg-white p-3 transition hover:border-[#cfddee] hover:shadow-[0_10px_20px_rgba(15,23,42,0.06)]"
               >
                 <div className="min-w-0 pr-2">
                   <p className="truncate text-sm font-bold text-[#1f2a3a]">
-                    {t(`dashboard.reports.sampleTitles.${report.id}`, {
-                      defaultValue: report.title,
-                    })}
+                    {report.context || report.incidentType || "SafeSpeak report"}
                   </p>
                   <p className="mt-1 text-[10px] font-medium text-[#74869d]">
-                    {report.id} | {report.createdAt}
+                    {report._id} | {report.createdAt ?? "Draft"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -150,13 +214,15 @@ function ReportsHistoryPage() {
               <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
                 {t("dashboard.reports.totalReports")}
               </p>
-              <p className="mt-1 text-2xl font-extrabold text-[#0f5d9f]">12</p>
+              <p className="mt-1 text-2xl font-extrabold text-[#0f5d9f]">{reports.length}</p>
             </article>
             <article className="rounded-xl border border-[#e2eaf4] bg-white p-3">
               <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
                 {t("dashboard.reports.resolvedCases")}
               </p>
-              <p className="mt-1 text-2xl font-extrabold text-[#1b8f4b]">48</p>
+              <p className="mt-1 text-2xl font-extrabold text-[#1b8f4b]">
+                {reports.filter((report) => normalizeReportStatus(report.status) === "submitted").length}
+              </p>
             </article>
           </div>
         </article>
@@ -167,13 +233,48 @@ function ReportsHistoryPage() {
 
 function ReportOverviewPage({ reportId }: { reportId?: string }) {
   const { t } = useTranslation();
-  const report = findIncidentReport(reportId);
+  const [report, setReport] = useState<ReportRecord | null>(null);
+  const [timeline, setTimeline] = useState<Array<Record<string, unknown>>>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const impactLabelKey: Record<IncidentReport["impactLevel"], string> = {
-    "High Priority": "dashboard.reports.impactHighPriority",
-    Moderate: "dashboard.reports.impactModerate",
-    Low: "dashboard.reports.impactLow",
-  };
+  useEffect(() => {
+    if (!reportId) {
+      return;
+    }
+
+    let isActive = true;
+
+    void Promise.all([getReport(reportId), getReportTimeline(reportId)])
+      .then(([nextReport, nextTimeline]) => {
+        if (!isActive) {
+          return;
+        }
+
+        setReport(nextReport);
+        setTimeline(nextTimeline);
+      })
+      .catch((error) => {
+        if (!isActive) {
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error ? error.message : "Report could not be loaded."
+        );
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [reportId]);
+
+  const reportTitle = report?.context || report?.incidentType || "SafeSpeak report";
+  const reportNarrative =
+    report?.originalNarrative ||
+    String(report?.structuredFields?.what ?? "No narrative captured yet.");
+  const reportLocation = String(report?.structuredFields?.where ?? "Location not captured yet.");
+  const reportCreatedAt = report?.createdAt ?? "Draft";
+  const reportSupportKey = report?._id?.slice(-6) ?? "N/A";
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -196,29 +297,29 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
 
         <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.55fr_1fr]">
           <article className="rounded-[16px] border border-[#dce5f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5">
+            {loadError ? (
+              <div className="mb-3 rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#b45353]">
+                <span className="inline-flex items-center gap-1.5">
+                  <IconAlertCircle size={12} />
+                  {loadError}
+                </span>
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#0f5d9f]">
                   {t("dashboard.reports.incidentNarrative")}
                 </p>
                 <h2 className="mt-1 text-2xl font-extrabold leading-[1.05] text-[#1f2a3a] sm:text-[30px]">
-                  {t(`dashboard.reports.sampleTitles.${report.id}`, {
-                    defaultValue: report.title,
-                  })}
+                  {reportTitle}
                 </h2>
               </div>
-              <span className="inline-flex rounded-full bg-[#ffe8d2] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#c26c00]">
-                {t(impactLabelKey[report.impactLevel])}
-              </span>
+              <ReportStatusChip status={report?.status} />
             </div>
 
             <div className="mt-3 rounded-[12px] border border-[#e2eaf4] bg-[#f8fbff] p-3">
               <p className="text-[11px] font-semibold leading-[1.6] text-[#405368]">
-                &ldquo;
-                {t(`dashboard.reports.sampleNarratives.${report.id}`, {
-                  defaultValue: report.narrative,
-                })}
-                &rdquo;
+                &ldquo;{reportNarrative}&rdquo;
               </p>
             </div>
 
@@ -228,7 +329,7 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
                   {t("dashboard.reports.reportId")}
                 </p>
                 <p className="mt-1 text-xs font-extrabold text-[#1f2a3a]">
-                  {report.id}
+                  {report?._id ?? "Pending"}
                 </p>
               </article>
               <article className="rounded-xl border border-[#e2eaf4] bg-[#f8fbff] p-3">
@@ -236,7 +337,7 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
                   {t("dashboard.reports.created")}
                 </p>
                 <p className="mt-1 text-xs font-extrabold text-[#1f2a3a]">
-                  {report.createdAt}
+                  {reportCreatedAt}
                 </p>
               </article>
               <article className="rounded-xl border border-[#e2eaf4] bg-[#f8fbff] p-3">
@@ -244,10 +345,20 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
                   {t("dashboard.reports.status")}
                 </p>
                 <div className="mt-1">
-                  <ReportStatusChip status={report.status} />
+                  <ReportStatusChip status={report?.status} />
                 </div>
               </article>
             </div>
+            {timeline.length ? (
+              <div className="mt-4 rounded-[12px] border border-[#e2eaf4] bg-[#f8fbff] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                  Backend timeline
+                </p>
+                <p className="mt-1 text-[11px] text-[#60728a]">
+                  {timeline.length} timeline events available.
+                </p>
+              </div>
+            ) : null}
           </article>
 
           <aside className="rounded-[16px] border border-[#dce5f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5">
@@ -269,7 +380,7 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
                   {t("dashboard.reports.supportKey")}
                 </p>
                 <p className="mt-1 text-[11px] font-semibold text-[#1f2a3a]">
-                  {report.supportKey}
+                  {reportSupportKey}
                 </p>
               </div>
               <div className="col-span-2 rounded-lg bg-[#f8fbff] p-2">
@@ -277,9 +388,7 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
                   {t("dashboard.reports.location")}
                 </p>
                 <p className="mt-1 text-[11px] font-semibold text-[#1f2a3a]">
-                  {t(`dashboard.reports.sampleLocations.${report.id}`, {
-                    defaultValue: report.location,
-                  })}
+                  {reportLocation}
                 </p>
               </div>
             </div>
@@ -297,9 +406,7 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
                 <div className="absolute inset-0 bg-[linear-gradient(130deg,#cfdebf_0%,#e3edd8_45%,#cedebf_100%)]" />
               )}
               <span className="absolute bottom-2 left-2 rounded-full bg-white/95 px-2 py-1 text-[9px] font-bold text-[#334155]">
-                {t(`dashboard.reports.sampleLocations.${report.id}`, {
-                  defaultValue: report.location,
-                })}
+                {reportLocation}
               </span>
             </div>
 

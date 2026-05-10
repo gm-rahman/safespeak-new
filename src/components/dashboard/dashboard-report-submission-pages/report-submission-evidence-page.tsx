@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import {
+  IconAlertCircle,
   IconBoltFilled,
   IconChevronLeft,
   IconChevronRight,
@@ -18,18 +19,34 @@ import {
   IconPlayerPlayFilled,
   IconX,
 } from "@tabler/icons-react";
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import {
+  ConsentRequiredError,
+  consentRequirements,
+  getCurrentConsent,
+  grantConsent,
+  type ConsentRequirement,
+} from "@/lib/consent";
+import {
+  completeEvidenceUpload,
+  requestEvidenceUploadUrl,
+  transcribeEvidence,
+} from "@/lib/evidence-client";
+import { getReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
 import { cn } from "@/lib/utils";
 
 type EvidenceKind = "image" | "video" | "audio" | "document";
 
 type EvidenceItem = {
   id: string;
+  backendEvidenceId?: string;
   name: string;
   sizeLabel: string;
   kind: EvidenceKind;
   sha256Hash: string;
   uploadedAt: string;
-  status: "attached" | "restored";
+  transcript?: string;
+  status: "attached" | "restored" | "synced" | "local-only";
 };
 
 type EvidenceAuditEntry = {
@@ -183,6 +200,7 @@ function EvidenceCard({
 function ReportSubmissionEvidencePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
+  const reportDraft = getReportFlowDraft();
   const [description, setDescription] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<EvidenceItem[]>([]);
@@ -192,6 +210,15 @@ function ReportSubmissionEvidencePage() {
     null
   );
   const [isHashingEvidence, setIsHashingEvidence] = useState(false);
+  const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [pendingConsentRequirement, setPendingConsentRequirement] =
+    useState<ConsentRequirement | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [pendingTranscriptionItem, setPendingTranscriptionItem] =
+    useState<EvidenceItem | null>(null);
+  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
+  const [isTranscribingEvidenceId, setIsTranscribingEvidenceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -260,26 +287,73 @@ function ReportSubmissionEvidencePage() {
     }
   }, []);
 
-  const handleFilesSelected = async (files: FileList | null) => {
-    if (!files?.length) {
+  useEffect(() => {
+    if (reportDraft?.summary) {
+      setDescription((currentDescription) =>
+        currentDescription || reportDraft.summary
+      );
+    }
+  }, [reportDraft?.summary]);
+
+  const attachFiles = async (
+    files: FileList | File[],
+    options?: { forceCloudSync?: boolean }
+  ) => {
+    const fileList = Array.isArray(files) ? files : Array.from(files);
+
+    if (!fileList.length) {
       return;
     }
 
+    setEvidenceError(null);
     setIsHashingEvidence(true);
+    setIsUploadingEvidence(true);
 
     try {
-      const nextItems = await Promise.all(
-        Array.from(files).map(async (file) => {
-          const uploadedAt = new Date().toISOString();
+      const currentConsent = await getCurrentConsent();
+      const allowCloudSync = options?.forceCloudSync || currentConsent.cloud_sync;
 
-          return {
+      if (!allowCloudSync && reportDraft?.reportId && !options) {
+        setPendingFiles(fileList);
+        setPendingConsentRequirement(consentRequirements.cloudEvidence);
+        return;
+      }
+
+      const nextItems: EvidenceItem[] = await Promise.all(
+        fileList.map(async (file) => {
+          const uploadedAt = new Date().toISOString();
+          const baseItem = {
             id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+            backendEvidenceId: undefined,
             name: file.name,
             sizeLabel: formatFileSize(file.size),
             kind: inferEvidenceKind(file),
             sha256Hash: await computeSha256Hash(file),
             uploadedAt,
-            status: "attached" as const,
+            status: (allowCloudSync ? "synced" : "local-only") as EvidenceItem["status"],
+          };
+
+          if (!allowCloudSync || !reportDraft?.reportId) {
+            return baseItem;
+          }
+
+          const upload = await requestEvidenceUploadUrl({
+            reportId: reportDraft.reportId,
+            type: inferEvidenceKind(file),
+            fileName: file.name,
+            mimeType: file.type || "application/octet-stream",
+            size: file.size,
+          });
+          const completedEvidence = await completeEvidenceUpload({
+            evidenceId: upload.evidence._id,
+            file,
+            sha256Hash: baseItem.sha256Hash,
+          });
+
+          return {
+            ...baseItem,
+            backendEvidenceId: completedEvidence._id,
+            status: "synced" as const,
           };
         })
       );
@@ -290,13 +364,47 @@ function ReportSubmissionEvidencePage() {
         ...nextItems.map((item) =>
           createAuditEntry(
             "attached",
-            `${item.name} hashed and attached at ${formatEvidenceTimestamp(item.uploadedAt)}.`
+            `${item.name} ${item.status === "synced" ? "uploaded to the evidence vault" : "stored locally only"} at ${formatEvidenceTimestamp(item.uploadedAt)}.`
           )
         ),
       ]);
+      mergeReportFlowDraft({
+        evidenceIds: [
+          ...new Set([
+            ...(reportDraft?.evidenceIds ?? []),
+            ...nextItems
+              .map((item) => item.backendEvidenceId)
+              .filter((item): item is string => Boolean(item)),
+          ]),
+        ],
+      });
+      setPendingFiles([]);
+      setPendingConsentRequirement(null);
+    } catch (error) {
+      if (error instanceof ConsentRequiredError) {
+        setPendingTranscriptionItem(null);
+        setPendingFiles(fileList);
+        setPendingConsentRequirement(error.requirement);
+        return;
+      }
+
+      setEvidenceError(
+        error instanceof Error
+          ? error.message
+          : "Evidence could not be attached."
+      );
     } finally {
       setIsHashingEvidence(false);
+      setIsUploadingEvidence(false);
     }
+  };
+
+  const handleFilesSelected = async (files: FileList | null) => {
+    if (!files?.length) {
+      return;
+    }
+
+    await attachFiles(files);
   };
 
   const removeAttachment = (id: string) => {
@@ -355,6 +463,47 @@ function ReportSubmissionEvidencePage() {
     setRestoredDraftNotice(null);
   };
 
+  const handleTranscribeEvidence = async (item: EvidenceItem) => {
+    if (!item.backendEvidenceId || !reportDraft?.reportId) {
+      setEvidenceError("Upload the audio evidence to the vault before transcribing it.");
+      return;
+    }
+
+    setIsTranscribingEvidenceId(item.id);
+    setEvidenceError(null);
+
+    try {
+      const transcriptResult = await transcribeEvidence(item.backendEvidenceId, {
+        language: "en",
+        reportId: reportDraft.reportId,
+        saveTranscript: true,
+        useAsNarrative: false,
+      });
+
+      setAttachedFiles((currentItems) =>
+        currentItems.map((currentItem) =>
+          currentItem.id === item.id
+            ? { ...currentItem, transcript: transcriptResult.transcript }
+            : currentItem
+        )
+      );
+    } catch (error) {
+      if (error instanceof ConsentRequiredError) {
+        setPendingTranscriptionItem(item);
+        setPendingConsentRequirement(error.requirement);
+        return;
+      }
+
+      setEvidenceError(
+        error instanceof Error
+          ? error.message
+          : "Evidence transcription could not be completed."
+      );
+    } finally {
+      setIsTranscribingEvidenceId(null);
+    }
+  };
+
   const exportMetadata = () => {
     if (typeof window === "undefined") {
       return;
@@ -411,6 +560,14 @@ function ReportSubmissionEvidencePage() {
 
         <article className="mt-3 rounded-[24px] border border-[#dce5f1] bg-[#f7fafe] px-4 pb-5 pt-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:px-5 sm:pb-6 sm:pt-5 lg:min-h-[1262px] lg:px-6 lg:pb-6 lg:pt-6">
           <article className="rounded-[20px] border border-[#e4ebf4] bg-white p-4 sm:p-5">
+            {evidenceError ? (
+              <div className="mb-3 rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#b45353]">
+                <span className="inline-flex items-center gap-1.5">
+                  <IconAlertCircle size={12} />
+                  {evidenceError}
+                </span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-3">
               <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1f2a3a]">
                 <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#fff1e4] text-[#ff9a1f]">
@@ -467,6 +624,11 @@ function ReportSubmissionEvidencePage() {
                   <IconPhoto size={11} />
                   Image, video, or PDF
                 </span>
+                {reportDraft?.reportId ? (
+                  <span className="inline-flex h-6 items-center rounded-full bg-[#eef4ff] px-2.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[#335fd6]">
+                    Draft ID: {reportDraft.reportId.slice(-6)}
+                  </span>
+                ) : null}
               </div>
             </div>
           </article>
@@ -494,7 +656,34 @@ function ReportSubmissionEvidencePage() {
 
           <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
             {attachedFiles.map((item) => (
-              <EvidenceCard key={item.id} item={item} onRemove={removeAttachment} />
+              <div key={item.id} className="space-y-2">
+                <EvidenceCard item={item} onRemove={removeAttachment} />
+                {item.kind === "audio" && item.backendEvidenceId ? (
+                  <div className="rounded-[14px] border border-[#dfe7f2] bg-white px-3 py-3">
+                    {item.transcript ? (
+                      <>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                          Transcript
+                        </p>
+                        <p className="mt-2 text-[11px] leading-5 text-[#50627a]">
+                          {item.transcript}
+                        </p>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleTranscribeEvidence(item);
+                        }}
+                        disabled={isTranscribingEvidenceId === item.id}
+                        className="inline-flex h-8 items-center rounded-full bg-[#0f5d9f] px-4 text-[10px] font-bold text-white"
+                      >
+                        {isTranscribingEvidenceId === item.id ? "Transcribing..." : "Generate transcript"}
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             ))}
 
             {attachedFiles.length === 0 ? (
@@ -533,7 +722,7 @@ function ReportSubmissionEvidencePage() {
                 <div className="flex flex-wrap gap-2">
                   {isHashingEvidence ? (
                     <span className="inline-flex h-8 items-center rounded-full bg-[#fff7ed] px-3 text-[10px] font-bold text-[#d97706]">
-                      Hashing evidence...
+                      {isUploadingEvidence ? "Uploading evidence..." : "Hashing evidence..."}
                     </span>
                   ) : null}
                   <button
@@ -631,7 +820,7 @@ function ReportSubmissionEvidencePage() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#d97706]">
                 Voice Note
               </p>
-              <p className="mt-2 text-[11px] leading-5 text-[#6d7f96]">
+                <p className="mt-2 text-[11px] leading-5 text-[#6d7f96]">
                 Attach an audio recording if speaking feels easier than typing.
                 On supported mobile devices this can open the recorder directly.
               </p>
@@ -711,12 +900,67 @@ function ReportSubmissionEvidencePage() {
               </div>
               <Link
                 href="/dashboard?view=reportsubmissionreview"
+                onClick={() =>
+                  mergeReportFlowDraft({
+                    summary: description || reportDraft?.summary || "",
+                    evidenceIds: [
+                      ...new Set([
+                        ...(reportDraft?.evidenceIds ?? []),
+                        ...attachedFiles
+                          .map((item) => item.backendEvidenceId)
+                          .filter((item): item is string => Boolean(item)),
+                      ]),
+                    ],
+                  })
+                }
                 className="inline-flex h-10 min-w-[168px] items-center justify-center rounded-full bg-[#ff8f00] px-8 text-[11px] font-bold text-white shadow-[0_8px_18px_rgba(255,143,0,0.32)]"
               >
                 Continue
               </Link>
             </div>
           </div>
+
+          {pendingConsentRequirement ? (
+            <div className="mt-4">
+              <ConsentRequiredCard
+                requirement={pendingConsentRequirement}
+                isSubmitting={isGrantingConsent}
+                onAllow={() => {
+                  void (async () => {
+                    setIsGrantingConsent(true);
+
+                    try {
+                      if (pendingConsentRequirement === consentRequirements.cloudEvidence) {
+                        await grantConsent({ cloud_sync: true }, pendingConsentRequirement.source);
+                        await attachFiles(pendingFiles, { forceCloudSync: true });
+                      } else {
+                        await grantConsent({ transcribe_audio: true }, pendingConsentRequirement.source);
+                        if (pendingTranscriptionItem) {
+                          await handleTranscribeEvidence(pendingTranscriptionItem);
+                        }
+                      }
+                    } catch (error) {
+                      setEvidenceError(
+                        error instanceof Error
+                          ? error.message
+                          : "Consent could not be saved."
+                      );
+                    } finally {
+                      setPendingTranscriptionItem(null);
+                      setIsGrantingConsent(false);
+                    }
+                  })();
+                }}
+                onDecline={() => {
+                  if (pendingFiles.length) {
+                    void attachFiles(pendingFiles, { forceCloudSync: false });
+                  }
+                  setPendingTranscriptionItem(null);
+                  setPendingConsentRequirement(null);
+                }}
+              />
+            </div>
+          ) : null}
 
           <input
             ref={fileInputRef}

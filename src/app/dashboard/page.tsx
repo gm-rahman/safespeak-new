@@ -13,6 +13,7 @@ type DashboardPageSearchParams = {
   view?: string | string[];
   recording?: string | string[];
   message?: string | string[];
+  prefillMessage?: string | string[];
   reportId?: string | string[];
   category?: string | string[];
   topic?: string | string[];
@@ -29,6 +30,7 @@ export default async function DashboardPage({
   const rawView = resolved.view;
   const rawRecording = resolved.recording;
   const rawMessage = resolved.message;
+  const rawPrefillMessage = resolved.prefillMessage;
   const rawReportId = resolved.reportId;
   const rawCategory = resolved.category;
   const rawTopic = resolved.topic;
@@ -37,6 +39,9 @@ export default async function DashboardPage({
     ? rawRecording[0]
     : rawRecording;
   const message = Array.isArray(rawMessage) ? rawMessage[0] : rawMessage;
+  const prefillMessage = Array.isArray(rawPrefillMessage)
+    ? rawPrefillMessage[0]
+    : rawPrefillMessage;
   const reportId = Array.isArray(rawReportId) ? rawReportId[0] : rawReportId;
   const categoryValue = Array.isArray(rawCategory) ? rawCategory[0] : rawCategory;
   const topicValue = Array.isArray(rawTopic) ? rawTopic[0] : rawTopic;
@@ -93,6 +98,7 @@ export default async function DashboardPage({
       homeView={homeView}
       assistantRecording={assistantRecording}
       assistantMessage={message}
+      assistantPrefillMessage={prefillMessage}
       reportId={reportId}
       assistantCategory={assistantCategory}
       assistantTopic={assistantTopic}
