@@ -62,7 +62,7 @@ function getHistoryMeta(status: HistoryStatus): {
 
   if (status === "SUBMITTED") {
     return {
-      team: "Submitted to SafeSpeak",
+      team: "Saved in SafeSpeak",
       icon: <IconHeartFilled size={14} />,
       iconWrapClassName: "bg-[#ffe9ea] text-[#f26161]",
     };

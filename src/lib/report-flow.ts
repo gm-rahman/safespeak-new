@@ -11,6 +11,7 @@ export type ReportFlowDraft = {
   date: string;
   location: string;
   summary: string;
+  structuredFields?: Record<string, unknown>;
   incidentType?: string;
   incidentCategory?: AssistantIncidentCategory;
   topic?: DashboardCardFlowId;

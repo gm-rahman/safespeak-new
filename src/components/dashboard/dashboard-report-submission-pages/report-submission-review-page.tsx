@@ -15,7 +15,6 @@ import {
   IconPencil,
   IconPlus,
 } from "@tabler/icons-react";
-import { useTranslation } from "react-i18next";
 
 import {
   getReport,
@@ -27,11 +26,28 @@ import { getReportFlowDraft } from "@/lib/report-flow";
 
 type TimelineEntry = {
   id: string;
-  chip: "Who" | "What" | "Where" | "When";
+  chip:
+    | "Who"
+    | "What"
+    | "Where"
+    | "When"
+    | "How"
+    | "Witnesses"
+    | "Repeated"
+    | "Injuries"
+    | "Evidence";
   value: string;
   label?: string;
   hint?: string;
   action?: string;
+  isLocalOnly?: boolean;
+};
+
+type StatusHistoryEntry = {
+  id: string;
+  status: string;
+  changedAt?: string;
+  reason?: string;
 };
 
 const initialTimelineEntries: TimelineEntry[] = [
@@ -67,14 +83,112 @@ const manualEntryTypes: Array<TimelineEntry["chip"]> = [
   "When",
 ];
 
+const timelineFieldConfig = [
+  { key: "who", chip: "Who" },
+  { key: "what", chip: "What" },
+  { key: "when", chip: "When" },
+  { key: "where", chip: "Where" },
+  { key: "how", chip: "How" },
+  { key: "witnesses", chip: "Witnesses" },
+  { key: "repeatedIncidents", chip: "Repeated" },
+  { key: "injuries", chip: "Injuries" },
+  { key: "evidenceItems", chip: "Evidence" },
+] as const;
+
+const hasTimelineValue = (value: unknown): boolean => {
+  if (typeof value === "string") {
+    return Boolean(value.trim());
+  }
+
+  if (typeof value === "boolean" || typeof value === "number") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  return false;
+};
+
+const safeTimelineValue = (value: unknown): string => {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (Array.isArray(value)) {
+    return value.length
+      ? `${value.length} evidence item${value.length === 1 ? "" : "s"}`
+      : "Not provided yet";
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return "Not provided yet";
+};
+
+const buildStructuredTimelineEntries = (
+  backendFields: Record<string, unknown>,
+  localFields: Record<string, unknown> = {}
+): TimelineEntry[] =>
+  timelineFieldConfig.map((field) => {
+    const backendValue = backendFields[field.key];
+    const localValue = localFields[field.key];
+    const useLocalValue = !hasTimelineValue(backendValue) && hasTimelineValue(localValue);
+
+    return {
+      id: field.key,
+      chip: field.chip,
+      value: safeTimelineValue(useLocalValue ? localValue : backendValue),
+      isLocalOnly: useLocalValue,
+    };
+  });
+
+const buildStatusHistoryEntries = (
+  timeline: Array<Record<string, unknown>>
+): StatusHistoryEntry[] =>
+  timeline.reduce<StatusHistoryEntry[]>((entries, item, index) => {
+    const status = typeof item.status === "string" ? item.status : null;
+
+    if (!status) {
+      return entries;
+    }
+
+    const entry: StatusHistoryEntry = {
+      id: String(item._id ?? `${status}-${index}`),
+      status,
+    };
+
+    if (typeof item.changedAt === "string") {
+      entry.changedAt = item.changedAt;
+    }
+
+    if (typeof item.reason === "string") {
+      entry.reason = item.reason;
+    }
+
+    entries.push(entry);
+    return entries;
+  }, []);
+
 function ReportSubmissionReviewPage() {
-  const { t } = useTranslation();
   const router = useRouter();
   const reportDraft = useMemo(() => getReportFlowDraft(), []);
   const [timelineEntries, setTimelineEntries] = useState(
     initialTimelineEntries
   );
   const [reportStatus, setReportStatus] = useState<string>("draft");
+  const [reportRef, setReportRef] = useState<string | null>(reportDraft?.reportId ?? null);
+  const [reportLanguage, setReportLanguage] = useState("en");
+  const [reportJurisdiction, setReportJurisdiction] = useState("NSW");
+  const [statusHistoryEntries, setStatusHistoryEntries] = useState<StatusHistoryEntry[]>([]);
+  const [hasLocalOnlyTimelineContent, setHasLocalOnlyTimelineContent] = useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(reportDraft?.reportId));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -90,6 +204,15 @@ function ReportSubmissionReviewPage() {
     const reportId = reportDraft?.reportId;
 
     if (!reportId) {
+      if (reportDraft?.structuredFields) {
+        const localEntries = buildStructuredTimelineEntries({}, reportDraft.structuredFields);
+
+        setTimelineEntries(localEntries);
+        setExpandedEntryId(localEntries[0]?.id ?? null);
+        setHasLocalOnlyTimelineContent(localEntries.some((entry) => entry.isLocalOnly));
+        setIsLoading(false);
+      }
+
       return;
     }
 
@@ -107,57 +230,33 @@ function ReportSubmissionReviewPage() {
           return;
         }
 
-        const structuredFields = report.structuredFields ?? {};
-        const backendEntries: TimelineEntry[] = [
-          structuredFields.who
-            ? {
-                id: "who",
-                chip: "Who",
-                value: String(structuredFields.who),
-              }
-            : null,
-          structuredFields.what ?? report.originalNarrative
-            ? {
-                id: "what",
-                chip: "What",
-                value: String(structuredFields.what ?? report.originalNarrative),
-              }
-            : null,
-          structuredFields.where
-            ? {
-                id: "where",
-                chip: "Where",
-                value: String(structuredFields.where),
-              }
-            : null,
-          structuredFields.when
-            ? {
-                id: "when",
-                chip: "When",
-                value: String(structuredFields.when),
-              }
-            : null,
-        ].filter((entry): entry is TimelineEntry => Boolean(entry));
+        const backendEntries = buildStructuredTimelineEntries(
+          report.structuredFields ?? {},
+          reportDraft.structuredFields ?? {}
+        );
 
-        setTimelineEntries(
-          backendEntries.length
-            ? backendEntries
-            : timeline.length
-              ? timeline.map((item, index) => ({
-                  id: String(item._id ?? index),
-                  chip: (["Who", "What", "Where", "When"][index % 4] as TimelineEntry["chip"]),
-                  value: JSON.stringify(item),
-                }))
-              : initialTimelineEntries
-        );
-        setExpandedEntryId(
-          backendEntries[0]?.id ?? initialTimelineEntries[0]?.id ?? null
-        );
-        setReportStatus(status.current);
+        setTimelineEntries(backendEntries);
+        setHasLocalOnlyTimelineContent(backendEntries.some((entry) => entry.isLocalOnly));
+        setExpandedEntryId(backendEntries[0]?.id ?? null);
+        setStatusHistoryEntries(buildStatusHistoryEntries(timeline));
+        setReportStatus(status.current ?? status.status ?? report.status ?? "draft");
+        setReportRef(report.refNo ?? report._id);
+        setReportLanguage(report.language ?? "en");
+        setReportJurisdiction(report.jurisdiction ?? "NSW");
         setLoadError(null);
       } catch (error) {
         if (!isActive) {
           return;
+        }
+
+        if (reportDraft?.structuredFields) {
+          const localEntries = buildStructuredTimelineEntries({}, reportDraft.structuredFields);
+
+          setTimelineEntries(localEntries);
+          setExpandedEntryId(localEntries[0]?.id ?? null);
+          setHasLocalOnlyTimelineContent(localEntries.some((entry) => entry.isLocalOnly));
+          setStatusHistoryEntries([]);
+          setReportStatus("local_only");
         }
 
         setLoadError(
@@ -175,7 +274,7 @@ function ReportSubmissionReviewPage() {
     return () => {
       isActive = false;
     };
-  }, [reportDraft?.reportId]);
+  }, [reportDraft?.reportId, reportDraft?.structuredFields]);
 
   const toggleEntry = (entryId: string) => {
     setExpandedEntryId((currentEntryId) =>
@@ -225,7 +324,9 @@ function ReportSubmissionReviewPage() {
 
     try {
       await updateReport(reportDraft.reportId, {
-        status: "submitted",
+        status: "ready_for_review",
+        language: reportLanguage || "en",
+        jurisdiction: reportJurisdiction || "NSW",
       });
       router.push("/dashboard?view=reportsubmissionsuccess");
     } catch (error) {
@@ -271,7 +372,7 @@ function ReportSubmissionReviewPage() {
             </h2>
             <p className="max-w-[430px] text-center text-[12px] leading-[16px] text-[#6f7f93]">
               Our AI has structured your narrative. Please verify the timeline
-              events below before final submission.
+              events below before saving the report for review.
             </p>
           </header>
 
@@ -288,10 +389,36 @@ function ReportSubmissionReviewPage() {
               <p className="text-[11px] font-semibold text-[#1f2a3a]">
                 Current backend status: {reportStatus}
               </p>
-              {reportDraft?.reportId ? (
+              {reportRef ? (
                 <p className="text-[10px] text-[#8ea0b8]">
-                  Reference {reportDraft.reportId.slice(-6)}
+                  SafeSpeak ref {reportRef.slice(-6)}
                 </p>
+              ) : null}
+            </div>
+            {statusHistoryEntries.length ? (
+              <div className="mb-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                  Status history
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  {statusHistoryEntries.map((entry) => (
+                    <p key={entry.id} className="text-[11px] leading-[1.45] text-[#60728a]">
+                      <span className="font-semibold text-[#1f2a3a]">{entry.status}</span>
+                      {entry.reason ? <span> - {entry.reason}</span> : null}
+                      {entry.changedAt ? (
+                        <span> - {new Date(entry.changedAt).toLocaleString()}</span>
+                      ) : null}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className="mb-4 rounded-[12px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3 text-[11px] leading-[1.55] text-[#60728a]">
+              Guidance only: this review prepares or saves your SafeSpeak report. It does not send anything to an external authority unless a backend submission action confirms that separately.
+              {hasLocalOnlyTimelineContent ? (
+                <span className="mt-2 block font-semibold text-[#9a5b12]">
+                  Stored locally only: some review fields are shown from this browser session and are not stored in the backend.
+                </span>
               ) : null}
             </div>
             <div className="relative">
@@ -351,6 +478,11 @@ function ReportSubmissionReviewPage() {
                               <p className="mt-3 inline-flex items-center gap-1 text-[10px] font-semibold text-[#16a56a]">
                                 <IconBoltFilled size={10} />
                                 {entry.hint}
+                              </p>
+                            ) : null}
+                            {entry.isLocalOnly ? (
+                              <p className="mt-3 text-[10px] font-semibold text-[#9a5b12]">
+                                Stored locally only
                               </p>
                             ) : null}
                           </div>
@@ -474,6 +606,11 @@ function ReportSubmissionReviewPage() {
                   Add Manual Entry
                 </button>
               )}
+              {!isLoading && timelineEntries.length === 0 ? (
+                <div className="mt-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-6 text-center text-[12px] text-[#60728a]">
+                  No backend timeline entries are available yet. Add a manual entry or go back to edit the report details.
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-5 flex justify-center">
@@ -488,7 +625,7 @@ function ReportSubmissionReviewPage() {
                 {isSubmitting ? (
                   <IconLoader2 size={14} className="mr-1 animate-spin" />
                 ) : null}
-                {t("dashboard.reportSubmission.submitReport")}
+                {isSubmitting ? "Saving..." : "Save prepared report"}
                 <IconChevronRight size={14} className="ml-1" />
               </button>
             </div>

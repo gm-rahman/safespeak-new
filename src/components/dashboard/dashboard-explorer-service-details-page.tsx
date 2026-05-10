@@ -129,10 +129,11 @@ export function ExplorerServiceDetailsPage({
     },
   };
   const selectedService = serviceMap[selectedServiceId];
+  const serviceTitle = serviceRecord?.name ?? selectedService.title;
   const phoneValue = t("dashboard.explorer.serviceDetails.phoneValue");
   const emailValue = t("dashboard.explorer.serviceDetails.emailValue");
   const referralNotes = [
-    `Warm referral request for ${selectedService.title}.`,
+    `Warm referral request for ${serviceTitle}.`,
     includeIncidentSummary
       ? "Prepared to include: incident summary, immediate safety concerns, and preferred contact method."
       : "Prepared to include: preferred contact method only.",
@@ -143,7 +144,7 @@ export function ExplorerServiceDetailsPage({
     "SafeSpeak is acting as a guidance and connection layer, not a legal or clinical provider.",
   ].join(" ");
   const emailHref = `mailto:${emailValue}?subject=${encodeURIComponent(
-    `Warm referral request - ${selectedService.title}`
+    `Warm referral request - ${serviceTitle}`
   )}&body=${encodeURIComponent(referralNotes)}`;
 
   useEffect(() => {
@@ -247,11 +248,16 @@ export function ExplorerServiceDetailsPage({
             </div>
 
             <h1 className="mt-4 text-[30px] font-extrabold leading-[1.05] text-[#1f2a3a] sm:text-[46px]">
-              {serviceRecord?.name ?? selectedService.title}
+              {serviceTitle}
             </h1>
             <p className="mt-1 text-sm font-medium text-[#5b79bd]">
               {serviceRecord?.description ?? selectedService.subtitle}
             </p>
+            {!serviceRecord && serviceError ? (
+              <p className="mt-2 rounded-full bg-[#fff7ed] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#9a5b12]">
+                Local fallback service details
+              </p>
+            ) : null}
 
             <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#dff4e5] px-3 py-1 text-[11px] font-semibold text-[#1a8b3c]">
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#2dc567]">
@@ -404,7 +410,7 @@ export function ExplorerServiceDetailsPage({
                   Warm referral prepared
                 </p>
                 <h3 className="mt-2 text-2xl font-extrabold leading-tight text-[#1f2a3a]">
-                  {selectedService.title} intake handoff is ready.
+                  {serviceTitle} intake handoff is ready.
                 </h3>
                 <p className="mt-3 text-sm leading-6 text-[#587086]">
                   {includeIncidentSummary

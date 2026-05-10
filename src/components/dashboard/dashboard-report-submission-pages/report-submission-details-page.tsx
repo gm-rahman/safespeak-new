@@ -74,6 +74,15 @@ function ReportSubmissionDetailsPage({
       date,
       location,
       summary,
+      structuredFields: {
+        who: assistantSource?.timeline.who,
+        what: summary,
+        when: date,
+        where: location,
+        how: assistantSource?.timeline.how,
+        witnesses: assistantSource?.timeline.witnesses,
+        injuries: assistantSource?.timeline.injuries,
+      },
       incidentCategory: initialCategory,
       incidentType: initialCategory ?? existingDraft?.incidentType,
       topic: initialTopic,
@@ -81,6 +90,10 @@ function ReportSubmissionDetailsPage({
     });
   }, [
     date,
+    assistantSource?.timeline.how,
+    assistantSource?.timeline.injuries,
+    assistantSource?.timeline.who,
+    assistantSource?.timeline.witnesses,
     existingDraft?.incidentType,
     initialCategory,
     initialMessage,
@@ -124,6 +137,7 @@ function ReportSubmissionDetailsPage({
         date,
         location,
         summary,
+        structuredFields,
         incidentCategory: initialCategory,
         incidentType:
           savedReport.incidentType ??

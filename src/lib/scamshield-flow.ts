@@ -8,11 +8,7 @@ export type ScamShieldFlowState = {
   inputText: string;
   inputMode: "text" | "url" | "email" | "screenshot";
   analysis?: ScamAnalysisRecord;
-  reportDraft?: {
-    summary?: string;
-    draft?: string;
-    notes?: string;
-  };
+  reportDraft?: ScamAnalysisRecord;
   submitted?: boolean;
   updatedAt: string;
 };

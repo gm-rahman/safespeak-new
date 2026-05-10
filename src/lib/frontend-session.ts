@@ -41,7 +41,19 @@ function saveAnonymousSession(session: AnonymousSessionData): void {
   window.sessionStorage.setItem(ANONYMOUS_SESSION_KEY, JSON.stringify(session));
 }
 
-export async function getAnonymousSessionToken(): Promise<string> {
+export function clearAnonymousSession(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(ANONYMOUS_SESSION_KEY);
+}
+
+export async function getAnonymousSessionToken(options?: { forceNew?: boolean }): Promise<string> {
+  if (options?.forceNew) {
+    clearAnonymousSession();
+  }
+
   const storedSession = getStoredAnonymousSession();
 
   if (storedSession?.sessionToken) {
@@ -63,7 +75,7 @@ export async function getAnonymousSessionToken(): Promise<string> {
   return response.data.sessionToken;
 }
 
-export async function getSessionAwareAuthHeaders(): Promise<HeadersInit> {
+export async function getSessionAwareAuthHeaders(options?: { forceNewAnonymous?: boolean }): Promise<HeadersInit> {
   const authSession = getAuthSession();
 
   if (authSession?.tokens.accessToken) {
@@ -72,7 +84,9 @@ export async function getSessionAwareAuthHeaders(): Promise<HeadersInit> {
     };
   }
 
-  const sessionToken = await getAnonymousSessionToken();
+  const sessionToken = await getAnonymousSessionToken({
+    forceNew: options?.forceNewAnonymous,
+  });
 
   return {
     [SAFE_SPEAK_SESSION_HEADER]: sessionToken,

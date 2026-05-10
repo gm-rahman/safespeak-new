@@ -154,13 +154,15 @@ export function ExplorerPage({
   const recommendationNeeds = useMemo(() => {
     switch (category) {
       case "domestic_violence":
-        return focus === "safety_plan" ? ["crisis"] : ["counselling", "legal"];
+        return focus === "safety_plan"
+          ? ["crisis"]
+          : ["counselling", "legal_information"];
       case "racial_abuse":
-        return ["legal", "community"];
+        return ["legal_information", "community"];
       case "migrant_challenges":
-        return ["community", "health"];
+        return ["community", "counselling"];
       case "cyber_scam":
-        return ["legal"];
+        return ["legal_information"];
       default:
         return [];
     }
@@ -175,10 +177,10 @@ export function ExplorerPage({
           category || focus
             ? await getSupportRecommendations({
                 needs: recommendationNeeds,
-                jurisdiction: "NSW",
+                jurisdiction: "AU",
                 language: "en",
               })
-            : await listSupportServices({ jurisdiction: "NSW", language: "en" });
+            : await listSupportServices({ jurisdiction: "AU", language: "en" });
 
         if (!isActive) {
           return;
@@ -209,6 +211,7 @@ export function ExplorerPage({
   }, [category, focus, recommendationNeeds]);
 
   const dynamicServices = services.slice(0, 6);
+  const shouldShowFallbackResources = !isLoading && dynamicServices.length === 0;
 
   return (
     <div className="px-2 pb-5 pt-2 sm:px-4 sm:pb-8 sm:pt-4">
@@ -306,6 +309,16 @@ export function ExplorerPage({
           </div>
         ) : null}
 
+        {shouldShowFallbackResources ? (
+          <div className="mx-auto mt-5 max-w-[760px] rounded-[16px] border border-[#dce6f2] bg-white px-4 py-3 text-[11px] text-[#60728a]">
+            <span className="font-bold text-[#1f2a3a]">
+              {loadError ? "Local fallback resources" : "Example resources"}
+            </span>{" "}
+            are shown because live support services are unavailable or empty.
+          </div>
+        ) : null}
+
+        {shouldShowFallbackResources ? (
         <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           <ExplorerSupportCard
             className="md:col-span-2 xl:col-span-2"
@@ -380,6 +393,7 @@ export function ExplorerPage({
             }}
           />
         </div>
+        ) : null}
       </div>
     </div>
   );

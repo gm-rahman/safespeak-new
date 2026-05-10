@@ -14,21 +14,25 @@ import {
   IconShare,
 } from "@tabler/icons-react";
 
-import { getReportStatus } from "@/lib/reports-client";
+import { getReport, getReportStatus } from "@/lib/reports-client";
 import { getReportFlowDraft } from "@/lib/report-flow";
 
 function ReportSubmissionSuccessPage() {
   const reportDraft = useMemo(() => getReportFlowDraft(), []);
-  const [reportStatus, setReportStatus] = useState<string>("submitted");
+  const [reportStatus, setReportStatus] = useState<string>("prepared");
+  const [reportRef, setReportRef] = useState<string | null>(reportDraft?.reportId ?? null);
 
   useEffect(() => {
     if (!reportDraft?.reportId) {
       return;
     }
 
-    void getReportStatus(reportDraft.reportId)
-      .then((status) => setReportStatus(status.current))
-      .catch(() => setReportStatus("submitted"));
+    void Promise.all([getReport(reportDraft.reportId), getReportStatus(reportDraft.reportId)])
+      .then(([report, status]) => {
+        setReportRef(report._id);
+        setReportStatus(status.current);
+      })
+      .catch(() => setReportStatus("prepared"));
   }, [reportDraft?.reportId]);
 
   return (
@@ -58,16 +62,16 @@ function ReportSubmissionSuccessPage() {
 
         <article className="mt-5 rounded-[16px] border border-[#dce5f1] bg-[#f7fafe] p-4 sm:p-6">
           <p className="mx-auto max-w-[520px] text-center text-[12px] leading-[18px] text-[#7789a1]">
-            Please review the following information carefully. These guidelines
-            are tailored to your current situation and location to ensure you
-            understand your rights and the process ahead.
+            Your SafeSpeak report has been prepared and saved with the current
+            backend status below. External authorities receive information only
+            when a confirmed sharing/submission action is completed.
           </p>
           <div className="mt-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3 text-center">
             <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
               SafeSpeak reference
             </p>
             <p className="mt-1 text-[14px] font-bold text-[#1f2a3a]">
-              {reportDraft?.reportId ?? "Draft only"}
+              {reportRef ?? "Draft only"}
             </p>
             <p className="mt-1 text-[10px] text-[#60728a]">
               Current status: {reportStatus}
@@ -82,7 +86,7 @@ function ReportSubmissionSuccessPage() {
                     <IconBoltFilled size={11} />
                   </span>
                   <h4 className="text-[18px] font-bold text-[#ff7f1a]">
-                    Legal Rights
+                    Guidance
                   </h4>
                 </div>
                 <button
@@ -100,36 +104,34 @@ function ReportSubmissionSuccessPage() {
               <div className="mt-4 space-y-4">
                 <section>
                   <h5 className="text-[12px] font-bold leading-[18px] text-[#1f2a3a]">
-                    Right to Silence
+                    Review before sharing
                   </h5>
                   <p className="mt-1 text-[10px] leading-[16px] text-[#7f90a6]">
-                    You have the right to remain silent. Anything you say can be
-                    used against you in legal proceedings. It is crucial to
-                    understand that silence cannot be used as admission of
-                    guilt.
+                    This is general information, not a confirmation that an
+                    external agency received your report. Keep details accurate
+                    and share only when it feels safe.
                   </p>
                 </section>
 
                 <section>
                   <h5 className="text-[12px] font-bold leading-[18px] text-[#1f2a3a]">
-                    Legal Counsel
+                    Support access
                   </h5>
                   <p className="mt-1 text-[10px] leading-[16px] text-[#7f90a6]">
-                    You have the right to legal counsel immediately. If you
-                    cannot afford a private attorney, a public defender must be
-                    appointed to you prior to any interrogation.
+                    You can use SafeSpeak support options to find legal,
+                    community, interpreter, or safety planning help before any
+                    external submission.
                   </p>
                 </section>
               </div>
 
               <div className="mt-4 rounded-[10px] border border-[#edf2f8] bg-[#f6f8fc] p-3">
                 <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#ff8f00]">
-                  Interpreter Access
+                  Guidance only
                 </p>
                 <p className="mt-1 text-[9px] leading-[14px] text-[#7f90a6]">
-                  You are entitled to a state-provided interpreter for all
-                  official questioning if you are not fluent in the primary
-                  language.
+                  These cards are explanatory guidance. They are not an agency
+                  receipt or legal advice.
                 </p>
               </div>
             </article>
@@ -140,11 +142,11 @@ function ReportSubmissionSuccessPage() {
                   <IconInfoCircleFilled size={12} />
                 </span>
                 <h4 className="mt-6 text-[16px] font-bold leading-[22px]">
-                  Cultural Rights
+                  Cultural Support
                 </h4>
                 <p className="mt-2 max-w-[220px] text-[10px] leading-[15px] text-white/85">
-                  Universal protections for your identity & heritage. Understand
-                  how your background is protected by law.
+                  Consider culturally safe support and interpreter needs before
+                  deciding what to share.
                 </p>
               </article>
 
@@ -153,11 +155,11 @@ function ReportSubmissionSuccessPage() {
                   <IconEye size={12} />
                 </span>
                 <h4 className="mt-6 text-[16px] font-bold leading-[22px]">
-                  What to Expect
+                  What Happens Next
                 </h4>
                 <p className="mt-2 max-w-[220px] text-[10px] leading-[15px] text-white/85">
-                  Step-by-step walkthrough of the legal process. Know what comes
-                  next and prepare accordingly.
+                  Your report remains in SafeSpeak with the status shown above
+                  until a supported backend action changes it.
                 </p>
                 <span className="bg-white/12 pointer-events-none absolute bottom-[-26px] right-[-18px] h-[90px] w-[90px] rounded-full" />
               </article>
@@ -185,7 +187,7 @@ function ReportSubmissionSuccessPage() {
 
           <p className="mt-4 text-center text-[9px] text-[#a4b1c4]">
             {reportDraft?.reportId
-              ? "Report status is now synced with SafeSpeak."
+              ? "Report status is synced with SafeSpeak."
               : "This draft remains local until a backend report is created."}
           </p>
         </article>

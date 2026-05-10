@@ -903,6 +903,15 @@ function ReportSubmissionEvidencePage() {
                 onClick={() =>
                   mergeReportFlowDraft({
                     summary: description || reportDraft?.summary || "",
+                    structuredFields: {
+                      ...(reportDraft?.structuredFields ?? {}),
+                      what: description || reportDraft?.summary || "",
+                      evidenceItems: attachedFiles.map((item) => ({
+                        name: item.name,
+                        kind: item.kind,
+                        status: item.status,
+                      })),
+                    },
                     evidenceIds: [
                       ...new Set([
                         ...(reportDraft?.evidenceIds ?? []),

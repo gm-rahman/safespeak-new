@@ -6,14 +6,28 @@ import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
 
 export type ScamAnalysisRecord = {
   _id: string;
+  type?: string;
   inputType?: string;
   riskScore?: number;
   riskLevel?: string;
   confidence?: string;
+  indicators?: string[];
   redFlags?: string[];
   recommendations?: string[];
+  extractedEntities?: Record<string, unknown>;
   summary?: string;
   draftOptions?: unknown;
+  draftReport?: {
+    summary?: string;
+    draft?: string;
+    notes?: string;
+    indicators?: string[];
+    riskLevel?: string;
+    riskScore?: number;
+  };
+  metadata?: Record<string, unknown>;
+  status?: string;
+  submittedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -23,11 +37,7 @@ type ScamAnalysisResponse = {
 };
 
 type ScamDraftResponse = {
-  result: {
-    summary?: string;
-    draft?: string;
-    notes?: string;
-  };
+  analysis: ScamAnalysisRecord;
 };
 
 export async function analyzeScamText(input: {
@@ -67,17 +77,51 @@ export async function analyzeScamEmail(input: {
 }
 
 export async function analyzeScamScreenshot(input: {
-  imageText: string;
+  imageText?: string;
+  imageFile?: File;
   evidenceId?: string;
   reportId?: string;
   metadata?: Record<string, unknown>;
 }): Promise<ScamAnalysisRecord> {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.scamAnalysis, headers);
+  const body =
+    typeof File !== "undefined" && input.imageFile instanceof File
+      ? (() => {
+          const formData = new FormData();
+
+          formData.set("image", input.imageFile as File, input.imageFile.name);
+          if (input.imageText) {
+            formData.set("imageText", input.imageText);
+          }
+          if (input.evidenceId) {
+            formData.set("evidenceId", input.evidenceId);
+          }
+          if (input.reportId) {
+            formData.set("reportId", input.reportId);
+          }
+          formData.set(
+            "metadata",
+            JSON.stringify({
+              ...input.metadata,
+              fileName: input.imageFile?.name,
+              mimeType: input.imageFile?.type,
+              size: input.imageFile?.size,
+            })
+          );
+
+          return formData;
+        })()
+      : {
+          imageText: input.imageText,
+          evidenceId: input.evidenceId,
+          reportId: input.reportId,
+          metadata: input.metadata,
+        };
   const response = await apiRequest<ScamAnalysisResponse>("/scamshield/analyze-screenshot", {
     method: "POST",
     headers,
-    body: input,
+    body,
   });
 
   return response.data.analysis;
@@ -102,7 +146,26 @@ export async function checkScamUrl(input: {
 export async function generateScamReportDraft(input: {
   analysisId: string;
   notes?: string;
-}): Promise<ScamDraftResponse["result"]> {
+}): Promise<ScamAnalysisRecord> {
+  const headers = await getSessionAwareAuthHeaders();
+  const response = await apiRequest<ScamDraftResponse>(
+    `/scamshield/${input.analysisId}/generate-report-draft`,
+    {
+      method: "POST",
+      headers,
+      body: {
+        notes: input.notes,
+      },
+    }
+  );
+
+  return response.data.analysis;
+}
+
+export async function generateScamReportDraftLegacy(input: {
+  analysisId: string;
+  notes?: string;
+}): Promise<ScamAnalysisRecord> {
   const headers = await getSessionAwareAuthHeaders();
   const response = await apiRequest<ScamDraftResponse>("/scamshield/generate-report-draft", {
     method: "POST",
@@ -110,7 +173,7 @@ export async function generateScamReportDraft(input: {
     body: input,
   });
 
-  return response.data.result;
+  return response.data.analysis;
 }
 
 export async function submitScamReport(input: {
@@ -120,10 +183,13 @@ export async function submitScamReport(input: {
 }): Promise<ScamAnalysisRecord> {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.shareWithAgencies, headers);
-  const response = await apiRequest<ScamAnalysisResponse>("/scamshield/submit", {
+  const response = await apiRequest<ScamAnalysisResponse>(`/scamshield/${input.analysisId}/submit`, {
     method: "POST",
     headers,
-    body: input,
+    body: {
+      destination: input.destination,
+      consentToShare: input.consentToShare,
+    },
   });
 
   return response.data.analysis;
