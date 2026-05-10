@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   IconBoltFilled,
@@ -14,10 +15,272 @@ import {
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
+import {
+  fetchAssistantTriageReport,
+  getAssistantTriageSource,
+  type AssistantTriageApiResult,
+  type AssistantTriageSource,
+} from "@/lib/assistant-triage";
+
 import { interFont } from "../dashboard-shared";
+
+type ResourceCard = {
+  title: string;
+  body: string;
+  href: "/dashboard?view=reportsubmissionrecommendations";
+  icon: "shield" | "headphones";
+};
+
+type TriageViewModel = {
+  specialtyTag: string;
+  supportType: string;
+  assessmentBody: string;
+  primaryStepTitle: string;
+  primaryStepBody: string;
+  worriedOthersBody: string;
+  selfHelpBody: string;
+  unsafeBody: string;
+  showUrgentState: boolean;
+  resourceCards: ResourceCard[];
+};
+
+function normalizeStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+
+  return [];
+}
+
+function normalizeBooleanLike(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  return normalized === "true" || normalized === "yes" || normalized === "unsafe";
+}
+
+function toDisplayLabel(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildSupportType(
+  triageResult: AssistantTriageApiResult | null,
+  source: AssistantTriageSource | null,
+  fallback: string
+): string {
+  if (typeof triageResult?.primarySupportNeed === "string" && triageResult.primarySupportNeed.trim()) {
+    return triageResult.primarySupportNeed.trim();
+  }
+
+  const categories = normalizeStringList(triageResult?.suggestedSupportCategories);
+
+  if (categories.length > 0) {
+    return toDisplayLabel(categories[0]);
+  }
+
+  if (typeof source?.timeline.impact === "string" && source.timeline.impact.trim()) {
+    return "Mental Health Support";
+  }
+
+  if (normalizeBooleanLike(source?.timeline.unsafe_now)) {
+    return "Immediate Safety Support";
+  }
+
+  return fallback;
+}
+
+function buildAssessmentBody(
+  triageResult: AssistantTriageApiResult | null,
+  fallback: string
+): string {
+  const candidateStrings = [
+    triageResult?.assessmentBody,
+    triageResult?.summary,
+    ...normalizeStringList(triageResult?.nonLegalSafetyNotes),
+  ];
+
+  const firstUsable = candidateStrings.find(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+
+  return firstUsable?.trim() ?? fallback;
+}
+
+function buildResourceCards(
+  triageResult: AssistantTriageApiResult | null,
+  t: (key: string) => string
+): ResourceCard[] {
+  const rawResources = Array.isArray(triageResult?.resourceRecommendations)
+    ? triageResult.resourceRecommendations
+    : [];
+  const normalizedResources = rawResources
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const title =
+        typeof record.title === "string" && record.title.trim()
+          ? record.title.trim()
+          : null;
+      const body =
+        typeof record.body === "string" && record.body.trim()
+          ? record.body.trim()
+          : null;
+      const type =
+        typeof record.type === "string" && record.type.trim()
+          ? record.type.trim().toLowerCase()
+          : "";
+
+      if (!title || !body) {
+        return null;
+      }
+
+      return {
+        title,
+        body,
+        href: "/dashboard?view=reportsubmissionrecommendations",
+        icon: type.includes("counsel") || type.includes("support") ? "headphones" : "shield",
+      } satisfies ResourceCard;
+    })
+    .filter((item): item is ResourceCard => Boolean(item));
+
+  if (normalizedResources.length >= 2) {
+    return normalizedResources.slice(0, 2);
+  }
+
+  return [
+    {
+      title: t("dashboard.assistant.triage.resourceEsafetyTitle"),
+      body: t("dashboard.assistant.triage.resourceEsafetyBody"),
+      href: "/dashboard?view=reportsubmissionrecommendations",
+      icon: "shield",
+    },
+    {
+      title: t("dashboard.assistant.triage.resourceCounsellingTitle"),
+      body: t("dashboard.assistant.triage.resourceCounsellingBody"),
+      href: "/dashboard?view=reportsubmissionrecommendations",
+      icon: "headphones",
+    },
+  ];
+}
 
 function ReportSubmissionSupportPage() {
   const { t } = useTranslation();
+  const [triageSource, setTriageSource] = useState<AssistantTriageSource | null>(null);
+  const [triageResult, setTriageResult] = useState<AssistantTriageApiResult | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const source = getAssistantTriageSource();
+
+    setTriageSource(source);
+
+    if (!source) {
+      setLoadError("No assistant triage context is available yet.");
+      setIsLoading(false);
+      return;
+    }
+
+    let isActive = true;
+
+    void (async () => {
+      try {
+        const result = await fetchAssistantTriageReport(source);
+
+        if (!isActive) {
+          return;
+        }
+
+        setTriageResult(result);
+        setLoadError(null);
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error ? error.message : "Triage explanation could not be loaded."
+        );
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const viewModel = useMemo<TriageViewModel>(() => {
+    const supportType = buildSupportType(
+      triageResult,
+      triageSource,
+      t("dashboard.assistant.triage.supportType")
+    );
+    const riskFactors = normalizeStringList(triageResult?.riskFactors);
+    const recommendedActions = normalizeStringList(triageResult?.recommendedActions);
+    const safetyNotes = normalizeStringList(triageResult?.nonLegalSafetyNotes);
+    const categories = normalizeStringList(triageResult?.suggestedSupportCategories);
+    const showUrgentState =
+      normalizeBooleanLike(triageResult?.immediateSafetyFlag) ||
+      normalizeBooleanLike(triageSource?.timeline.unsafe_now) ||
+      triageResult?.severitySignal === "urgent" ||
+      triageResult?.severitySignal === "high";
+
+    return {
+      specialtyTag:
+        (typeof triageResult?.specialtyTag === "string" && triageResult.specialtyTag.trim()) ||
+        supportType.toLowerCase(),
+      supportType,
+      assessmentBody: buildAssessmentBody(
+        triageResult,
+        t("dashboard.assistant.triage.assessmentBody")
+      ),
+      primaryStepTitle:
+        recommendedActions[0] ?? riskFactors[0] ?? t("dashboard.assistant.triage.primaryStepTitle"),
+      primaryStepBody:
+        safetyNotes[0] ??
+        recommendedActions[1] ??
+        riskFactors[1] ??
+        t("dashboard.assistant.triage.primaryStepBody"),
+      worriedOthersBody:
+        categories.slice(0, 2).map(toDisplayLabel).join(" • ") ||
+        riskFactors[0] ||
+        t("dashboard.assistant.triage.worriedOthersBody"),
+      selfHelpBody:
+        recommendedActions.slice(0, 2).join(" • ") ||
+        safetyNotes[0] ||
+        t("dashboard.assistant.triage.selfHelpBody"),
+      unsafeBody: showUrgentState
+        ? safetyNotes[0] || t("dashboard.assistant.triage.unsafeBody")
+        : "Immediate danger is not strongly indicated right now, but support and safety planning remain available.",
+      showUrgentState,
+      resourceCards: buildResourceCards(triageResult, t),
+    };
+  }, [t, triageResult, triageSource]);
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -40,6 +303,11 @@ function ReportSubmissionSupportPage() {
         </div>
 
         <article className="mt-2 rounded-[16px] border border-[#dce5f1] bg-[#f7fafe] px-3 py-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:px-4 sm:py-4">
+          {loadError ? (
+            <div className="mb-3 rounded-[14px] border border-[#fde2e2] bg-[#fff5f5] px-4 py-3 text-[11px] text-[#b45353]">
+              {loadError}
+            </div>
+          ) : null}
           <h2 className="text-[28px] font-extrabold leading-[1.02] text-[#0f4f95] sm:text-[34px]">
             {t("dashboard.assistant.triage.title")}
           </h2>
@@ -52,7 +320,9 @@ function ReportSubmissionSupportPage() {
               <div
                 className={`${interFont.className} absolute left-0 top-0 flex h-[256px] w-[256px] -translate-y-1/2 items-end justify-center rounded-[9999px] bg-[#e7effb] pb-9 text-center text-[24px] font-medium lowercase leading-[32px] tracking-[-0.6px] text-[#004E92]`}
               >
-                {t("dashboard.assistant.triage.specialtyTag")}
+                {isLoading
+                  ? "loading"
+                  : viewModel.specialtyTag}
               </div>
             </div>
             <p
@@ -63,11 +333,13 @@ function ReportSubmissionSupportPage() {
             <h3
               className={`${interFont.className} mx-auto mt-2 max-w-[350px] text-[36px] font-extrabold leading-[0.95] text-[#0f5d9f] sm:text-[42px]`}
             >
-              {t("dashboard.assistant.triage.supportType")}
+              {isLoading ? "Building support view..." : viewModel.supportType}
             </h3>
             <span className="mx-auto mt-3 block h-[3px] w-[56px] rounded-full bg-[#eceff4]" />
             <p className="mx-auto mt-6 max-w-[560px] text-sm leading-[1.6] text-[#5f6f86]">
-              {t("dashboard.assistant.triage.assessmentBody")}
+              {isLoading
+                ? "Analyzing the report details you provided to prepare your support guidance."
+                : viewModel.assessmentBody}
             </p>
             <p className="mt-3 text-[11px] italic text-[#9babbf]">
               {t("dashboard.assistant.triage.assessmentNote")}
@@ -96,10 +368,10 @@ function ReportSubmissionSupportPage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-[#1f2a3a]">
-                {t("dashboard.assistant.triage.primaryStepTitle")}
+                {viewModel.primaryStepTitle}
               </p>
               <p className="text-[10px] text-[#8da0b8]">
-                {t("dashboard.assistant.triage.primaryStepBody")}
+                {viewModel.primaryStepBody}
               </p>
             </div>
             <IconChevronRight size={14} className="shrink-0 text-[#b5c2d3]" />
@@ -125,7 +397,7 @@ function ReportSubmissionSupportPage() {
                   {t("dashboard.assistant.triage.worriedOthersTitle")}
                 </h4>
                 <p className="mt-2 text-[11px] text-white/80">
-                  {t("dashboard.assistant.triage.worriedOthersBody")}
+                  {viewModel.worriedOthersBody}
                 </p>
               </div>
             </Link>
@@ -149,23 +421,43 @@ function ReportSubmissionSupportPage() {
                   {t("dashboard.assistant.triage.selfHelpTitle")}
                 </h4>
                 <p className="mt-2 text-[11px] text-white/80">
-                  {t("dashboard.assistant.triage.selfHelpBody")}
+                  {viewModel.selfHelpBody}
                 </p>
               </div>
             </Link>
 
-            <article className="relative flex h-[318px] w-full flex-col rounded-[48px] border border-[#f7d7d7] bg-[#fdeeee] p-8 text-[#1f2a3a] shadow-[0_14px_24px_rgba(227,106,106,0.12)]">
-              <span className="absolute right-6 top-6 h-2.5 w-2.5 rounded-full bg-[#f05454]" />
-              <span className="inline-flex h-12 w-12 items-center justify-center rounded-[24px] bg-[#f04444] text-white">
+            <article
+              className={`relative flex h-[318px] w-full flex-col rounded-[48px] border p-8 text-[#1f2a3a] shadow-[0_14px_24px_rgba(227,106,106,0.12)] ${
+                viewModel.showUrgentState
+                  ? "border-[#f7d7d7] bg-[#fdeeee]"
+                  : "border-[#d9e6f3] bg-[#f6fbff]"
+              }`}
+            >
+              <span
+                className={`absolute right-6 top-6 h-2.5 w-2.5 rounded-full ${
+                  viewModel.showUrgentState ? "bg-[#f05454]" : "bg-[#7aa6d6]"
+                }`}
+              />
+              <span
+                className={`inline-flex h-12 w-12 items-center justify-center rounded-[24px] text-white ${
+                  viewModel.showUrgentState ? "bg-[#f04444]" : "bg-[#0f5d9f]"
+                }`}
+              >
                 <IconShieldFilled size={21} />
               </span>
               <h4 className="mt-8 text-[16px] font-extrabold leading-[1.02] text-[#212d3f] sm:text-[18px]">
                 {t("dashboard.assistant.triage.unsafeTitle")}
               </h4>
               <p className="mt-3 text-[10px] leading-[1.45] text-[#7f8fa5] sm:text-[11px]">
-                {t("dashboard.assistant.triage.unsafeBody")}
+                {viewModel.unsafeBody}
               </p>
-              <button className="mt-8 inline-flex h-12 w-full items-center justify-center rounded-full bg-[#f04444] px-8 text-[11px] font-bold text-white shadow-[0_10px_16px_rgba(240,68,68,0.35)]">
+              <button
+                className={`mt-8 inline-flex h-12 w-full items-center justify-center rounded-full px-8 text-[11px] font-bold text-white ${
+                  viewModel.showUrgentState
+                    ? "bg-[#f04444] shadow-[0_10px_16px_rgba(240,68,68,0.35)]"
+                    : "bg-[#0f5d9f] shadow-[0_10px_16px_rgba(15,93,159,0.28)]"
+                }`}
+              >
                 {t("dashboard.assistant.triage.callEmergency")}
               </button>
               <p className="mt-auto text-center text-[9px] text-[#b1bccb]">
@@ -181,8 +473,10 @@ function ReportSubmissionSupportPage() {
               </h3>
 
               <div className="grid min-h-[92px] w-full grid-cols-1 gap-6 md:grid-cols-2">
+                {viewModel.resourceCards.map((resource) => (
                 <Link
-                  href="/dashboard?view=reportsubmissionrecommendations"
+                  key={resource.title}
+                  href={resource.href}
                   className="relative flex h-[92px] w-full items-center gap-3 overflow-hidden rounded-[48px] bg-[#004E92] p-6 text-left text-white shadow-[0_12px_22px_rgba(12,74,131,0.28)]"
                   style={{
                     backgroundImage:
@@ -190,40 +484,23 @@ function ReportSubmissionSupportPage() {
                   }}
                 >
                   <span className="bg-white/16 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
-                    <IconShieldFilled size={12} />
+                    {resource.icon === "headphones" ? (
+                      <IconHeadphones size={12} />
+                    ) : (
+                      <IconShieldFilled size={12} />
+                    )}
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-[11px] font-bold leading-none">
-                      {t("dashboard.assistant.triage.resourceEsafetyTitle")}
+                      {resource.title}
                     </span>
                     <span className="mt-1 block truncate text-[9px] text-white/75">
-                      {t("dashboard.assistant.triage.resourceEsafetyBody")}
+                      {resource.body}
                     </span>
                   </span>
                   <span className="bg-white/14 pointer-events-none absolute -right-4 top-1/2 h-14 w-14 -translate-y-1/2 rounded-full" />
                 </Link>
-
-                <Link
-                  href="/dashboard?view=reportsubmissionrecommendations"
-                  className="relative flex h-[92px] w-full items-center gap-3 overflow-hidden rounded-[48px] bg-[#004E92] p-6 text-left text-white shadow-[0_12px_22px_rgba(12,74,131,0.28)]"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(100.94deg, #004E92 0%, #003A6D 100%)",
-                  }}
-                >
-                  <span className="bg-white/16 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
-                    <IconHeadphones size={12} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-[11px] font-bold leading-none">
-                      {t("dashboard.assistant.triage.resourceCounsellingTitle")}
-                    </span>
-                    <span className="mt-1 block truncate text-[9px] text-white/75">
-                      {t("dashboard.assistant.triage.resourceCounsellingBody")}
-                    </span>
-                  </span>
-                  <span className="bg-white/14 pointer-events-none absolute -right-4 top-1/2 h-14 w-14 -translate-y-1/2 rounded-full" />
-                </Link>
+                ))}
               </div>
             </div>
           </div>

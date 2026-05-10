@@ -19,6 +19,7 @@ import {
   type AssistantTimeline,
   sendTimelineAssistantMessage,
 } from "@/lib/assistant-conversation";
+import { saveAssistantTriageSource } from "@/lib/assistant-triage";
 
 import { interFont } from "./dashboard-shared";
 
@@ -78,6 +79,50 @@ function sortTimelineEntries(
 
     return leftIndex - rightIndex;
   });
+}
+
+function shouldForceFirstWhoQuestion(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  const greetingOnlyPattern =
+    /^(hi|hello|hey|yo|hola|good morning|good afternoon|good evening|ok|okay|yes|no|help)\b[!.?]*$/i;
+
+  if (greetingOnlyPattern.test(normalized)) {
+    return false;
+  }
+
+  const incidentSignalPattern =
+    /\b(incident|harass|harassment|abuse|assault|hit|slap|threat|violence|unsafe|scam|fraud|report|happened|happen|hurt|attacked)\b/i;
+
+  return incidentSignalPattern.test(normalized) || normalized.split(/\s+/).length >= 5;
+}
+
+function buildAssistantBubbleContent(
+  assistantMessage: string,
+  nextQuestion: string
+): string {
+  const trimmedAssistantMessage = assistantMessage.trim();
+  const trimmedNextQuestion = nextQuestion.trim();
+
+  if (!trimmedAssistantMessage) {
+    return trimmedNextQuestion;
+  }
+
+  if (!trimmedNextQuestion) {
+    return trimmedAssistantMessage;
+  }
+
+  if (
+    trimmedAssistantMessage.toLowerCase() === trimmedNextQuestion.toLowerCase()
+  ) {
+    return trimmedAssistantMessage;
+  }
+
+  return `${trimmedAssistantMessage} ${trimmedNextQuestion}`;
 }
 
 function SafeSpeakAssistantPage({
@@ -151,6 +196,13 @@ function SafeSpeakAssistantConversationPage({
   }, [messages]);
 
   useEffect(() => {
+    saveAssistantTriageSource({
+      conversation: messages,
+      timeline,
+    });
+  }, [messages, timeline]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: "smooth",
       block: "end",
@@ -190,10 +242,14 @@ function SafeSpeakAssistantConversationPage({
           conversation[0]?.role === "assistant" &&
           conversation[0]?.content ===
             t("dashboard.assistant.conversation.botPromptWho") &&
-          conversation[1]?.role === "user";
+          conversation[1]?.role === "user" &&
+          shouldForceFirstWhoQuestion(message);
         const assistantContent = isFirstFollowUp
           ? t("dashboard.assistant.conversation.botQuestionWho")
-          : response.nextQuestion?.trim() || response.assistantMessage;
+          : buildAssistantBubbleContent(
+              response.assistantMessage ?? "",
+              response.nextQuestion ?? ""
+            );
 
         setTimeline((currentTimeline) => {
           const nextTimeline = response.timeline;

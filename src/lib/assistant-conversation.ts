@@ -112,7 +112,7 @@ async function getAnonymousSessionToken(): Promise<string> {
   return response.data.sessionToken;
 }
 
-async function getAssistantAuthHeaders(): Promise<HeadersInit> {
+export async function getAssistantAuthHeaders(): Promise<HeadersInit> {
   const authSession = getAuthSession();
 
   if (authSession?.tokens.accessToken) {
@@ -128,7 +128,7 @@ async function getAssistantAuthHeaders(): Promise<HeadersInit> {
   };
 }
 
-async function ensureAssistantConsent(headers: HeadersInit): Promise<void> {
+export async function ensureAssistantConsent(headers: HeadersInit): Promise<void> {
   const currentConsent = await apiRequest<CurrentConsentResponse>(
     "/consents/current",
     {
