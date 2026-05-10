@@ -53,6 +53,11 @@ type CurrentConsentResponse = {
   };
 };
 
+const wait = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+
 function getStoredAnonymousSession(): AnonymousSessionData | null {
   if (typeof window === "undefined") {
     return null;
@@ -148,14 +153,32 @@ export async function sendTimelineAssistantMessage(input: {
 
   await ensureAssistantConsent(headers);
 
-  const response = await apiRequest<TimelineAssistantResponse>(
-    "/rag/timeline-assistant",
-    {
-      method: "POST",
-      headers,
-      body: input,
+  let response;
+
+  try {
+    response = await apiRequest<TimelineAssistantResponse>(
+      "/rag/timeline-assistant",
+      {
+        method: "POST",
+        headers,
+        body: input,
+      }
+    );
+  } catch (error) {
+    if (!(error instanceof TypeError)) {
+      throw error;
     }
-  );
+
+    await wait(300);
+    response = await apiRequest<TimelineAssistantResponse>(
+      "/rag/timeline-assistant",
+      {
+        method: "POST",
+        headers,
+        body: input,
+      }
+    );
+  }
 
   return response.data;
 }

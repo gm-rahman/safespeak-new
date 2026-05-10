@@ -2,4 +2,19 @@
 > next-start@0.1.0 dev
 > next dev --turbopack -p 3000
 
-[?25h
+   ▲ Next.js 15.5.7 (Turbopack)
+   - Local:        http://localhost:3000
+   - Network:      http://172.16.0.2:3000
+   - Environments: .env
+
+ ✓ Starting...
+Creating turbopack project {
+  dir: 'D:\\RAJUAN-PERSONAL\\VSCODE\\safespeak\\safespeak-frontend',
+  testMode: true
+}
+ ✓ Ready in 1032ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 7.1s
+🌐 i18next is maintained with support from Locize — consider powering your project with managed localization (AI, CDN, integrations): https://locize.com 💙
+ GET /dashboard?view=assistant 200 in 7517ms
+ GET /dashboard?view=assistant 200 in 115ms
