@@ -95,6 +95,20 @@ function SafeSpeakAssistantConversationPage({
     latestMessagesRef.current = messages;
   }, [messages]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    document.body.classList.add("assistant-conversation-lock");
+    document.documentElement.classList.add("assistant-conversation-lock");
+
+    return () => {
+      document.body.classList.remove("assistant-conversation-lock");
+      document.documentElement.classList.remove("assistant-conversation-lock");
+    };
+  }, []);
+
   const requestAssistantTurn = useCallback(
     async (
       message: string,
@@ -183,8 +197,8 @@ function SafeSpeakAssistantConversationPage({
   ] as const;
 
   return (
-    <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
-      <div className="mx-auto flex w-full max-w-[1184px] flex-col">
+    <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 xl:flex-1 xl:overflow-hidden">
+      <div className="mx-auto flex w-full max-w-[1184px] flex-col xl:h-full xl:min-h-0">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           <Link
             href="/dashboard?view=assistant"
@@ -201,9 +215,10 @@ function SafeSpeakAssistantConversationPage({
           </Link>
         </div>
 
-        <div className="mt-2 grid min-h-[730px] grid-cols-1 gap-2 xl:grid-cols-[1.65fr_1fr]">
-          <div className="rounded-[14px] bg-[#dff0fb] p-3">
-            <div className="space-y-3">
+        <div className="mt-2 grid min-h-0 grid-cols-1 gap-2 xl:flex-1 xl:grid-cols-[1.65fr_1fr] xl:overflow-hidden">
+          <div className="flex min-h-[520px] flex-col rounded-[14px] bg-[#dff0fb] p-3 xl:min-h-0 xl:overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <div className="h-full space-y-3 overflow-y-auto overscroll-contain pr-1">
               {messages.map((message, index) => (
                 <div
                   key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
@@ -234,11 +249,12 @@ function SafeSpeakAssistantConversationPage({
                   {error}
                 </div>
               ) : null}
+              </div>
             </div>
 
             <form
               onSubmit={handleSubmit}
-              className="mt-6 rounded-[16px] border border-[#dbe6f2] bg-white p-2"
+              className="mt-4 shrink-0 rounded-[16px] border border-[#dbe6f2] bg-white p-2"
             >
               <div className="flex items-center gap-2">
                 <input
@@ -277,7 +293,7 @@ function SafeSpeakAssistantConversationPage({
             </form>
           </div>
 
-          <div className="rounded-[14px] border border-[#e3e9f2] bg-white p-3">
+          <div className="rounded-[14px] border border-[#e3e9f2] bg-white p-3 xl:sticky xl:top-0 xl:self-start">
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#5f6f86]">
                 {t("dashboard.assistant.conversation.liveTimelineBuilder")}

@@ -133,6 +133,18 @@ body.quick-exit-active {
   overflow: hidden;
 }
 
+html.assistant-conversation-lock,
+body.assistant-conversation-lock {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body.assistant-conversation-lock .site-shell {
+  height: 100dvh;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
 body.quick-exit-active .site-shell {
   filter: blur(18px) saturate(0.35);
   opacity: 0.16;

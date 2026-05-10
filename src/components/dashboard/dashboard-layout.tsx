@@ -404,6 +404,8 @@ export function DashboardShell({
   const sectionSizeClass =
     activeTab === "notifications"
       ? "xl:mx-auto xl:min-h-[749px] xl:w-full xl:max-w-[1184px]"
+      : homeView === "assistantconversation"
+        ? "xl:h-[calc(100dvh-2rem)] xl:min-h-0"
       : activeTab === "home" && isIncidentBuilderView
         ? "xl:min-h-[868.68px]"
         : "xl:min-h-[1498px]";
@@ -418,10 +420,12 @@ export function DashboardShell({
       <section
         className={cn(
           "min-w-0 p-3 pb-[168px] sm:p-4 sm:pb-[300px] lg:pb-4 lg:pl-[240px] 2xl:pl-[272px]",
+          homeView === "assistantconversation" &&
+            "xl:overflow-hidden xl:pb-[230px]",
           sectionSizeClass
         )}
       >
-        <div className="overflow-hidden rounded-[16px] bg-[#edf2f8] sm:rounded-[20px] xl:h-full">
+        <div className="overflow-hidden rounded-[16px] bg-[#edf2f8] sm:rounded-[20px] xl:flex xl:h-full xl:min-h-0 xl:flex-col">
           <EmergencyToolbar />
           {children}
         </div>
