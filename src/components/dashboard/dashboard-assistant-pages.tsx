@@ -2,14 +2,31 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
-import { IconChevronLeft, IconMicrophone } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconChevronLeft,
+  IconLoader2,
+  IconMicrophone,
+} from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
+import {
+  type AssistantConversationMessage,
+  type AssistantTimeline,
+  sendTimelineAssistantMessage,
+} from "@/lib/assistant-conversation";
 
 import { interFont } from "./dashboard-shared";
+
+const emptyTimeline: AssistantTimeline = {
+  who: "",
+  what: "",
+  where: "",
+};
 
 function SafeSpeakAssistantPage({
   isRecording = false,
@@ -52,6 +69,118 @@ function SafeSpeakAssistantConversationPage({
   initialMessage?: string;
 }) {
   const { t } = useTranslation();
+  const seededMessage = initialMessage?.trim();
+  const [input, setInput] = useState("");
+  const [timeline, setTimeline] = useState<AssistantTimeline>(emptyTimeline);
+  const [messages, setMessages] = useState<AssistantConversationMessage[]>(() =>
+    [
+      {
+        role: "assistant",
+        content: t("dashboard.assistant.conversation.botPromptWho"),
+      },
+      seededMessage
+        ? {
+            role: "user" as const,
+            content: seededMessage,
+          }
+        : null,
+    ].filter(Boolean) as AssistantConversationMessage[]
+  );
+  const [isSending, setIsSending] = useState(Boolean(seededMessage));
+  const [error, setError] = useState<string | null>(null);
+  const hasSentInitialRef = useRef(false);
+  const latestMessagesRef = useRef(messages);
+
+  useEffect(() => {
+    latestMessagesRef.current = messages;
+  }, [messages]);
+
+  const requestAssistantTurn = useCallback(
+    async (
+      message: string,
+      conversation: AssistantConversationMessage[]
+    ) => {
+      setIsSending(true);
+      setError(null);
+
+      try {
+        const response = await sendTimelineAssistantMessage({
+          message,
+          conversation,
+          timeline,
+        });
+        const assistantContent =
+          response.nextQuestion?.trim() || response.assistantMessage;
+
+        setTimeline(response.timeline);
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            role: "assistant",
+            content: assistantContent,
+          },
+        ]);
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Assistant response failed"
+        );
+      } finally {
+        setIsSending(false);
+      }
+    },
+    [timeline]
+  );
+
+  useEffect(() => {
+    if (!seededMessage || hasSentInitialRef.current) {
+      return;
+    }
+
+    hasSentInitialRef.current = true;
+    void requestAssistantTurn(seededMessage, latestMessagesRef.current);
+  }, [requestAssistantTurn, seededMessage]);
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const message = input.trim();
+
+    if (!message || isSending) {
+      return;
+    }
+
+    const nextMessages = [
+      ...latestMessagesRef.current,
+      {
+        role: "user" as const,
+        content: message,
+      },
+    ];
+
+    setInput("");
+    setMessages(nextMessages);
+    void requestAssistantTurn(message, nextMessages);
+  };
+
+  const timelineFields = [
+    {
+      key: "who",
+      label: t("dashboard.assistant.conversation.who"),
+      fallback: t("dashboard.assistant.conversation.waitingForDetails"),
+    },
+    {
+      key: "what",
+      label: t("dashboard.assistant.conversation.what"),
+      fallback: t("dashboard.assistant.conversation.waitingForDetails"),
+    },
+    {
+      key: "where",
+      label: t("dashboard.assistant.conversation.where"),
+      fallback: t("dashboard.assistant.conversation.processingFromTranscript"),
+    },
+  ] as const;
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -75,55 +204,77 @@ function SafeSpeakAssistantConversationPage({
         <div className="mt-2 grid min-h-[730px] grid-cols-1 gap-2 xl:grid-cols-[1.65fr_1fr]">
           <div className="rounded-[14px] bg-[#dff0fb] p-3">
             <div className="space-y-3">
-              <div>
-                <div className="inline-flex max-w-[420px] rounded-2xl bg-white px-3 py-2 text-[10px] text-[#5f6f86]">
-                  {t("dashboard.assistant.conversation.botPromptWho")}
+              {messages.map((message, index) => (
+                <div
+                  key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
+                  className={message.role === "user" ? "flex justify-end" : ""}
+                >
+                  <div
+                    className={`inline-flex max-w-[520px] rounded-2xl bg-white px-3 py-2 text-[10px] leading-relaxed ${
+                      message.role === "user"
+                        ? "text-[#3d4a5f]"
+                        : "text-[#5f6f86]"
+                    }`}
+                  >
+                    {message.content}
+                  </div>
                 </div>
-                <p className="mt-1 text-[9px] text-[#9aa7b8]">9:41 AM</p>
-              </div>
+              ))}
 
-              <div className="flex justify-end">
-                <div className="max-w-[360px] rounded-2xl bg-white px-3 py-2 text-[10px] text-[#3d4a5f]">
-                  {initialMessage?.trim() ||
-                    t("dashboard.assistant.conversation.defaultUserReply")}
+              {isSending ? (
+                <div className="inline-flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-[10px] text-[#5f6f86]">
+                  <IconLoader2 size={12} className="animate-spin" />
+                  {t("dashboard.assistant.conversation.updating")}
                 </div>
-              </div>
+              ) : null}
 
-              <div>
-                <div className="inline-flex max-w-[420px] rounded-2xl bg-white px-3 py-2 text-[10px] text-[#5f6f86]">
-                  {t("dashboard.assistant.conversation.botPromptWhere")}
+              {error ? (
+                <div className="inline-flex max-w-[520px] items-center gap-2 rounded-2xl bg-white px-3 py-2 text-[10px] text-[#c24141]">
+                  <IconAlertCircle size={12} />
+                  {error}
                 </div>
-                <p className="mt-1 text-[9px] text-[#9aa7b8]">9:42 AM</p>
-              </div>
+              ) : null}
             </div>
 
-            <div className="mt-6 rounded-[16px] border border-[#dbe6f2] bg-white p-2">
+            <form
+              onSubmit={handleSubmit}
+              className="mt-6 rounded-[16px] border border-[#dbe6f2] bg-white p-2"
+            >
               <div className="flex items-center gap-2">
                 <input
                   type="text"
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
                   placeholder={t("dashboard.assistant.typeYourResponse")}
                   className="h-9 flex-1 rounded-full bg-[#f6f9fc] px-4 text-xs text-[#1f2937] outline-none placeholder:text-[#95a3b8]"
                 />
                 <button
+                  type="button"
                   aria-label={t("dashboard.assistant.toggleMicrophone")}
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#8b97a8]"
                 >
                   <IconMicrophone size={14} />
                 </button>
                 <button
+                  type="submit"
+                  disabled={isSending || !input.trim()}
                   aria-label={t("common.send")}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#f59e0b] text-white"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#f59e0b] text-white disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  <Image
-                    src={sendIcon}
-                    alt={t("common.send")}
-                    width={10}
-                    height={14}
-                    className="h-[14px] w-[10px]"
-                  />
+                  {isSending ? (
+                    <IconLoader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Image
+                      src={sendIcon}
+                      alt={t("common.send")}
+                      width={10}
+                      height={14}
+                      className="h-[14px] w-[10px]"
+                    />
+                  )}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
 
           <div className="rounded-[14px] border border-[#e3e9f2] bg-white p-3">
@@ -137,37 +288,34 @@ function SafeSpeakAssistantConversationPage({
             </div>
 
             <div className="mt-3 space-y-2">
-              <div className="rounded-[10px] border border-[#ebeff5] bg-[#f9fbfd] p-2.5">
-                <p className="text-[8px] font-semibold uppercase text-[#8fa0b6]">
-                  {t("dashboard.assistant.conversation.who")}
-                </p>
-                <p className="mt-1 text-[11px] font-semibold text-[#1f2a3a]">
-                  {t("dashboard.assistant.conversation.whoValue")}
-                </p>
-                <div className="mt-2 h-[2px] rounded-full bg-[#d8e3f5]">
-                  <div className="h-[2px] w-[68%] rounded-full bg-[#3f7de0]" />
-                </div>
-              </div>
+              {timelineFields.map((field) => {
+                const value = timeline[field.key];
 
-              <div className="rounded-[10px] border border-[#ebeff5] bg-[#f9fbfd] p-2.5">
-                <p className="text-[8px] font-semibold uppercase text-[#8fa0b6]">
-                  {t("dashboard.assistant.conversation.what")}
-                </p>
-                <p className="mt-1 text-[11px] italic text-[#8fa0b6]">
-                  {t("dashboard.assistant.conversation.waitingForDetails")}
-                </p>
-              </div>
-
-              <div className="rounded-[10px] border border-[#ebeff5] bg-[#f9fbfd] p-2.5">
-                <p className="text-[8px] font-semibold uppercase text-[#8fa0b6]">
-                  {t("dashboard.assistant.conversation.where")}
-                </p>
-                <p className="mt-1 text-[11px] text-[#8fa0b6]">
-                  {t(
-                    "dashboard.assistant.conversation.processingFromTranscript"
-                  )}
-                </p>
-              </div>
+                return (
+                  <div
+                    key={field.key}
+                    className="rounded-[10px] border border-[#ebeff5] bg-[#f9fbfd] p-2.5"
+                  >
+                    <p className="text-[8px] font-semibold uppercase text-[#8fa0b6]">
+                      {field.label}
+                    </p>
+                    <p
+                      className={`mt-1 text-[11px] ${
+                        value
+                          ? "font-semibold text-[#1f2a3a]"
+                          : "italic text-[#8fa0b6]"
+                      }`}
+                    >
+                      {value || field.fallback}
+                    </p>
+                    {value ? (
+                      <div className="mt-2 h-[2px] rounded-full bg-[#d8e3f5]">
+                        <div className="h-[2px] w-full rounded-full bg-[#3f7de0]" />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
 
               <div className="rounded-[10px] border border-dashed border-[#e3e9f2] bg-[#fbfdff] p-6 text-center text-[9px] text-[#c0c9d6]">
                 {t("dashboard.assistant.conversation.moreFields")}
