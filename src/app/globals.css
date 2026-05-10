@@ -71,7 +71,7 @@ body {
 .dashboard-safety-rail {
   --dashboard-sidebar-width: 72px;
   --dashboard-shell-padding: 0.5rem;
-  --dashboard-content-max-width: 1184px;
+  --dashboard-content-max-width: 1360px;
   --dashboard-content-inline-padding: 0.5rem;
   --dashboard-safety-rail-x-offset: -12px;
   bottom: 5.25rem;

@@ -321,7 +321,7 @@ function EmergencyToolbar() {
   };
 
   return (
-    <div className="mx-auto flex max-w-[1120px] flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
+    <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
       <div className="flex flex-wrap items-center gap-2">
         <a
           href={`tel:${EMERGENCY_NUMBER}`}
@@ -403,12 +403,10 @@ export function DashboardShell({
 
   const sectionSizeClass =
     activeTab === "notifications"
-      ? "xl:mx-auto xl:min-h-[749px] xl:w-full xl:max-w-[1184px]"
+      ? "xl:mx-auto xl:min-h-[calc(100dvh-2rem)] xl:w-full xl:max-w-[1360px]"
       : homeView === "assistantconversation"
         ? "xl:h-[calc(100dvh-2rem)] xl:min-h-0"
-      : activeTab === "home" && isIncidentBuilderView
-        ? "xl:min-h-[868.68px]"
-        : "xl:min-h-[1498px]";
+      : "xl:min-h-[calc(100dvh-2rem)]";
 
   return (
     <div

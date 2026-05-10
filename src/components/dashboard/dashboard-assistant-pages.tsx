@@ -250,7 +250,7 @@ function SafeSpeakAssistantConversationPage({
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 xl:flex-1 xl:overflow-hidden">
-      <div className="mx-auto flex w-full max-w-[1184px] flex-col xl:h-full xl:min-h-0">
+      <div className="mx-auto flex w-full max-w-[1360px] flex-col xl:h-full xl:min-h-0">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           <Link
             href="/dashboard?view=assistant"
