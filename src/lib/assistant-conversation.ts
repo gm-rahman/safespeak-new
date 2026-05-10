@@ -10,9 +10,7 @@ export type AssistantConversationMessage = {
 };
 
 export type AssistantTimeline = {
-  who: string;
-  what: string;
-  where: string;
+  [key: string]: string;
 };
 
 export type TimelineAssistantResponse = {
