@@ -1026,9 +1026,13 @@ function SafeSpeakAssistantConversationPage({
               ))}
 
               {isSending ? (
-                <div className="inline-flex items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
-                  <IconLoader2 size={12} className="animate-spin" />
-                  {t("dashboard.assistant.conversation.updating")}
+                <div className="inline-flex w-fit items-center rounded-[18px] rounded-tl-[8px] bg-white px-3 py-2 shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                  <span className="sr-only">Assistant is typing</span>
+                  <div className="flex items-center gap-1" aria-hidden="true">
+                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:0ms]" />
+                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:150ms]" />
+                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:300ms]" />
+                  </div>
                 </div>
               ) : null}
 
