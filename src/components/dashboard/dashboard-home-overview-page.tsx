@@ -29,6 +29,7 @@ function HomeDashboardPage() {
   const scamShieldHref = getDashboardCardEntryHref("scamshield");
   const resourcesHref = getDashboardCardEntryHref("resources");
   const microCardsHref = getDashboardCardEntryHref("micro_cards");
+  const localIntelligenceHref = getDashboardCardEntryHref("local_intelligence");
 
   return (
     <div className="mx-auto w-full max-w-[1184px] px-2 pb-4 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -37,6 +38,7 @@ function HomeDashboardPage() {
           <Link
             href={domesticViolenceHref}
             className="notch-bl duration-[250ms] group relative block overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-3 lg:h-[280px] xl:h-[340px] xl:rounded-[30px] xl:border-[0.99px] 2xl:h-[390.4221px]"
+            aria-label="Open Domestic Violence support and report guidance"
           >
             <Image
               src={topLeft}
@@ -49,6 +51,7 @@ function HomeDashboardPage() {
           <Link
             href={generalAssistantHref}
             className="notch-bl duration-[250ms] group relative block overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-6 lg:h-[280px] xl:h-[340px] xl:rounded-[30px] xl:border-[0.99px] 2xl:h-[390.4221px]"
+            aria-label="Talk with SafeSpeak"
           >
             <Image
               alt="Let's talk with SafeSpeak"
@@ -61,6 +64,7 @@ function HomeDashboardPage() {
           <Link
             href={racialAbuseHref}
             className="notch-bl duration-[250ms] group relative block overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-3 lg:h-[280px] xl:h-[340px] xl:rounded-[30px] xl:border-[0.99px] 2xl:h-[390.4221px]"
+            aria-label="Open Racial Abuse support and report guidance"
           >
             <Image
               src={topRight}
@@ -73,6 +77,7 @@ function HomeDashboardPage() {
           <Link
             href={cyberScamHref}
             className="duration-[250ms] group relative mr-2 block w-full overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-6 lg:aspect-[547/407] xl:rounded-[30px] xl:rounded-tr-[64px] xl:border-[0.99px]"
+            aria-label="Open Cyber Scam intake"
           >
             <Image
               alt="Cyber scam"
@@ -85,6 +90,7 @@ function HomeDashboardPage() {
           <Link
             href={migrantChallengesHref}
             className="duration-[250ms] group relative ml-2 block w-full overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-6 lg:aspect-[547/407] xl:rounded-[30px] xl:rounded-tl-[64px] xl:border-[0.99px]"
+            aria-label="Open Migrant Challenges support guidance"
           >
             <Image
               alt="Migrant challenges"
@@ -100,6 +106,7 @@ function HomeDashboardPage() {
             <Link
               href={scamShieldHref}
               className="relative block min-h-[190px] w-full overflow-hidden rounded-[24px] border border-white/20 bg-[#004D73] p-5 transition hover:brightness-110 sm:min-h-[220px] sm:p-6 xl:h-[220px] xl:rounded-[40px] 2xl:h-[238px]"
+              aria-label="Open ScamShield intake"
             >
               <p className="text-[18px] font-semibold uppercase tracking-[0.18em] text-[#77c6df]">
                 {t("dashboard.home.cyber")}
@@ -132,6 +139,7 @@ function HomeDashboardPage() {
             <Link
               href={resourcesHref}
               className="relative block min-h-[190px] w-full overflow-hidden rounded-[24px] bg-[#FFC107] p-5 transition hover:brightness-105 sm:min-h-[220px] sm:p-6 xl:h-[220px] xl:rounded-[40px] 2xl:h-[238px]"
+              aria-label="Open Learn and Resources library"
             >
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#171717]">
                 {t("dashboard.home.legal")}
@@ -151,6 +159,7 @@ function HomeDashboardPage() {
           <Link
             href={microCardsHref}
             className="relative block min-h-[280px] w-full overflow-hidden rounded-[24px] bg-[#FF8F00] px-5 pb-5 pt-5 transition hover:brightness-105 sm:min-h-[360px] sm:px-6 sm:pb-6 sm:pt-[23.25px] xl:h-[440px] xl:rounded-[40px] 2xl:h-[500px]"
+            aria-label="Open Micro-Cards learning page"
           >
             <h4
               className={`${interFont.className} h-[83.75px] w-full pb-2 text-[30px] font-extrabold leading-[37.5px] tracking-[0] text-white`}
@@ -167,7 +176,11 @@ function HomeDashboardPage() {
             </div>
           </Link>
 
-          <article className="min-h-[320px] w-full overflow-hidden rounded-[24px] border border-[#cfd9e5] bg-white p-3 sm:min-h-[420px] sm:p-4 md:col-span-2 xl:col-span-1 xl:h-[440px] xl:rounded-[40px] 2xl:h-[500px]">
+          <Link
+            href={localIntelligenceHref}
+            className="min-h-[320px] w-full overflow-hidden rounded-[24px] border border-[#cfd9e5] bg-white p-3 transition hover:border-[#c0cfdf] hover:shadow-[0_12px_24px_rgba(15,23,42,0.06)] sm:min-h-[420px] sm:p-4 md:col-span-2 xl:col-span-1 xl:h-[440px] xl:rounded-[40px] 2xl:h-[500px]"
+            aria-label="Open Local Intelligence privacy-safe insights"
+          >
             <div className="mb-4 flex items-center justify-between">
               <h4 className="text-sm font-bold text-[#334155]">
                 {t("dashboard.home.localIntelligence")}
@@ -200,18 +213,75 @@ function HomeDashboardPage() {
                       {t("dashboard.home.activeZonesNearby")}
                     </p>
                   </div>
-                  <button className="rounded-full bg-[#f59e0b] px-3 py-1 text-[10px] font-bold text-white">
+                  <span className="rounded-full bg-[#f59e0b] px-3 py-1 text-[10px] font-bold text-white">
                     {t("dashboard.home.details")}
-                  </button>
+                  </span>
                 </div>
               </div>
             </div>
-          </article>
+          </Link>
         </div>
+
+        <section className="mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <article className="rounded-[24px] border border-[#dce5f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+              Quick actions
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {[
+                {
+                  label: "Report New Incident",
+                  href: { pathname: "/dashboard", query: { view: "reportsubmissiondetails" } },
+                },
+                {
+                  label: "Check for Scams",
+                  href: { pathname: "/dashboard", query: { view: "scamshieldintake" } },
+                },
+                {
+                  label: "Find Support",
+                  href: { pathname: "/dashboard/explorer" },
+                },
+                {
+                  label: "Learn Something New",
+                  href: { pathname: "/dashboard", query: { view: "resources" } },
+                },
+              ].map((action) => (
+                <Link
+                  key={action.label}
+                  href={action.href}
+                  className="rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] px-4 py-4 text-sm font-bold text-[#1f2a3a] transition hover:border-[#c8d9ec] hover:bg-[#f4f9ff]"
+                >
+                  {action.label}
+                </Link>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-[24px] border border-[#dce5f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+              Activity and recommendations
+            </p>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] px-4 py-3">
+                <p className="text-sm font-bold text-[#1f2a3a]">Activity summary</p>
+                <p className="mt-1 text-[12px] leading-[1.6] text-[#60728a]">
+                  Recent report and support activity appears here when backend data is available. No fake counts are shown.
+                </p>
+              </div>
+              <div className="rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] px-4 py-3">
+                <p className="text-sm font-bold text-[#1f2a3a]">Recommendations</p>
+                <p className="mt-1 text-[12px] leading-[1.6] text-[#60728a]">
+                  Start with a safe report, browse support, or use Learn & Resources if you want information without saving anything yet.
+                </p>
+              </div>
+            </div>
+          </article>
+        </section>
 
         <Link
           href={generalAssistantHref}
           className="absolute left-1/2 z-20 hidden -translate-x-1/2 lg:top-[clamp(176px,18vw,195px)] lg:block lg:h-[clamp(184px,19vw,236px)] lg:w-[clamp(184px,19vw,220px)] xl:top-[245px] xl:h-[248px] xl:w-[248px] 2xl:top-[279px] 2xl:h-[270px] 2xl:w-[270px]"
+          aria-label="Talk with SafeSpeak"
         >
           <AssistantSphereAnimated
             imageSrc={sphereAdv}

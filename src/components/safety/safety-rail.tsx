@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconLanguage, IconShieldFilled } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
@@ -15,8 +16,6 @@ import {
   triggerQuickExit,
 } from "@/lib/safety";
 
-import { SmartDialerModal } from "./smart-dialer-modal";
-
 function isHiddenRoute(pathname: string): boolean {
   return pathname.startsWith("/neutral");
 }
@@ -29,7 +28,6 @@ export function SafetyRail() {
   const pathname = usePathname();
   const { i18n } = useTranslation();
   const [isCovertModeActive, setIsCovertModeActive] = useState(false);
-  const [isSmartDialerOpen, setIsSmartDialerOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -105,6 +103,7 @@ export function SafetyRail() {
             <a
               href={`tel:${EMERGENCY_NUMBER}`}
               className="inline-flex h-9 items-center justify-center rounded-full bg-[#dc2626] px-2 text-[11px] font-bold uppercase tracking-[0.04em] text-white sm:h-10 sm:px-3 sm:text-[10px] sm:tracking-[0.08em]"
+              aria-label="Call emergency services on 000"
             >
               <span className="hidden sm:inline">Emergency </span>
               {EMERGENCY_NUMBER}
@@ -117,17 +116,18 @@ export function SafetyRail() {
               <span className="truncate sm:hidden">Respect</span>
               <span className="hidden sm:inline">{SUPPORT_NUMBER_DISPLAY}</span>
             </a>
-            <button
-              type="button"
-              onClick={() => setIsSmartDialerOpen(true)}
-              className="hidden h-10 items-center rounded-full bg-[#1d4ed8] px-3 text-[10px] font-bold uppercase tracking-[0.08em] text-white sm:inline-flex"
+            <Link
+              href="/dashboard?view=smartdialler"
+              className="inline-flex h-9 items-center justify-center rounded-full bg-[#1d4ed8] px-2 text-[11px] font-bold uppercase tracking-[0.04em] text-white sm:h-10 sm:px-3 sm:text-[10px] sm:tracking-[0.08em]"
+              aria-label="Open Smart Dialler"
             >
               Smart Dialler
-            </button>
+            </Link>
             <button
               type="button"
               onClick={triggerQuickExit}
               className="inline-flex h-9 items-center justify-center rounded-full bg-[#111827] px-2 text-[11px] font-bold uppercase tracking-[0.04em] text-white sm:h-10 sm:px-3 sm:text-[10px] sm:tracking-[0.08em]"
+              aria-label="Quick Exit to neutral page"
             >
               Exit
             </button>
@@ -147,11 +147,6 @@ export function SafetyRail() {
           </div>
         </div>
       </aside>
-
-      <SmartDialerModal
-        isOpen={isSmartDialerOpen}
-        onClose={() => setIsSmartDialerOpen(false)}
-      />
     </>
   );
 }

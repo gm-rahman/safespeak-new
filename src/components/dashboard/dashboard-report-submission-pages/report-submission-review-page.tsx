@@ -371,8 +371,7 @@ function ReportSubmissionReviewPage() {
               Evidence Review
             </h2>
             <p className="max-w-[430px] text-center text-[12px] leading-[16px] text-[#6f7f93]">
-              Our AI has structured your narrative. Please verify the timeline
-              events below before saving the report for review.
+              If AI-assisted structuring was used, verify the timeline below before saving this prepared report for review.
             </p>
           </header>
 

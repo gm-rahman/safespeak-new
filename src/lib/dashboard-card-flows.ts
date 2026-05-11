@@ -10,6 +10,7 @@ export type DashboardCardFlowId =
   | "general_assistant"
   | "scamshield"
   | "resources"
+  | "local_intelligence"
   | "micro_cards"
   | "workplace_issue"
   | "school_issue"
@@ -210,7 +211,18 @@ const dashboardCardFlows: Record<DashboardCardFlowId, DashboardCardFlow> = {
     id: "resources",
     title: "Resources",
     flowType: "learning",
-    targetView: "microeducation",
+    targetView: "resources",
+    safetyLevel: "low",
+    nextActions: [],
+    disclaimers: [
+      "Browse learning resources without starting an AI or report flow.",
+    ],
+  },
+  local_intelligence: {
+    id: "local_intelligence",
+    title: "Local Intelligence",
+    flowType: "learning",
+    targetView: "localintelligence",
     safetyLevel: "low",
     nextActions: [],
     disclaimers: [],
@@ -313,6 +325,20 @@ export function getDashboardCardEntryHref(id: DashboardCardFlowId): UrlObject {
     return {
       pathname: "/dashboard",
       query: { view: "microeducation", topic: flow.id },
+    };
+  }
+
+  if (flow.targetView === "resources") {
+    return {
+      pathname: "/dashboard",
+      query: { view: "resources", topic: flow.id },
+    };
+  }
+
+  if (flow.targetView === "localintelligence") {
+    return {
+      pathname: "/dashboard",
+      query: { view: "localintelligence", topic: flow.id },
     };
   }
 

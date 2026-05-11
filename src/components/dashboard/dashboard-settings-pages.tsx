@@ -11,6 +11,7 @@ import {
   IconCompassFilled,
   IconHomeFilled,
   IconMicrophone,
+  IconPhoneFilled,
   IconSearch,
   IconSettingsFilled,
   IconShieldCheck,
@@ -489,6 +490,66 @@ export function SettingsPage() {
           </div>
         </article>
 
+        <article className="mt-4 rounded-[22px] border border-[#dbe4f0] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-[24px] font-bold leading-tight text-[#1f2a3a]">
+                My SafeSpeak
+              </h3>
+              <p className="mt-1 max-w-[720px] text-sm text-[#6a7d94]">
+                Manage profile details, consent history, reports, language and cultural preferences, and data control requests from one place.
+              </p>
+            </div>
+            <Link
+              href="/dashboard?view=smartdialler"
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-[#0f5d9f] px-5 text-sm font-bold text-white"
+            >
+              <IconPhoneFilled size={14} />
+              Open Smart Dialler
+            </Link>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[
+              {
+                title: "Profile management",
+                body: "Language, cultural, faith, community, and accessibility preferences are available above.",
+              },
+              {
+                title: "Reports center",
+                body: "Review saved or prepared reports and continue only when you choose.",
+                href: { pathname: "/dashboard/reports" },
+              },
+              {
+                title: "Consent history",
+                body: `${consentHistoryCount} consent history entries are currently available from the backend.`,
+              },
+              {
+                title: "Data export and deletion",
+                body: "A full backend self-service data export/deletion workflow is not fully implemented yet, so this remains a safe placeholder.",
+              },
+            ].map((item) => (
+              <article
+                key={item.title}
+                className="rounded-[18px] border border-[#dbe4f0] bg-[#f8fbff] p-4"
+              >
+                <p className="text-sm font-bold text-[#1f2a3a]">{item.title}</p>
+                <p className="mt-2 text-xs leading-[1.6] text-[#6a7d94]">
+                  {item.body}
+                </p>
+                {item.href ? (
+                  <Link
+                    href={item.href}
+                    className="mt-3 inline-flex text-xs font-bold text-[#0f5d9f]"
+                  >
+                    Open
+                  </Link>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </article>
+
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           <SettingsQuickCard
             icon={<IconCompassFilled size={17} />}
@@ -715,7 +776,7 @@ export function SettingsPrivacyPolicyPage() {
               href="/dashboard/settings"
               className="inline-flex h-10 items-center rounded-lg bg-[#ef4444] px-5 text-xs font-bold text-white transition hover:bg-[#dc2626]"
             >
-              {t("dashboard.settings.acceptContinue")}
+              Return to settings
             </Link>
           </div>
         </article>

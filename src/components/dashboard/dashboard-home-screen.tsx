@@ -26,6 +26,25 @@ const MicroEducationPage = dynamic(
     ),
   { loading: DashboardViewFallback }
 );
+const ResourcesPage = dynamic(
+  () =>
+    import("./dashboard-safety-pages").then((module) => module.ResourcesPage),
+  { loading: DashboardViewFallback }
+);
+const LocalIntelligencePage = dynamic(
+  () =>
+    import("./dashboard-safety-pages").then(
+      (module) => module.LocalIntelligencePage
+    ),
+  { loading: DashboardViewFallback }
+);
+const SmartDiallerPage = dynamic(
+  () =>
+    import("./dashboard-safety-pages").then(
+      (module) => module.SmartDiallerPage
+    ),
+  { loading: DashboardViewFallback }
+);
 const MicroCardsPage = dynamic(
   () =>
     import("./dashboard-microcards-pages").then(
@@ -171,7 +190,13 @@ export default function DashboardHomeScreen({
   assistantTopic?: DashboardCardFlowId;
 }) {
   const page =
-    homeView === "microeducation" ? (
+    homeView === "resources" ? (
+      <ResourcesPage />
+    ) : homeView === "localintelligence" ? (
+      <LocalIntelligencePage />
+    ) : homeView === "smartdialler" ? (
+      <SmartDiallerPage />
+    ) : homeView === "microeducation" ? (
       <MicroEducationPage />
     ) : homeView === "microcards" ? (
       <MicroCardsPage />

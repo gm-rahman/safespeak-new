@@ -2,6 +2,9 @@ export type DashboardTab = "home" | "explorer" | "notifications" | "settings";
 
 export type HomeView =
   | "overview"
+  | "resources"
+  | "localintelligence"
+  | "smartdialler"
   | "microeducation"
   | "microcards"
   | "microcarddetail"

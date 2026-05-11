@@ -639,7 +639,7 @@ function ReportSubmissionEvidencePage() {
                 Attached Files
               </h3>
               <p className="mt-0.5 text-[10px] text-[#8ea0b8]">
-                Upload evidence to support your report.
+                Upload evidence only when you choose. Files stay local-only unless cloud sync consent is granted.
               </p>
             </div>
             <span className="inline-flex h-5 items-center rounded-full bg-[#fff2e6] px-2.5 text-[9px] font-bold text-[#ff8f00]">
@@ -815,6 +815,37 @@ function ReportSubmissionEvidencePage() {
             </article>
           </div>
 
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <article className="rounded-[16px] border border-[#dfe7f2] bg-white p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Evidence storage status
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-[14px] border border-[#e3ebf5] bg-[#f8fbff] px-3 py-3">
+                  <p className="text-[11px] font-bold text-[#1f2a3a]">Local-only evidence</p>
+                  <p className="mt-1 text-[10px] leading-5 text-[#60728a]">
+                    Metadata and narrative stay in this browser session until you explicitly enable cloud sync.
+                  </p>
+                </div>
+                <div className="rounded-[14px] border border-[#e3ebf5] bg-[#f8fbff] px-3 py-3">
+                  <p className="text-[11px] font-bold text-[#1f2a3a]">Cloud-synced evidence</p>
+                  <p className="mt-1 text-[10px] leading-5 text-[#60728a]">
+                    Files upload to the Evidence Vault only after explicit cloud sync consent and a real draft id are available.
+                  </p>
+                </div>
+              </div>
+            </article>
+
+            <article className="rounded-[16px] border border-[#dfe7f2] bg-white p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Audio transcription consent
+              </p>
+              <p className="mt-2 text-[11px] leading-5 text-[#6d7f96]">
+                Audio transcription requires explicit consent before any transcript is generated. Voice-note uploads can stay attached without transcription if you prefer.
+              </p>
+            </article>
+          </div>
+
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <article className="rounded-[16px] border border-dashed border-[#ffbf7d] bg-white p-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#d97706]">
@@ -924,7 +955,7 @@ function ReportSubmissionEvidencePage() {
                 }
                 className="inline-flex h-10 min-w-[168px] items-center justify-center rounded-full bg-[#ff8f00] px-8 text-[11px] font-bold text-white shadow-[0_8px_18px_rgba(255,143,0,0.32)]"
               >
-                Continue
+                Continue to review
               </Link>
             </div>
           </div>

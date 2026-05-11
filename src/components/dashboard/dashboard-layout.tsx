@@ -11,6 +11,7 @@ import {
   IconBellFilled,
   IconBook2,
   IconChevronDown,
+  IconPhoneFilled,
   IconCompassFilled,
   IconFolderFilled,
   IconHomeFilled,
@@ -101,6 +102,9 @@ const SCAMSHIELD_VIEWS: HomeView[] = [
 ];
 
 const LEARNING_VIEWS: HomeView[] = [
+  "resources",
+  "localintelligence",
+  "smartdialler",
   "microeducation",
   "microcards",
   "microcarddetail",
@@ -166,7 +170,7 @@ function Sidebar({
         <NavItem
           href={{
             pathname: "/dashboard",
-            query: { view: "microeducation" },
+            query: { view: "resources" },
           }}
           icon={<IconBook2 size={13} stroke={2.2} />}
           label="Learn & Resources"
@@ -277,7 +281,7 @@ function MobileDashboardNav({
       <MobileNavItem
         href={{
           pathname: "/dashboard",
-          query: { view: "microeducation" },
+          query: { view: "resources" },
         }}
         icon={<IconBook2 size={16} stroke={2.2} />}
         label="Learn & Resources"
@@ -333,10 +337,23 @@ function EmergencyToolbar() {
 
         <a
           href={`tel:${SUPPORT_NUMBER_DIAL}`}
+          aria-label={`Call ${SUPPORT_NUMBER_DISPLAY}`}
           className="inline-flex h-11 items-center rounded-full bg-[#0f5d9f] px-4 text-[10px] font-bold uppercase tracking-[0.08em] text-white"
         >
           {SUPPORT_NUMBER_DISPLAY}
         </a>
+
+        <Link
+          href={{
+            pathname: "/dashboard",
+            query: { view: "smartdialler" },
+          }}
+          className="inline-flex h-11 items-center gap-1.5 rounded-full bg-[#14532d] px-4 text-[10px] font-bold uppercase tracking-[0.08em] text-white"
+          aria-label="Open Smart Dialler"
+        >
+          <IconPhoneFilled size={12} />
+          Smart Dialler
+        </Link>
 
         <button
           type="button"
@@ -352,6 +369,7 @@ function EmergencyToolbar() {
           type="button"
           onClick={triggerQuickExit}
           className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-full bg-[#de3838] px-5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-white transition hover:bg-[#cf3131]"
+          aria-label="Quick Exit to neutral page"
         >
           {t("dashboard.toolbar.quickExit")}
           <IconFolderFilled size={12} />
@@ -383,24 +401,6 @@ export function DashboardShell({
   homeView?: HomeView;
   children: ReactNode;
 }) {
-  const isIncidentBuilderView =
-    homeView === "assistant" ||
-    homeView === "assistantconversation" ||
-    homeView === "scamshieldintake" ||
-    homeView === "scamshieldrisk" ||
-    homeView === "scamshieldassets" ||
-    homeView === "scamshieldagency" ||
-    homeView === "reportshistory" ||
-    homeView === "reportoverview" ||
-    homeView === "reportsubmissionsupport" ||
-    homeView === "reportsubmissionrecommendations" ||
-    homeView === "reportsubmissionhistory" ||
-    homeView === "reportsubmissiondetailedexplanations" ||
-    homeView === "reportsubmissiondetails" ||
-    homeView === "reportsubmissionevidence" ||
-    homeView === "reportsubmissionreview" ||
-    homeView === "reportsubmissionsuccess";
-
   const sectionSizeClass =
     activeTab === "notifications"
       ? "xl:mx-auto xl:min-h-[calc(100dvh-2rem)] xl:w-full xl:max-w-[1360px]"

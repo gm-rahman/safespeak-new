@@ -180,7 +180,7 @@ function ReportSubmissionSuccessPage() {
                 className="inline-flex h-[56px] items-center justify-center gap-2 text-[11px] font-semibold text-[#ff8f00]"
               >
                 <IconShare size={13} />
-                Share Report
+                Review sharing options
               </button>
             </div>
           </div>

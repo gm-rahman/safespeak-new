@@ -3,7 +3,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 
-import { IconChevronLeft } from "@tabler/icons-react";
+import { IconChevronLeft, IconPhoneFilled, IconShieldFilled } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
@@ -86,6 +86,27 @@ function ReportSubmissionFrame({
                   total: reportSubmissionSteps.length,
                 })}
               </p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-[14px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+                  <IconShieldFilled size={12} />
+                  Safety-first report flow
+                </p>
+                <p className="mt-1 text-[11px] leading-[1.55] text-[#60728a]">
+                  Nothing is auto-submitted on entry. Reports are created, updated, or prepared only when you explicitly continue or save.
+                </p>
+              </div>
+              <Link
+                href="/dashboard?view=smartdialler"
+                className="inline-flex h-9 items-center gap-1 rounded-full border border-[#d7e1ee] px-4 text-[11px] font-semibold text-[#334155]"
+              >
+                <IconPhoneFilled size={12} />
+                Smart Dialler
+              </Link>
             </div>
           </div>
 

@@ -55,6 +55,12 @@ export default async function DashboardPage({
 
   if (view === "microeducation") {
     homeView = "microeducation";
+  } else if (view === "resources") {
+    homeView = "resources";
+  } else if (view === "localintelligence") {
+    homeView = "localintelligence";
+  } else if (view === "smartdialler") {
+    homeView = "smartdialler";
   } else if (view === "microcards") {
     homeView = "microcards";
   } else if (view === "microcarddetail") {

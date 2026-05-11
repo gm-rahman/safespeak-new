@@ -267,6 +267,20 @@ export function ExplorerPage({
             <p className="mt-2 text-[12px] leading-[1.6] text-[#60728a]">
               {contextCopy.body}
             </p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <Link
+                href="/dashboard?view=smartdialler"
+                className="inline-flex h-10 items-center justify-center rounded-full bg-[#0f5d9f] px-4 text-[11px] font-bold text-white"
+              >
+                Open Smart Dialler
+              </Link>
+              <Link
+                href="/dashboard?view=reportsubmissiondetails"
+                className="inline-flex h-10 items-center justify-center rounded-full border border-[#d7e1ee] px-4 text-[11px] font-semibold text-[#334155]"
+              >
+                Start safe report
+              </Link>
+            </div>
           </article>
         ) : null}
 
@@ -308,6 +322,45 @@ export function ExplorerPage({
             ))}
           </div>
         ) : null}
+
+        <section className="mt-5 grid gap-3 lg:grid-cols-2">
+          <article className="rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+              Support sections
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {[
+                "Emergency Support",
+                "Legal Support",
+                "Community Support",
+                "Advocate Matching",
+                "Safety Planning",
+              ].map((section) => (
+                <div
+                  key={section}
+                  className="rounded-[14px] border border-[#e3ebf5] bg-[#f8fbff] px-3 py-3 text-[11px] font-semibold text-[#334155]"
+                >
+                  {section}
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+              Warm referral consent
+            </p>
+            <p className="mt-2 text-[12px] leading-[1.6] text-[#60728a]">
+              Support recommendations can come from the backend. Any warm referral still requires explicit consent before details are shared externally.
+            </p>
+            <Link
+              href="/dashboard/settings"
+              className="mt-4 inline-flex h-10 items-center rounded-full border border-[#d7e1ee] px-4 text-[11px] font-semibold text-[#334155]"
+            >
+              Review consent settings
+            </Link>
+          </article>
+        </section>
 
         {shouldShowFallbackResources ? (
           <div className="mx-auto mt-5 max-w-[760px] rounded-[16px] border border-[#dce6f2] bg-white px-4 py-3 text-[11px] text-[#60728a]">
