@@ -1,6 +1,10 @@
 import { apiRequest } from "@/lib/api";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import { consentRequirements, ensureConsent } from "@/lib/consent";
+import {
+  ConsentRequiredError,
+  consentRequirements,
+  ensureConsent,
+} from "@/lib/consent";
 import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
 const MAX_TIMELINE_CONVERSATION_MESSAGES = 100;
 
@@ -52,6 +56,96 @@ const wait = (milliseconds: number): Promise<void> =>
     window.setTimeout(resolve, milliseconds);
   });
 
+const TIMELINE_FIELD_ORDER = [
+  "who",
+  "what",
+  "where",
+  "when",
+  "how",
+  "witnesses",
+  "impact",
+  "evidence",
+] as const;
+
+function pickNextTimelineQuestion(timeline: AssistantTimeline): string {
+  const nextMissingField = TIMELINE_FIELD_ORDER.find(
+    (field) => !timeline[field]?.trim()
+  );
+
+  switch (nextMissingField) {
+    case "who":
+      return "Who was involved in this incident?";
+    case "what":
+      return "What happened?";
+    case "where":
+      return "Where did this happen?";
+    case "when":
+      return "When did this happen?";
+    case "how":
+      return "How did it happen?";
+    case "witnesses":
+      return "Were there any witnesses or other people who saw what happened?";
+    case "impact":
+      return "How has this affected you so far?";
+    case "evidence":
+      return "Do you have any messages, photos, audio, or other evidence you want to keep with this report?";
+    default:
+      return "What would you like to add next?";
+  }
+}
+
+function buildConsentBypassTimeline(
+  message: string,
+  timeline: AssistantTimeline
+): AssistantTimeline {
+  const nextTimeline = { ...timeline };
+  const trimmedMessage = message.trim();
+
+  if (!trimmedMessage) {
+    return nextTimeline;
+  }
+
+  if (!nextTimeline.what) {
+    nextTimeline.what = trimmedMessage;
+    return nextTimeline;
+  }
+
+  const nextMissingField = TIMELINE_FIELD_ORDER.find(
+    (field) => !nextTimeline[field]?.trim()
+  );
+
+  if (nextMissingField) {
+    nextTimeline[nextMissingField] = trimmedMessage;
+  }
+
+  return nextTimeline;
+}
+
+function buildConsentBypassResponse(input: {
+  message: string;
+  timeline: AssistantTimeline;
+}): TimelineAssistantResponse {
+  const nextTimeline = buildConsentBypassTimeline(input.message, input.timeline);
+
+  return {
+    assistantMessage:
+      "I can keep helping with a normal conversation while AI processing stays off.",
+    nextQuestion: pickNextTimelineQuestion(nextTimeline),
+    timeline: nextTimeline,
+    readyForSubmission: false,
+    confidence: "low",
+    disclaimer:
+      "SafeSpeak is continuing in information-only mode without AI processing. Nothing is submitted automatically.",
+    citations: [],
+    rag: {
+      used: false,
+      unavailable: false,
+      resultCount: 0,
+    },
+    reviewStatus: "consent_not_granted",
+  };
+}
+
 export async function getAssistantAuthHeaders(): Promise<HeadersInit> {
   return getSessionAwareAuthHeaders();
 }
@@ -69,7 +163,15 @@ export async function sendTimelineAssistantMessage(input: {
   };
   const headers = await getAssistantAuthHeaders();
 
-  await ensureConsent(consentRequirements.aiAssistant, headers);
+  try {
+    await ensureConsent(consentRequirements.aiAssistant, headers);
+  } catch (error) {
+    if (error instanceof ConsentRequiredError) {
+      return buildConsentBypassResponse(input);
+    }
+
+    throw error;
+  }
 
   let response;
 

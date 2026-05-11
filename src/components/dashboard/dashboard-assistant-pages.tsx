@@ -2,7 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   IconAlertCircle,
@@ -14,14 +22,9 @@ import {
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
-import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import {
-  ConsentRequiredError,
-  grantConsent,
-  type ConsentRequirement,
-} from "@/lib/consent";
+import { ConsentRequiredError } from "@/lib/consent";
 import {
   getDashboardActionHref,
   getDashboardAssistantTopicChips,
@@ -43,6 +46,7 @@ import {
   saveAssistantTriageSource,
 } from "@/lib/assistant-triage";
 import { triggerQuickExit } from "@/lib/safety";
+import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
 import { interFont } from "./dashboard-shared";
 
@@ -146,6 +150,79 @@ function buildAssistantBubbleContent(
   }
 
   return `${trimmedAssistantMessage} ${trimmedNextQuestion}`;
+}
+
+type RecordingErrorCode =
+  | "audio-capture"
+  | "network"
+  | "no-speech"
+  | "not-allowed"
+  | "service-not-allowed";
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+}
+
+type SpeechRecognitionAlternativeLike = {
+  transcript: string;
+};
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  [index: number]: SpeechRecognitionAlternativeLike;
+};
+
+type SpeechRecognitionResultListLike = {
+  length: number;
+  [index: number]: SpeechRecognitionResultLike;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: SpeechRecognitionResultListLike;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+type SpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
+
+function getRecordingErrorMessage(
+  errorCode: RecordingErrorCode,
+  t: (key: string) => string
+): string {
+  switch (errorCode) {
+    case "not-allowed":
+    case "service-not-allowed":
+      return t("dashboard.assistant.speechErrors.permissionDenied");
+    case "audio-capture":
+      return t("dashboard.assistant.speechErrors.noMicrophone");
+    case "no-speech":
+      return t("dashboard.assistant.speechErrors.noSpeech");
+    case "network":
+      return t("dashboard.assistant.speechErrors.network");
+    default:
+      return t("dashboard.assistant.speechErrors.startFailed");
+  }
+}
+
+function getPreferredRecordingMimeType(): string | undefined {
+  const supportedTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+
+  return supportedTypes.find((mimeType) =>
+    MediaRecorder.isTypeSupported(mimeType)
+  );
 }
 
 function getContinueReportSubmissionHref(
@@ -352,7 +429,7 @@ function SafeSpeakAssistantConversationPage({
   initialCategory?: AssistantIncidentCategory;
   initialTopic?: DashboardCardFlowId;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   type ConversationUiMessage = AssistantConversationMessage & {
     responseMeta?: {
       disclaimer?: string;
@@ -394,28 +471,126 @@ function SafeSpeakAssistantConversationPage({
   const [isSending, setIsSending] = useState(
     Boolean(seededMessage) && !existingDraft
   );
-  const [pendingConsentRequirement, setPendingConsentRequirement] =
-    useState<ConsentRequirement | null>(null);
-  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const [isRecordingActive, setIsRecordingActive] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState("");
   const hasSentInitialRef = useRef(false);
   const latestMessagesRef = useRef(messages);
-  const pendingAssistantTurnRef = useRef<{
-    message: string;
-    conversation: AssistantConversationMessage[];
-  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const timelineEndRef = useRef<HTMLDivElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const shouldProcessRecordingRef = useRef(false);
+  const liveRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const liveFinalTranscriptRef = useRef("");
   const [timelineFieldOrder, setTimelineFieldOrder] = useState<string[]>(
     existingDraft?.timelineFieldOrder ?? []
   );
   const continueReportSubmissionHref =
     getContinueReportSubmissionHref(initialCategory);
   const assistantEntryHref = getAssistantEntryHref(initialTopic, initialCategory);
+  const transcriptionLanguage = useMemo(() => {
+    return i18n.resolvedLanguage === "es" || i18n.language === "es"
+      ? "es"
+      : "en";
+  }, [i18n.language, i18n.resolvedLanguage]);
+  const livePreviewLanguage =
+    transcriptionLanguage === "es" ? "es-ES" : "en-US";
 
   useEffect(() => {
     latestMessagesRef.current = messages;
   }, [messages]);
+
+  const cleanupRecording = useCallback(() => {
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+    mediaRecorderRef.current = null;
+  }, []);
+
+  const stopLiveTranscriptPreview = useCallback(() => {
+    if (!liveRecognitionRef.current) {
+      return;
+    }
+
+    liveRecognitionRef.current.onend = null;
+    liveRecognitionRef.current.onresult = null;
+    liveRecognitionRef.current.onerror = null;
+
+    try {
+      liveRecognitionRef.current.stop();
+    } catch {
+      liveRecognitionRef.current.abort();
+    }
+
+    liveRecognitionRef.current = null;
+  }, []);
+
+  const startLiveTranscriptPreview = useCallback(() => {
+    const recognitionCtor =
+      (window as SpeechWindow).SpeechRecognition ??
+      (window as SpeechWindow).webkitSpeechRecognition;
+
+    if (!recognitionCtor) {
+      return;
+    }
+
+    stopLiveTranscriptPreview();
+
+    const recognition = new recognitionCtor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = livePreviewLanguage;
+    recognition.maxAlternatives = 1;
+    liveFinalTranscriptRef.current = "";
+
+    recognition.onresult = (event) => {
+      let finalChunk = "";
+      let interimChunk = "";
+
+      for (
+        let index = event.resultIndex;
+        index < event.results.length;
+        index += 1
+      ) {
+        const result = event.results[index];
+        const transcript = result[0]?.transcript?.trim();
+
+        if (!transcript) {
+          continue;
+        }
+
+        if (result.isFinal) {
+          finalChunk = `${finalChunk} ${transcript}`.trim();
+        } else {
+          interimChunk = `${interimChunk} ${transcript}`.trim();
+        }
+      }
+
+      if (finalChunk) {
+        liveFinalTranscriptRef.current =
+          `${liveFinalTranscriptRef.current} ${finalChunk}`.trim();
+      }
+
+      setLiveTranscript(
+        [liveFinalTranscriptRef.current, interimChunk].filter(Boolean).join(" ")
+      );
+    };
+
+    recognition.onerror = () => {
+      liveRecognitionRef.current = null;
+    };
+
+    liveRecognitionRef.current = recognition;
+
+    try {
+      recognition.start();
+    } catch {
+      liveRecognitionRef.current = null;
+    }
+  }, [livePreviewLanguage, stopLiveTranscriptPreview]);
 
   const conversationMessages = useMemo<AssistantConversationMessage[]>(
     () => messages.map(({ role, content }) => ({ role, content })),
@@ -462,6 +637,18 @@ function SafeSpeakAssistantConversationPage({
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current?.state === "recording") {
+        shouldProcessRecordingRef.current = false;
+        mediaRecorderRef.current.stop();
+      }
+
+      stopLiveTranscriptPreview();
+      cleanupRecording();
+    };
+  }, [cleanupRecording, stopLiveTranscriptPreview]);
+
   const requestAssistantTurn = useCallback(
     async (
       message: string,
@@ -469,11 +656,6 @@ function SafeSpeakAssistantConversationPage({
     ) => {
       setIsSending(true);
       setError(null);
-      setPendingConsentRequirement(null);
-      pendingAssistantTurnRef.current = {
-        message,
-        conversation,
-      };
 
       try {
         const response = await sendTimelineAssistantMessage({
@@ -537,15 +719,7 @@ function SafeSpeakAssistantConversationPage({
             },
           },
         ]);
-        pendingAssistantTurnRef.current = null;
-        setPendingConsentRequirement(null);
       } catch (requestError) {
-        if (requestError instanceof ConsentRequiredError) {
-          setPendingConsentRequirement(requestError.requirement);
-          setError(null);
-          return;
-        }
-
         setError(
           requestError instanceof Error
             ? requestError.message
@@ -572,12 +746,162 @@ function SafeSpeakAssistantConversationPage({
     clearAssistantTriageSource();
   };
 
+  const handleRecordedAudio = useCallback(
+    async (mimeType: string) => {
+      const audioBlob = new Blob(audioChunksRef.current, {
+        type: mimeType || "audio/webm",
+      });
+
+      shouldProcessRecordingRef.current = false;
+      audioChunksRef.current = [];
+      cleanupRecording();
+
+      if (!audioBlob.size) {
+        setIsTranscribing(false);
+        setSpeechError(getRecordingErrorMessage("no-speech", t));
+        return;
+      }
+
+      try {
+        const transcription = await transcribeAssistantVoice(
+          audioBlob,
+          transcriptionLanguage
+        );
+        const transcript = transcription.transcript.trim();
+
+        if (!transcript) {
+          setSpeechError(getRecordingErrorMessage("no-speech", t));
+          return;
+        }
+
+        setSpeechError(null);
+        setInput((currentInput) =>
+          [currentInput.trim(), transcript].filter(Boolean).join(" ")
+        );
+      } catch (recordingError) {
+        if (recordingError instanceof ConsentRequiredError) {
+          setSpeechError("Voice transcription consent is required in Settings.");
+          return;
+        }
+
+        setSpeechError(
+          recordingError instanceof Error
+            ? recordingError.message
+            : getRecordingErrorMessage("network", t)
+        );
+      } finally {
+        setIsTranscribing(false);
+        setLiveTranscript("");
+      }
+    },
+    [cleanupRecording, t, transcriptionLanguage]
+  );
+
+  const startVoiceRecording = useCallback(async () => {
+    if (
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
+      setSpeechError(t("dashboard.assistant.speechErrors.unsupported"));
+      return;
+    }
+
+    setSpeechError(null);
+    setLiveTranscript("");
+    setIsTranscribing(false);
+    audioChunksRef.current = [];
+    shouldProcessRecordingRef.current = true;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getPreferredRecordingMimeType();
+      const mediaRecorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined
+      );
+
+      recordingStreamRef.current = stream;
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onerror = () => {
+        shouldProcessRecordingRef.current = false;
+        setIsRecordingActive(false);
+        setIsTranscribing(false);
+        cleanupRecording();
+        setSpeechError(getRecordingErrorMessage("audio-capture", t));
+      };
+
+      mediaRecorder.onstop = () => {
+        setIsRecordingActive(false);
+
+        if (!shouldProcessRecordingRef.current) {
+          audioChunksRef.current = [];
+          cleanupRecording();
+          return;
+        }
+
+        setIsTranscribing(true);
+        void handleRecordedAudio(
+          mediaRecorder.mimeType || mimeType || "audio/webm"
+        );
+      };
+
+      mediaRecorder.start();
+      startLiveTranscriptPreview();
+      setIsRecordingActive(true);
+    } catch (recordingError) {
+      stopLiveTranscriptPreview();
+      cleanupRecording();
+      const errorCode =
+        recordingError instanceof DOMException &&
+        recordingError.name === "NotAllowedError"
+          ? "not-allowed"
+          : "audio-capture";
+      setSpeechError(getRecordingErrorMessage(errorCode, t));
+    }
+  }, [
+    cleanupRecording,
+    handleRecordedAudio,
+    startLiveTranscriptPreview,
+    stopLiveTranscriptPreview,
+    t,
+  ]);
+
+  const stopVoiceRecording = useCallback(() => {
+    const mediaRecorder = mediaRecorderRef.current;
+
+    stopLiveTranscriptPreview();
+
+    if (!mediaRecorder || mediaRecorder.state === "inactive") {
+      cleanupRecording();
+      setIsRecordingActive(false);
+      return;
+    }
+
+    mediaRecorder.stop();
+  }, [cleanupRecording, stopLiveTranscriptPreview]);
+
+  const toggleVoiceRecording = useCallback(() => {
+    if (isRecordingActive) {
+      stopVoiceRecording();
+      return;
+    }
+
+    void startVoiceRecording();
+  }, [isRecordingActive, startVoiceRecording, stopVoiceRecording]);
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const message = input.trim();
 
-    if (!message || isSending) {
+    if (!message || isSending || isRecordingActive || isTranscribing) {
       return;
     }
 
@@ -594,37 +918,9 @@ function SafeSpeakAssistantConversationPage({
     void requestAssistantTurn(message, nextMessages);
   };
 
-  const handleAllowAssistantConsent = useCallback(async () => {
-    if (!pendingConsentRequirement) {
-      return;
-    }
-
-    setIsGrantingConsent(true);
-    setError(null);
-
-    try {
-      await grantConsent(
-        { process_with_ai: true },
-        pendingConsentRequirement.source
-      );
-      setPendingConsentRequirement(null);
-
-      if (pendingAssistantTurnRef.current) {
-        await requestAssistantTurn(
-          pendingAssistantTurnRef.current.message,
-          pendingAssistantTurnRef.current.conversation
-        );
-      }
-    } catch (grantError) {
-      setError(
-        grantError instanceof Error
-          ? grantError.message
-          : "Consent could not be saved."
-      );
-    } finally {
-      setIsGrantingConsent(false);
-    }
-  }, [pendingConsentRequirement, requestAssistantTurn]);
+  const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setInput(event.target.value);
+  };
 
   const timelineEntries = sortTimelineEntries(timeline, timelineFieldOrder);
   const timelineFieldCount = timelineEntries.length;
@@ -675,67 +971,6 @@ function SafeSpeakAssistantConversationPage({
                   >
                     {message.content}
                   </div>
-                  {message.role === "assistant" && message.responseMeta ? (
-                    <div className="mt-2 rounded-[16px] border border-[#dce6f2] bg-white/92 px-3 py-3 text-[10px] leading-[1.55] text-[#60728a] shadow-[0_8px_18px_rgba(148,163,184,0.1)]">
-                      <p className="font-semibold text-[#42566f]">
-                        {message.responseMeta.disclaimer ??
-                          "SafeSpeak provides general information only."}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {message.responseMeta.confidence ? (
-                          <span className="rounded-full bg-[#eef4ff] px-2 py-1 font-semibold text-[#3f7de0]">
-                            Confidence: {message.responseMeta.confidence}
-                          </span>
-                        ) : null}
-                        {message.responseMeta.pendingHumanReview ? (
-                          <span className="rounded-full bg-[#fff4e5] px-2 py-1 font-semibold text-[#c77700]">
-                            This response may need human review.
-                          </span>
-                        ) : null}
-                      </div>
-                      {message.responseMeta.ragUnavailable ? (
-                        <p className="mt-2 text-[#8b5e3c]">
-                          SafeSpeak does not have enough approved authoritative sources for this answer yet.
-                        </p>
-                      ) : null}
-                      {message.responseMeta.citations?.length ? (
-                        <div className="mt-3 space-y-2">
-                          <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#8fa0b6]">
-                            Sources
-                          </p>
-                          {message.responseMeta.citations.map((citation) => (
-                            <div
-                              key={`${citation.title}-${citation.url ?? citation.sectionRef ?? ""}`}
-                              className="rounded-[12px] border border-[#ebf0f5] bg-[#f8fbff] px-3 py-2"
-                            >
-                              <p className="font-semibold text-[#1f2a3a]">
-                                {citation.title}
-                              </p>
-                              <p className="mt-1 text-[#6d7f96]">
-                                {[
-                                  citation.publisher,
-                                  citation.jurisdiction,
-                                  citation.sectionRef,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" | ")}
-                              </p>
-                              {citation.url ? (
-                                <a
-                                  href={citation.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="mt-1 inline-flex text-[#0f5d9f] underline"
-                                >
-                                  View source
-                                </a>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
                   </div>
                 </div>
               ))}
@@ -754,18 +989,24 @@ function SafeSpeakAssistantConversationPage({
                 </div>
               ) : null}
 
-              {pendingConsentRequirement ? (
-                <ConsentRequiredCard
-                  requirement={pendingConsentRequirement}
-                  isSubmitting={isGrantingConsent}
-                  onAllow={() => {
-                    void handleAllowAssistantConsent();
-                  }}
-                  onDecline={() => {
-                    setPendingConsentRequirement(null);
-                    setIsSending(false);
-                  }}
-                />
+              {speechError ? (
+                <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                  <IconAlertCircle size={12} />
+                  {speechError}
+                </div>
+              ) : null}
+
+              {isRecordingActive || isTranscribing || liveTranscript ? (
+                <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                  {isTranscribing ? (
+                    <IconLoader2 size={12} className="animate-spin" />
+                  ) : (
+                    <IconMicrophone size={12} />
+                  )}
+                  {isTranscribing
+                    ? t("dashboard.assistant.transcribing")
+                    : liveTranscript || t("dashboard.assistant.listening")}
+                </div>
               ) : null}
               <div ref={messagesEndRef} aria-hidden="true" />
               </div>
@@ -779,20 +1020,32 @@ function SafeSpeakAssistantConversationPage({
                 <input
                   type="text"
                   value={input}
-                  onChange={(event) => setInput(event.target.value)}
+                  onChange={handleInputChange}
                   placeholder={t("dashboard.assistant.typeYourResponse")}
                   className="h-11 flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-sm text-[#1f2937] outline-none placeholder:text-[#95a3b8] transition-[background-color,box-shadow,border-color] duration-150 focus:border-white/70 focus:bg-white focus:shadow-[0_8px_22px_rgba(148,163,184,0.12)] focus-visible:outline-none"
                 />
                 <button
                   type="button"
+                  onClick={toggleVoiceRecording}
+                  disabled={isTranscribing}
                   aria-label={t("dashboard.assistant.toggleMicrophone")}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#8b97a8] transition hover:bg-[#f4f7fb]"
+                  aria-pressed={isRecordingActive}
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-[#f4f7fb] ${
+                    isRecordingActive
+                      ? "bg-[#de3838] text-white"
+                      : "text-[#8b97a8]"
+                  } ${isTranscribing ? "cursor-not-allowed opacity-40" : ""}`}
                 >
                   <IconMicrophone size={16} />
                 </button>
                 <button
                   type="submit"
-                  disabled={isSending || !input.trim()}
+                  disabled={
+                    isSending ||
+                    isRecordingActive ||
+                    isTranscribing ||
+                    !input.trim()
+                  }
                   aria-label={t("common.send")}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#f5b44b] text-white shadow-[0_10px_24px_rgba(245,180,75,0.35)] transition hover:bg-[#eea834] disabled:cursor-not-allowed disabled:opacity-45"
                 >
