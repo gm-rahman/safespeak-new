@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api";
-import { consentRequirements, ensureConsent } from "@/lib/consent";
+import { consentRequirements, grantConsent } from "@/lib/consent";
 import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
 
 export type VoiceTranscriptionResult = {
@@ -31,7 +31,11 @@ export async function transcribeAssistantVoice(
 ): Promise<VoiceTranscriptionResult> {
   const headers = await getTranscriptionAuthHeaders();
 
-  await ensureConsent(consentRequirements.audioTranscription, headers);
+  await grantConsent(
+    { transcribe_audio: true },
+    consentRequirements.audioTranscription.source,
+    headers
+  );
 
   const formData = new FormData();
   formData.set("audio", audioBlob, getAudioFileName(audioBlob));

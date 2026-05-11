@@ -18,6 +18,22 @@ type ApiRequestOptions = {
 
 const DEFAULT_API_BASE_URL = "http://localhost:5000/api/v1";
 
+function normalizeApiBaseUrl(value: string): string {
+  const trimmedValue = value.trim().replace(/\/+$/, "");
+
+  try {
+    const url = new URL(trimmedValue);
+
+    if (url.pathname === "" || url.pathname === "/") {
+      url.pathname = "/api/v1";
+    }
+
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return trimmedValue;
+  }
+}
+
 export class ApiRequestError extends Error {
   status: number;
   errors?: unknown[];
@@ -36,7 +52,7 @@ export function getApiBaseUrl(explicit?: string): string {
   // eslint-disable-next-line n/no-process-env
   const value = explicit ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL;
 
-  return value.trim().replace(/\/+$/, "");
+  return normalizeApiBaseUrl(value);
 }
 
 async function parseJsonSafe(response: Response): Promise<unknown> {

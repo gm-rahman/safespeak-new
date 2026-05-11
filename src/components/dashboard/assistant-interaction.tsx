@@ -20,7 +20,6 @@ import {
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
-import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
 import {
   type CapturedReportMetadata,
@@ -29,11 +28,6 @@ import {
   saveReportMetadata,
 } from "@/lib/report-metadata";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import {
-  ConsentRequiredError,
-  grantConsent,
-  type ConsentRequirement,
-} from "@/lib/consent";
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
@@ -126,10 +120,6 @@ export function AssistantInteraction({
   const [isRecordingActive, setIsRecordingActive] = useState(isRecording);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [pendingConsentRequirement, setPendingConsentRequirement] =
-    useState<ConsentRequirement | null>(null);
-  const [pendingAudioBlob, setPendingAudioBlob] = useState<Blob | null>(null);
-  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const [finalTranscript, setFinalTranscript] = useState("");
   const [liveTranscript, setLiveTranscript] = useState("");
   const [isMetadataEnabled, setIsMetadataEnabled] = useState(false);
@@ -152,8 +142,7 @@ export function AssistantInteraction({
   const showTranscriptPanel =
     isRecordingActive ||
     isTranscribing ||
-    Boolean(speechError) ||
-    Boolean(pendingConsentRequirement);
+    Boolean(speechError);
   const transcriptionLanguage = useMemo(() => {
     return i18n.resolvedLanguage === "es" || i18n.language === "es"
       ? "es"
@@ -299,7 +288,6 @@ export function AssistantInteraction({
     }
 
     try {
-      setPendingConsentRequirement(null);
       const transcription = await transcribeAssistantVoice(
         audioBlob,
         transcriptionLanguage
@@ -316,13 +304,6 @@ export function AssistantInteraction({
         [currentMessage.trim(), transcript].filter(Boolean).join(" ")
       );
     } catch (error) {
-      if (error instanceof ConsentRequiredError) {
-        setPendingAudioBlob(audioBlob);
-        setPendingConsentRequirement(error.requirement);
-        setSpeechError(null);
-        return;
-      }
-
       setSpeechError(
         error instanceof Error
           ? error.message
@@ -528,51 +509,6 @@ export function AssistantInteraction({
           )}
         </div>
       )}
-
-      {pendingConsentRequirement ? (
-        <div className={`${recordingSpacingClass} w-full max-w-[520px]`}>
-          <ConsentRequiredCard
-            requirement={pendingConsentRequirement}
-            isSubmitting={isGrantingConsent}
-            onAllow={() => {
-              if (!pendingAudioBlob) {
-                return;
-              }
-
-              void (async () => {
-                setIsGrantingConsent(true);
-
-                try {
-                  await grantConsent(
-                    { transcribe_audio: true },
-                    pendingConsentRequirement.source
-                  );
-                  setPendingConsentRequirement(null);
-                  await handleRecordedAudio(
-                    pendingAudioBlob.type || "audio/webm"
-                  );
-                  setPendingAudioBlob(null);
-                } catch (error) {
-                  setSpeechError(
-                    error instanceof Error
-                      ? error.message
-                      : t("dashboard.assistant.speechErrors.network")
-                  );
-                } finally {
-                  setIsGrantingConsent(false);
-                }
-              })();
-            }}
-            onDecline={() => {
-              setPendingConsentRequirement(null);
-              setPendingAudioBlob(null);
-              setSpeechError(
-                "Voice transcription was not started because consent was not granted."
-              );
-            }}
-          />
-        </div>
-      ) : null}
 
       <div
         className={`${recordingSpacingClass} mb-[188px] w-full max-w-[1120px] sm:mb-[198px] lg:mb-[188px]`}

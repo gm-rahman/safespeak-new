@@ -25,7 +25,6 @@ import { useTranslation } from "react-i18next";
 import sendIcon from "@/assets/sendIcon.svg?url";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import { ConsentRequiredError } from "@/lib/consent";
 import {
   getDashboardActionHref,
   getDashboardAssistantTopicChips,
@@ -776,7 +775,7 @@ function SafeSpeakAssistantConversationPage({
         setIsSending(false);
       }
     },
-    [initialCategory, t, timeline]
+    [initialCategory, timeline]
   );
 
   useEffect(() => {
@@ -829,11 +828,6 @@ function SafeSpeakAssistantConversationPage({
           [currentInput.trim(), transcript].filter(Boolean).join(" ")
         );
       } catch (recordingError) {
-        if (recordingError instanceof ConsentRequiredError) {
-          setSpeechError("Voice transcription consent is required in Settings.");
-          return;
-        }
-
         setSpeechError(
           recordingError instanceof Error
             ? recordingError.message
