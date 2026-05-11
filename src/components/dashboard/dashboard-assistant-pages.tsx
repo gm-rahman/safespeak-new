@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ChangeEvent,
   FormEvent,
@@ -260,6 +261,27 @@ function getAssistantEntryHref(
   } as const;
 }
 
+function hasActiveAssistantDraftForScope(input: {
+  topic?: DashboardCardFlowId;
+  incidentCategory?: AssistantIncidentCategory;
+}) {
+  const draft = getAssistantConversationDraft({
+    topic: input.topic,
+    incidentCategory: input.incidentCategory,
+  });
+
+  if (!draft) {
+    return false;
+  }
+
+  const hasUserMessage = draft.messages.some((message) => message.role === "user");
+  const hasTimelineContent = Object.values(draft.timeline).some(
+    (value) => value.trim().length > 0
+  );
+
+  return hasUserMessage || hasTimelineContent;
+}
+
 function SafeSpeakAssistantPage({
   isRecording = false,
   initialCategory,
@@ -270,10 +292,57 @@ function SafeSpeakAssistantPage({
   initialTopic?: DashboardCardFlowId;
 }) {
   const { t } = useTranslation();
+  const router = useRouter();
+  const [isCheckingDraft, setIsCheckingDraft] = useState(true);
+
+  useEffect(() => {
+    if (initialTopic || initialCategory) {
+      if (
+        hasActiveAssistantDraftForScope({
+          topic: initialTopic,
+          incidentCategory: initialCategory,
+        })
+      ) {
+        const query = new URLSearchParams({
+          view: "assistantconversation",
+        });
+
+        if (initialTopic) {
+          query.set("topic", initialTopic);
+        }
+
+        if (initialCategory) {
+          query.set("category", initialCategory);
+        }
+
+        router.replace(`/dashboard?${query.toString()}`);
+        return;
+      }
+
+      setIsCheckingDraft(false);
+      return;
+    }
+
+    if (!hasActiveAssistantDraftForScope({})) {
+      setIsCheckingDraft(false);
+      return;
+    }
+
+    router.replace("/dashboard?view=assistantconversation");
+  }, [initialCategory, initialTopic, router]);
+
   const handleCancel = () => {
-    clearAssistantConversationDraft();
+    clearAssistantConversationDraft({
+      topic: initialTopic,
+      incidentCategory: initialCategory,
+    });
     clearAssistantTriageSource();
   };
+
+  if (isCheckingDraft) {
+    return null;
+  }
+
   const assistantFlow = initialTopic ? getDashboardCardFlow(initialTopic) : null;
   const assistantTopicChips = getDashboardAssistantTopicChips();
   const startWithTopicHref =
@@ -448,7 +517,10 @@ function SafeSpeakAssistantConversationPage({
   };
   const seededMessage = initialMessage?.trim();
   const seededPrefillMessage = initialPrefillMessage?.trim();
-  const existingDraft = getAssistantConversationDraft();
+  const existingDraft = getAssistantConversationDraft({
+    topic: initialTopic,
+    incidentCategory: initialCategory,
+  });
   const [input, setInput] = useState(seededPrefillMessage ?? "");
   const [timeline, setTimeline] = useState<AssistantTimeline>(
     existingDraft?.timeline ?? emptyTimeline
@@ -608,10 +680,15 @@ function SafeSpeakAssistantConversationPage({
       timeline,
       timelineFieldOrder,
       incidentCategory: initialCategory,
+      topic: initialTopic,
+    }, {
+      topic: initialTopic,
+      incidentCategory: initialCategory,
     });
   }, [
     conversationMessages,
     initialCategory,
+    initialTopic,
     timeline,
     timelineFieldOrder,
   ]);
@@ -742,7 +819,10 @@ function SafeSpeakAssistantConversationPage({
   }, [existingDraft, requestAssistantTurn, seededMessage]);
 
   const handleCancel = () => {
-    clearAssistantConversationDraft();
+    clearAssistantConversationDraft({
+      topic: initialTopic,
+      incidentCategory: initialCategory,
+    });
     clearAssistantTriageSource();
   };
 
