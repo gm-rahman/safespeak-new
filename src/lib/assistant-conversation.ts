@@ -67,6 +67,39 @@ const TIMELINE_FIELD_ORDER = [
   "evidence",
 ] as const;
 
+function getEmpatheticLead(
+  incidentCategory: AssistantIncidentCategory | undefined,
+  message: string
+): string {
+  const normalized = message.trim().toLowerCase();
+
+  if (!normalized) {
+    return "Take your time. I'm here with you.";
+  }
+
+  if (incidentCategory === "domestic_violence") {
+    return "I'm sorry you're dealing with this. We can take it one step at a time.";
+  }
+
+  if (incidentCategory === "racial_abuse") {
+    return "I'm sorry this happened to you. You can share only what feels okay.";
+  }
+
+  if (incidentCategory === "migrant_challenges") {
+    return "I understand this can feel overwhelming. We can go step by step together.";
+  }
+
+  if (incidentCategory === "cyber_scam") {
+    return "I know this can be stressful. Let's go through it calmly together.";
+  }
+
+  if (/\b(wife|husband|partner|family|mother|father|child|children)\b/i.test(normalized)) {
+    return "Thank you for sharing that. I'm here and we can take this slowly.";
+  }
+
+  return "Thank you for sharing that. We can go one step at a time.";
+}
+
 function pickNextTimelineQuestion(timeline: AssistantTimeline): string {
   const nextMissingField = TIMELINE_FIELD_ORDER.find(
     (field) => !timeline[field]?.trim()
@@ -124,18 +157,20 @@ function buildConsentBypassTimeline(
 function buildConsentBypassResponse(input: {
   message: string;
   timeline: AssistantTimeline;
+  incidentCategory?: AssistantIncidentCategory;
 }): TimelineAssistantResponse {
   const nextTimeline = buildConsentBypassTimeline(input.message, input.timeline);
 
   return {
-    assistantMessage:
-      "I can keep helping with a normal conversation while AI processing stays off.",
+    assistantMessage: getEmpatheticLead(
+      input.incidentCategory,
+      input.message
+    ),
     nextQuestion: pickNextTimelineQuestion(nextTimeline),
     timeline: nextTimeline,
     readyForSubmission: false,
     confidence: "low",
-    disclaimer:
-      "SafeSpeak is continuing in information-only mode without AI processing. Nothing is submitted automatically.",
+    disclaimer: "",
     citations: [],
     rag: {
       used: false,
