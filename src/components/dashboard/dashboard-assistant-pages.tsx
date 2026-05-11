@@ -109,26 +109,6 @@ function sortTimelineEntries(
   });
 }
 
-function shouldForceFirstWhoQuestion(message: string): boolean {
-  const normalized = message.trim().toLowerCase();
-
-  if (!normalized) {
-    return false;
-  }
-
-  const greetingOnlyPattern =
-    /^(hi|hello|hey|yo|hola|good morning|good afternoon|good evening|ok|okay|yes|no|help)\b[!.?]*$/i;
-
-  if (greetingOnlyPattern.test(normalized)) {
-    return false;
-  }
-
-  const incidentSignalPattern =
-    /\b(incident|harass|harassment|abuse|assault|hit|slap|threat|violence|unsafe|scam|fraud|report|happened|happen|hurt|attacked)\b/i;
-
-  return incidentSignalPattern.test(normalized) || normalized.split(/\s+/).length >= 5;
-}
-
 function buildAssistantBubbleContent(
   assistantMessage: string,
   nextQuestion: string
@@ -741,20 +721,10 @@ function SafeSpeakAssistantConversationPage({
           timeline,
           incidentCategory: initialCategory,
         });
-        const isFirstFollowUp =
-          conversation.length === 2 &&
-          conversation[0]?.role === "assistant" &&
-          conversation[0]?.content ===
-            t("dashboard.assistant.conversation.botPromptWho") &&
-          conversation[1]?.role === "user" &&
-          shouldForceFirstWhoQuestion(message) &&
-          !initialCategory;
-        const assistantContent = isFirstFollowUp
-          ? t("dashboard.assistant.conversation.botQuestionWho")
-          : buildAssistantBubbleContent(
-              response.assistantMessage ?? "",
-              response.nextQuestion ?? ""
-            );
+        const assistantContent = buildAssistantBubbleContent(
+          response.assistantMessage ?? "",
+          response.nextQuestion ?? ""
+        );
 
         setTimeline((currentTimeline) => {
           const nextTimeline = response.timeline;
