@@ -3,7 +3,11 @@
 import { apiRequest } from "@/lib/api";
 import { ApiRequestError } from "@/lib/api";
 import type { ApiEnvelope } from "@/lib/api";
-import { clearAnonymousSession, getSessionAwareAuthHeaders } from "@/lib/frontend-session";
+import { consentRequirements, ensureConsent } from "@/lib/consent";
+import {
+  clearAnonymousSession,
+  getSessionAwareAuthHeaders,
+} from "@/lib/frontend-session";
 
 export type ReportRecord = {
   _id: string;
@@ -152,7 +156,9 @@ async function reportApiRequest<TData>(
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 401) {
       clearAnonymousSession();
-      const retryHeaders = await getSessionAwareAuthHeaders({ forceNewAnonymous: true });
+      const retryHeaders = await getSessionAwareAuthHeaders({
+        forceNewAnonymous: true,
+      });
 
       return apiRequest<TData>(path, {
         ...options,
@@ -164,7 +170,11 @@ async function reportApiRequest<TData>(
   }
 }
 
-export async function createReport(input: ReportCreateInput): Promise<ReportRecord> {
+export async function createReport(
+  input: ReportCreateInput
+): Promise<ReportRecord> {
+  const headers = await getSessionAwareAuthHeaders();
+  await ensureConsent(consentRequirements.reportStorage, headers);
   const response = await reportApiRequest<ReportResponse>("/reports", {
     method: "POST",
     body: input,
@@ -177,10 +187,15 @@ export async function updateReport(
   reportId: string,
   input: Partial<ReportCreateInput>
 ): Promise<ReportRecord> {
-  const response = await reportApiRequest<ReportResponse>(`/reports/${reportId}`, {
-    method: "PATCH",
-    body: input,
-  });
+  const headers = await getSessionAwareAuthHeaders();
+  await ensureConsent(consentRequirements.reportStorage, headers);
+  const response = await reportApiRequest<ReportResponse>(
+    `/reports/${reportId}`,
+    {
+      method: "PATCH",
+      body: input,
+    }
+  );
 
   return response.data.report;
 }
@@ -192,19 +207,29 @@ export async function listReports(): Promise<ReportRecord[]> {
 }
 
 export async function getReport(reportId: string): Promise<ReportRecord> {
-  const response = await reportApiRequest<ReportResponse>(`/reports/${reportId}`);
+  const response = await reportApiRequest<ReportResponse>(
+    `/reports/${reportId}`
+  );
 
   return response.data.report;
 }
 
-export async function getReportStatus(reportId: string): Promise<ReportStatusResponse["status"]> {
-  const response = await reportApiRequest<ReportStatusResponse>(`/reports/${reportId}/status`);
+export async function getReportStatus(
+  reportId: string
+): Promise<ReportStatusResponse["status"]> {
+  const response = await reportApiRequest<ReportStatusResponse>(
+    `/reports/${reportId}/status`
+  );
 
   return response.data.status;
 }
 
-export async function getReportTimeline(reportId: string): Promise<ReportTimelineResponse["timeline"]> {
-  const response = await reportApiRequest<ReportTimelineResponse>(`/reports/${reportId}/timeline`);
+export async function getReportTimeline(
+  reportId: string
+): Promise<ReportTimelineResponse["timeline"]> {
+  const response = await reportApiRequest<ReportTimelineResponse>(
+    `/reports/${reportId}/timeline`
+  );
 
   return response.data.timeline;
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   IconAlertCircle,
@@ -14,20 +14,20 @@ import {
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import { getAssistantTriageSource } from "@/lib/assistant-triage";
 import {
-  getDashboardCardFlow,
+  ConsentRequiredError,
+  type ConsentRequirement,
+  grantConsent,
+} from "@/lib/consent";
+import {
   type DashboardCardFlowId,
+  getDashboardCardFlow,
 } from "@/lib/dashboard-card-flows";
-import {
-  createReport,
-  updateReport,
-} from "@/lib/reports-client";
-import {
-  getReportFlowDraft,
-  mergeReportFlowDraft,
-} from "@/lib/report-flow";
+import { getReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
+import { createReport, updateReport } from "@/lib/reports-client";
 
 import { ReportSubmissionFrame } from "./report-submission-frame";
 
@@ -57,7 +57,9 @@ function ReportSubmissionDetailsPage({
     initialMessage?.trim() ||
     assistantSource?.timeline.what ||
     t("dashboard.reportSubmission.summaryValue");
-  const [title, setTitle] = useState(existingDraft?.title || defaultIncidentTitle);
+  const [title, setTitle] = useState(
+    existingDraft?.title || defaultIncidentTitle
+  );
   const [date, setDate] = useState(existingDraft?.date || "2026-02-22");
   const [location, setLocation] = useState(
     existingDraft?.location ||
@@ -66,7 +68,11 @@ function ReportSubmissionDetailsPage({
   );
   const [summary, setSummary] = useState(defaultSummary);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [pendingConsentRequirement, setPendingConsentRequirement] =
+    useState<ConsentRequirement | null>(null);
 
   useEffect(() => {
     mergeReportFlowDraft({
@@ -106,8 +112,10 @@ function ReportSubmissionDetailsPage({
   const persistReportDraft = async (nextView: string) => {
     setIsSaving(true);
     setSaveError(null);
+    setStatusMessage(null);
 
     try {
+      setPendingConsentRequirement(null);
       const structuredFields = {
         who: assistantSource?.timeline.who,
         what: summary,
@@ -149,11 +157,44 @@ function ReportSubmissionDetailsPage({
 
       router.push(`/dashboard?view=${nextView}`);
     } catch (error) {
+      if (error instanceof ConsentRequiredError) {
+        setPendingConsentRequirement(error.requirement);
+        setSaveError(null);
+        return;
+      }
+
       setSaveError(
-        error instanceof Error ? error.message : "Report draft could not be saved."
+        error instanceof Error
+          ? error.message
+          : "Report draft could not be saved."
       );
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const allowPendingConsent = async () => {
+    if (!pendingConsentRequirement) {
+      return;
+    }
+
+    setIsGrantingConsent(true);
+
+    try {
+      await grantConsent(
+        { cloud_sync: true },
+        pendingConsentRequirement.source
+      );
+      setPendingConsentRequirement(null);
+      setStatusMessage(
+        "Cloud sync consent saved. Select Next again when you are ready."
+      );
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Consent could not be saved."
+      );
+    } finally {
+      setIsGrantingConsent(false);
     }
   };
 
@@ -166,12 +207,27 @@ function ReportSubmissionDetailsPage({
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[1.65fr_1fr]">
         <article className="space-y-3 rounded-[14px] border border-[#e3ebf4] bg-[#f9fbfe] p-4">
+          {pendingConsentRequirement ? (
+            <ConsentRequiredCard
+              requirement={pendingConsentRequirement}
+              isSubmitting={isGrantingConsent}
+              onAllow={() => {
+                void allowPendingConsent();
+              }}
+              onDecline={() => setPendingConsentRequirement(null)}
+            />
+          ) : null}
           {saveError ? (
             <div className="rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#b45353]">
               <span className="inline-flex items-center gap-1.5">
                 <IconAlertCircle size={12} />
                 {saveError}
               </span>
+            </div>
+          ) : null}
+          {statusMessage ? (
+            <div className="rounded-[12px] border border-[#d8e4f2] bg-white px-3 py-2 text-[11px] font-medium text-[#0f5d9f]">
+              {statusMessage}
             </div>
           ) : null}
           {contextFlow ? (

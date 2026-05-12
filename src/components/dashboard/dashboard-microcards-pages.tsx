@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 
 import {
   IconAlertCircleFilled,
@@ -16,8 +15,8 @@ import {
 import {
   AnimatePresence,
   LayoutGroup,
-  motion,
   type Transition,
+  motion,
   useReducedMotion,
 } from "framer-motion";
 import { useTranslation } from "react-i18next";
@@ -27,20 +26,33 @@ import documentingEv from "@/assets/documentig_ev.svg?url";
 import hackerImage from "@/assets/hacker.jpg";
 import identifyBulling from "@/assets/identifyBulling.svg?url";
 import safeReporting from "@/assets/safe_reporting.svg?url";
+import {
+  type MicroEducationItem,
+  type MicroEducationTone,
+  listPublishedMicroEducation,
+} from "@/lib/microeducation";
 import { cn } from "@/lib/utils";
 
 import { interFont } from "./dashboard-shared";
 
-type MicroCardTone = "blue" | "yellow" | "teal";
-type MicroCardTheme = "identify" | "document" | "report" | "footprint";
+type MicroCardTone = MicroEducationTone;
+type MicroCardTheme =
+  | "identify"
+  | "document"
+  | "report"
+  | "footprint"
+  | "rights"
+  | "wellbeing";
 
 type MicroCardItem = {
   id: string;
   title: string;
+  tag: string;
+  summary: string;
+  cta: string;
   iconSrc: string;
   tone: MicroCardTone;
   theme: MicroCardTheme;
-  className?: string;
 };
 
 const detailContentByTheme: Record<
@@ -127,7 +139,150 @@ const detailContentByTheme: Record<
       "Privacy tools are strongest when users also understand the risks around the device they are using.",
     cta: "Review privacy steps",
   },
+  rights: {
+    eyebrow: "Know your options",
+    headline: "Understand rights, records, and safer next steps.",
+    summary:
+      "Rights guidance works best when it is practical, plain-language, and paired with options for trusted follow-up.",
+    paragraphs: [
+      "Start by identifying which setting is involved: work, school, housing, online spaces, or public services. The right pathway often depends on where the harm occurred.",
+      "Keep notes, dates, names, and copies of relevant messages. A short record can help a support service understand what happened without asking you to retell everything at once.",
+    ],
+    checklist: [
+      "Write down the setting and people involved.",
+      "Keep copies of messages, policies, or documents.",
+      "Ask a trusted service which reporting pathway fits.",
+    ],
+    takeaway:
+      "You do not need to choose a formal report immediately to start preserving useful information.",
+    cta: "Review rights guidance",
+  },
+  wellbeing: {
+    eyebrow: "Support your wellbeing",
+    headline:
+      "Use short steps that lower pressure while you decide what comes next.",
+    summary:
+      "Wellbeing support should make the next action feel smaller, safer, and easier to complete.",
+    paragraphs: [
+      "Stress can make it harder to organize details or decide what to do. A small stabilizing step, such as writing one note or contacting one trusted person, can still move things forward.",
+      "If the situation feels urgent or unsafe, prioritize immediate safety and professional support before continuing with any learning content.",
+    ],
+    checklist: [
+      "Pause and move to a safer place if possible.",
+      "Choose one trusted person or service to contact.",
+      "Keep the next action small and specific.",
+    ],
+    takeaway: "A useful first step is the one you can take safely right now.",
+    cta: "Open wellbeing tips",
+  },
 };
+
+function inferMicroCardTheme(item: MicroEducationItem): MicroCardTheme {
+  const searchableText =
+    `${item.title} ${item.tag} ${item.summary}`.toLowerCase();
+
+  if (
+    item.chips.includes("rights") ||
+    searchableText.includes("right") ||
+    searchableText.includes("legal") ||
+    searchableText.includes("migrant")
+  ) {
+    return "rights";
+  }
+
+  if (
+    item.chips.includes("mentalHealth") ||
+    searchableText.includes("mental") ||
+    searchableText.includes("wellbeing")
+  ) {
+    return "wellbeing";
+  }
+
+  if (
+    searchableText.includes("evidence") ||
+    searchableText.includes("document") ||
+    searchableText.includes("record")
+  ) {
+    return "document";
+  }
+
+  if (searchableText.includes("report") || searchableText.includes("submit")) {
+    return "report";
+  }
+
+  if (
+    searchableText.includes("digital") ||
+    searchableText.includes("online") ||
+    searchableText.includes("privacy") ||
+    searchableText.includes("footprint")
+  ) {
+    return "footprint";
+  }
+
+  return "identify";
+}
+
+function iconForTheme(theme: MicroCardTheme) {
+  if (theme === "document") {
+    return documentingEv;
+  }
+
+  if (theme === "report") {
+    return safeReporting;
+  }
+
+  if (theme === "footprint") {
+    return digitalFootPrint;
+  }
+
+  return identifyBulling;
+}
+
+function toMicroCardItem(item: MicroEducationItem): MicroCardItem {
+  const theme = inferMicroCardTheme(item);
+
+  return {
+    id: item.id,
+    title: item.title,
+    tag: item.tag,
+    summary: item.summary,
+    cta: item.cta,
+    iconSrc: iconForTheme(theme),
+    tone: item.tone,
+    theme,
+  };
+}
+
+function getMicroCardDetail(card: MicroCardItem) {
+  const baseDetail = detailContentByTheme[card.theme];
+
+  return {
+    ...baseDetail,
+    eyebrow: card.tag || baseDetail.eyebrow,
+    summary: card.summary || baseDetail.summary,
+    paragraphs: [
+      card.summary || baseDetail.summary,
+      ...baseDetail.paragraphs.slice(1),
+    ],
+    cta: card.cta || baseDetail.cta,
+  };
+}
+
+function detailToneBackground(tone: MicroCardTone) {
+  if (tone === "orange" || tone === "amber") {
+    return "bg-[#fff4cf]";
+  }
+
+  if (tone === "green" || tone === "teal") {
+    return "bg-[#e4f8f5]";
+  }
+
+  if (tone === "violet") {
+    return "bg-[#f0ebff]";
+  }
+
+  return "bg-[#eaf2ff]";
+}
 
 function MicroCardLesson({
   id,
@@ -164,12 +319,33 @@ function MicroCardLesson({
       iconWrap: "bg-white/20",
       button: "bg-white text-[#0d4d85]",
     },
-    yellow: {
+    orange: {
+      card: "bg-[#f48c06]",
+      title: "text-white",
+      meta: "text-white/80",
+      iconWrap: "bg-white/25",
+      button: "bg-white text-[#8a3d00]",
+    },
+    amber: {
       card: "bg-[#f7b500]",
       title: "text-[#111827]",
       meta: "text-[#5f4b00]",
       iconWrap: "bg-white/35",
       button: "bg-white text-[#312600]",
+    },
+    green: {
+      card: "bg-[#10b981]",
+      title: "text-white",
+      meta: "text-white/80",
+      iconWrap: "bg-white/22",
+      button: "bg-white text-[#087457]",
+    },
+    violet: {
+      card: "bg-[#8157e8]",
+      title: "text-white",
+      meta: "text-white/80",
+      iconWrap: "bg-white/22",
+      button: "bg-white text-[#5635a6]",
     },
     teal: {
       card: "bg-[#1f9f97]",
@@ -246,87 +422,51 @@ function MicroCardsPage() {
   const prefersReducedMotion = useReducedMotion();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [adminCards, setAdminCards] = useState<MicroEducationItem[]>([]);
+  const [isLoadingCards, setIsLoadingCards] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const pushedHistoryRef = useRef(false);
 
-  const cards: MicroCardItem[] = [
-    {
-      id: "identify-1",
-      title: t("dashboard.microcards.identifyingBullying"),
-      iconSrc: identifyBulling,
-      tone: "blue",
-      theme: "identify",
-      className: "min-h-[132px] xl:h-[140px]",
-    },
-    {
-      id: "document-1",
-      title: t("dashboard.microcards.documentingEvidence"),
-      iconSrc: documentingEv,
-      tone: "yellow",
-      theme: "document",
-      className: "min-h-[132px] xl:h-[140px]",
-    },
-    {
-      id: "report-1",
-      title: t("dashboard.microcards.safeReporting"),
-      iconSrc: safeReporting,
-      tone: "yellow",
-      theme: "report",
-      className: "min-h-[124px] xl:h-[130px]",
-    },
-    {
-      id: "footprint-1",
-      title: t("dashboard.microcards.digitalFootprints"),
-      iconSrc: digitalFootPrint,
-      tone: "blue",
-      theme: "footprint",
-      className: "min-h-[124px] xl:h-[130px]",
-    },
-    {
-      id: "document-2",
-      title: t("dashboard.microcards.documentingEvidence"),
-      iconSrc: documentingEv,
-      tone: "teal",
-      theme: "document",
-      className: "min-h-[132px] md:col-span-2 xl:h-[140px]",
-    },
-    {
-      id: "footprint-2",
-      title: t("dashboard.microcards.digitalFootprints"),
-      iconSrc: digitalFootPrint,
-      tone: "blue",
-      theme: "footprint",
-      className: "min-h-[124px] xl:h-[130px]",
-    },
-    {
-      id: "report-2",
-      title: t("dashboard.microcards.safeReporting"),
-      iconSrc: safeReporting,
-      tone: "yellow",
-      theme: "report",
-      className: "min-h-[124px] xl:h-[130px]",
-    },
-    {
-      id: "report-3",
-      title: t("dashboard.microcards.safeReporting"),
-      iconSrc: safeReporting,
-      tone: "yellow",
-      theme: "report",
-      className: "min-h-[124px] xl:h-[130px]",
-    },
-    {
-      id: "footprint-3",
-      title: t("dashboard.microcards.digitalFootprints"),
-      iconSrc: digitalFootPrint,
-      tone: "blue",
-      theme: "footprint",
-      className: "min-h-[124px] xl:h-[130px]",
-    },
-  ];
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCards = async () => {
+      setIsLoadingCards(true);
+      setLoadError(null);
+
+      try {
+        const items = await listPublishedMicroEducation();
+
+        if (isMounted) {
+          setAdminCards(items);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Micro-card content could not be loaded."
+          );
+          setAdminCards([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingCards(false);
+        }
+      }
+    };
+
+    void loadCards();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const cards = adminCards.map(toMicroCardItem);
 
   const activeCard = cards.find((card) => card.id === activeCardId) ?? null;
-  const activeCardDetail = activeCard
-    ? detailContentByTheme[activeCard.theme]
-    : null;
+  const activeCardDetail = activeCard ? getMicroCardDetail(activeCard) : null;
 
   const sharedTransition: Transition = prefersReducedMotion
     ? { duration: 0 }
@@ -451,7 +591,7 @@ function MicroCardsPage() {
                   title={card.title}
                   iconSrc={card.iconSrc}
                   tone={card.tone}
-                  className={card.className}
+                  className="min-h-[132px] xl:h-[140px]"
                   isActive={activeCardId === card.id}
                   onOpen={() => {
                     pushedHistoryRef.current = false;
@@ -463,10 +603,21 @@ function MicroCardsPage() {
               {filteredCards.length === 0 ? (
                 <article className="rounded-2xl border border-[#dce5f1] bg-white p-6 text-center md:col-span-2">
                   <p className="text-sm font-semibold text-[#22344a]">
-                    No micro-cards match that search.
+                    {isLoadingCards
+                      ? "Loading micro-cards..."
+                      : loadError
+                        ? "Micro-cards could not be loaded."
+                        : adminCards.length === 0
+                          ? "No published micro-cards are available yet."
+                          : "No micro-cards match that search."}
                   </p>
                   <p className="mt-1 text-xs text-[#6f8197]">
-                    Try searching by topic, safety, evidence, or privacy.
+                    {isLoadingCards
+                      ? "Please wait while published admin content loads."
+                      : (loadError ??
+                        (adminCards.length === 0
+                          ? "Publish micro-education cards from the admin dashboard to show them here."
+                          : "Try searching by topic, safety, evidence, or privacy."))}
                   </p>
                 </article>
               ) : null}
@@ -520,11 +671,7 @@ function MicroCardsPage() {
                   <section
                     className={cn(
                       "rounded-[24px] p-5 sm:p-6",
-                      activeCard.tone === "yellow"
-                        ? "bg-[#fff4cf]"
-                        : activeCard.tone === "teal"
-                          ? "bg-[#e4f8f5]"
-                          : "bg-[#eaf2ff]"
+                      detailToneBackground(activeCard.tone)
                     )}
                   >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4f647f]">
@@ -532,6 +679,9 @@ function MicroCardsPage() {
                     </p>
                     <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                       <div className="max-w-[720px]">
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4f647f]">
+                          {activeCardDetail.eyebrow}
+                        </p>
                         <h2
                           className={`${interFont.className} text-[34px] font-black leading-[0.95] text-[#12243c] sm:text-[44px]`}
                         >
@@ -591,7 +741,9 @@ function MicroCardsPage() {
                       <div className="relative aspect-[16/10] overflow-hidden rounded-[18px]">
                         <Image
                           src={hackerImage}
-                          alt={t("dashboard.microcardDetail.internetHoaxAwareness")}
+                          alt={t(
+                            "dashboard.microcardDetail.internetHoaxAwareness"
+                          )}
                           fill
                           className="object-cover"
                         />

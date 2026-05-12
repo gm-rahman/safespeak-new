@@ -1,14 +1,13 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { usePathname } from "next/navigation";
-
+import type { PlatformSettingsPayload } from "@/lib/platform-settings";
 import {
   EMERGENCY_NUMBER,
   SAFETY_GATE_ACK_KEY,
   SUPPORT_NUMBER_DIAL,
-  SUPPORT_NUMBER_DISPLAY,
   triggerQuickExit,
 } from "@/lib/safety";
 
@@ -16,10 +15,15 @@ function isHiddenRoute(pathname: string): boolean {
   return pathname.startsWith("/neutral");
 }
 
-export function SafetyGate() {
+type SafetyGateProps = {
+  platformSettings: PlatformSettingsPayload;
+};
+
+export function SafetyGate({ platformSettings }: SafetyGateProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [isSafeToContinue, setIsSafeToContinue] = useState(false);
+  const safetyCopy = platformSettings.safety;
 
   useEffect(() => {
     if (isHiddenRoute(pathname)) {
@@ -71,32 +75,32 @@ export function SafetyGate() {
 
         <div className="mt-4 space-y-3 rounded-xl border border-[#f2dae0] bg-[#fff7f7] p-4">
           <p className="text-sm font-semibold text-[#8b2131]">
-            If you are in immediate danger, call {EMERGENCY_NUMBER} now.
+            {safetyCopy.immediateDangerText}
           </p>
           <p className="text-sm text-[#334155]">
-            If it is safe, contact {SUPPORT_NUMBER_DISPLAY} (24/7) for support.
+            {safetyCopy.respectSupportText}
           </p>
 
           <div className="flex flex-wrap gap-2">
-          <a
-            href={`tel:${EMERGENCY_NUMBER}`}
-            className="inline-flex h-11 items-center rounded-full bg-[#dc2626] px-5 text-xs font-bold uppercase tracking-[0.08em] text-white"
-          >
-            Emergency {EMERGENCY_NUMBER}
-          </a>
-          <a
-            href={`tel:${SUPPORT_NUMBER_DIAL}`}
-            className="inline-flex h-11 items-center rounded-full bg-[#0f5d9f] px-5 text-xs font-bold uppercase tracking-[0.08em] text-white"
-          >
-            {SUPPORT_NUMBER_DISPLAY}
-          </a>
-          <button
-            type="button"
-            onClick={triggerQuickExit}
-            className="inline-flex h-11 items-center rounded-full bg-[#111827] px-5 text-xs font-bold uppercase tracking-[0.08em] text-white"
-          >
-            Covert Exit
-          </button>
+            <a
+              href={`tel:${EMERGENCY_NUMBER}`}
+              className="inline-flex h-11 items-center rounded-full bg-[#dc2626] px-5 text-xs font-bold uppercase tracking-[0.08em] text-white"
+            >
+              {safetyCopy.emergencyCallLabel}
+            </a>
+            <a
+              href={`tel:${SUPPORT_NUMBER_DIAL}`}
+              className="inline-flex h-11 items-center rounded-full bg-[#0f5d9f] px-5 text-xs font-bold uppercase tracking-[0.08em] text-white"
+            >
+              {safetyCopy.respectCallLabel}
+            </a>
+            <button
+              type="button"
+              onClick={triggerQuickExit}
+              className="inline-flex h-11 items-center rounded-full bg-[#111827] px-5 text-xs font-bold uppercase tracking-[0.08em] text-white"
+            >
+              {safetyCopy.quickExitLabel}
+            </button>
           </div>
         </div>
 

@@ -79,11 +79,20 @@ body {
   width: calc(100vw - 1.5rem);
 }
 
+.dashboard-safety-minimized {
+  bottom: 5.25rem;
+  right: 0.75rem;
+}
+
 @media (min-width: 640px) {
   .dashboard-safety-rail {
     --dashboard-sidebar-width: 88px;
     --dashboard-shell-padding: 0.75rem;
     --dashboard-content-inline-padding: 1rem;
+  }
+
+  .dashboard-safety-minimized {
+    right: 1rem;
   }
 }
 
@@ -105,8 +114,10 @@ body {
               100vw - var(--dashboard-sidebar-width) -
                 (var(--dashboard-shell-padding) * 2) -
                 var(--dashboard-content-max-width)
-            ) / 2
-        ) + var(--dashboard-content-inline-padding) +
+            ) /
+            2
+        ) +
+        var(--dashboard-content-inline-padding) +
         var(--dashboard-safety-rail-x-offset)
     );
     width: min(
@@ -120,6 +131,11 @@ body {
           (var(--dashboard-content-inline-padding) * 2)
       )
     );
+  }
+
+  .dashboard-safety-minimized {
+    bottom: 1rem;
+    right: 1.25rem;
   }
 }
 

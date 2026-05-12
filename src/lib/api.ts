@@ -6,6 +6,7 @@ export interface ApiEnvelope<TData> {
   timestamp?: string;
   requestId?: string;
   errors?: unknown[];
+  errorCode?: string;
 }
 
 type ApiRequestOptions = {
@@ -38,19 +39,39 @@ export class ApiRequestError extends Error {
   status: number;
   errors?: unknown[];
   requestId?: string;
+  errorCode?: string;
+  data?: unknown;
+  meta?: unknown;
+  timestamp?: string;
 
-  constructor(message: string, status: number, errors?: unknown[], requestId?: string) {
+  constructor(
+    message: string,
+    status: number,
+    options: {
+      errors?: unknown[];
+      requestId?: string;
+      errorCode?: string;
+      data?: unknown;
+      meta?: unknown;
+      timestamp?: string;
+    } = {}
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
-    this.errors = errors;
-    this.requestId = requestId;
+    this.errors = options.errors;
+    this.requestId = options.requestId;
+    this.errorCode = options.errorCode;
+    this.data = options.data;
+    this.meta = options.meta;
+    this.timestamp = options.timestamp;
   }
 }
 
 export function getApiBaseUrl(explicit?: string): string {
-  // eslint-disable-next-line n/no-process-env
-  const value = explicit ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL;
+  const value =
+    // eslint-disable-next-line n/no-process-env
+    explicit ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL;
 
   return normalizeApiBaseUrl(value);
 }
@@ -86,17 +107,31 @@ export async function apiRequest<TData>(
         ? options.body
         : JSON.stringify(options.body);
 
-  const response = await fetch(`${baseUrl}${path.startsWith("/") ? path : `/${path}`}`, {
-    method: options.method ?? "GET",
-    headers,
-    body: requestBody,
-  });
-  const payload = (await parseJsonSafe(response)) as Partial<ApiEnvelope<TData>> | null;
+  const response = await fetch(
+    `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`,
+    {
+      method: options.method ?? "GET",
+      headers,
+      body: requestBody,
+    }
+  );
+  const payload = (await parseJsonSafe(response)) as Partial<
+    ApiEnvelope<TData>
+  > | null;
   const requestId = response.headers.get("x-request-id") ?? payload?.requestId;
-  const message = payload?.message ?? "Request failed";
+  const message =
+    payload?.message ??
+    `${response.status} ${response.statusText || "Request failed"}`;
 
   if (!response.ok || !payload?.success) {
-    throw new ApiRequestError(message, response.status, payload?.errors, requestId);
+    throw new ApiRequestError(message, response.status, {
+      errors: payload?.errors,
+      requestId,
+      errorCode: payload?.errorCode,
+      data: payload?.data,
+      meta: payload?.meta,
+      timestamp: payload?.timestamp,
+    });
   }
 
   return {
@@ -106,5 +141,6 @@ export async function apiRequest<TData>(
     meta: payload.meta,
     timestamp: payload.timestamp,
     requestId,
+    errorCode: payload.errorCode,
   };
 }

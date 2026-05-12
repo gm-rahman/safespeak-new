@@ -21,14 +21,14 @@ import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
 import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
+import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 import {
   type CapturedReportMetadata,
   captureReportMetadata,
   clearReportMetadata,
   saveReportMetadata,
 } from "@/lib/report-metadata";
-import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
 type RecordingErrorCode =
@@ -140,9 +140,7 @@ export function AssistantInteraction({
     [finalTranscript, liveTranscript]
   );
   const showTranscriptPanel =
-    isRecordingActive ||
-    isTranscribing ||
-    Boolean(speechError);
+    isRecordingActive || isTranscribing || Boolean(speechError);
   const transcriptionLanguage = useMemo(() => {
     return i18n.resolvedLanguage === "es" || i18n.language === "es"
       ? "es"
@@ -250,27 +248,6 @@ export function AssistantInteraction({
       cleanupRecording();
     };
   }, []);
-
-  useEffect(() => {
-    if (showTranscriptPanel) {
-      return;
-    }
-
-    window.scrollTo({ top: 0, left: 0 });
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-
-    const previousBodyOverflowY = document.body.style.overflowY;
-    const previousDocumentOverflowY = document.documentElement.style.overflowY;
-
-    document.body.style.overflowY = "hidden";
-    document.documentElement.style.overflowY = "hidden";
-
-    return () => {
-      document.body.style.overflowY = previousBodyOverflowY;
-      document.documentElement.style.overflowY = previousDocumentOverflowY;
-    };
-  }, [showTranscriptPanel]);
 
   const handleRecordedAudio = async (mimeType: string) => {
     const audioBlob = new Blob(audioChunksRef.current, {
@@ -523,7 +500,9 @@ export function AssistantInteraction({
           {initialCategory ? (
             <input type="hidden" name="category" value={initialCategory} />
           ) : null}
-          {initialTopic ? <input type="hidden" name="topic" value={initialTopic} /> : null}
+          {initialTopic ? (
+            <input type="hidden" name="topic" value={initialTopic} />
+          ) : null}
           {reportMetadata ? (
             <input type="hidden" name="metadataCapture" value="1" />
           ) : null}
@@ -534,7 +513,7 @@ export function AssistantInteraction({
               value={message}
               onChange={handleMessageChange}
               placeholder={t("dashboard.assistant.typeYourResponse")}
-              className="h-10 min-w-[180px] flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-xs text-[#1f2937] outline-none placeholder:text-[#95a3b8] transition-[background-color,box-shadow,border-color] duration-150 focus:border-white/70 focus:bg-white focus:shadow-[0_8px_22px_rgba(148,163,184,0.12)] focus-visible:outline-none"
+              className="h-10 min-w-[180px] flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-xs text-[#1f2937] outline-none transition-[background-color,box-shadow,border-color] duration-150 placeholder:text-[#95a3b8] focus:border-white/70 focus:bg-white focus:shadow-[0_8px_22px_rgba(148,163,184,0.12)] focus-visible:outline-none"
             />
             <button
               type="button"

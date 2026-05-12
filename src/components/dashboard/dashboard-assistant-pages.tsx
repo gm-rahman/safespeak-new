@@ -23,14 +23,9 @@ import {
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
+import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import {
-  getDashboardActionHref,
-  getDashboardAssistantTopicChips,
-  getDashboardCardFlow,
-  type DashboardCardFlowId,
-} from "@/lib/dashboard-card-flows";
 import {
   type AssistantConversationMessage,
   type AssistantTimeline,
@@ -45,6 +40,12 @@ import {
   clearAssistantTriageSource,
   saveAssistantTriageSource,
 } from "@/lib/assistant-triage";
+import {
+  type DashboardCardFlowId,
+  getDashboardActionHref,
+  getDashboardAssistantTopicChips,
+  getDashboardCardFlow,
+} from "@/lib/dashboard-card-flows";
 import { triggerQuickExit } from "@/lib/safety";
 import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
@@ -253,7 +254,9 @@ function hasActiveAssistantDraftForScope(input: {
     return false;
   }
 
-  const hasUserMessage = draft.messages.some((message) => message.role === "user");
+  const hasUserMessage = draft.messages.some(
+    (message) => message.role === "user"
+  );
   const hasTimelineContent = Object.values(draft.timeline).some(
     (value) => value.trim().length > 0
   );
@@ -322,15 +325,16 @@ function SafeSpeakAssistantPage({
     return null;
   }
 
-  const assistantFlow = initialTopic ? getDashboardCardFlow(initialTopic) : null;
+  const assistantFlow = initialTopic
+    ? getDashboardCardFlow(initialTopic)
+    : null;
   const assistantTopicChips = getDashboardAssistantTopicChips();
-  const startWithTopicHref =
-    assistantFlow?.starterPrompt
-      ? getDashboardActionHref(assistantFlow.id, "talk_with_assistant")
-      : null;
+  const startWithTopicHref = assistantFlow?.starterPrompt
+    ? getDashboardActionHref(assistantFlow.id, "talk_with_assistant")
+    : null;
 
   return (
-    <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
+    <div className="px-2 pb-28 pt-2 sm:px-4 sm:pb-32 sm:pt-4 lg:pb-24">
       <div className="mx-auto flex w-full max-w-[1184px] flex-col">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           <Link
@@ -357,7 +361,7 @@ function SafeSpeakAssistantPage({
         />
 
         {assistantFlow ? (
-          <article className="-mt-[158px] mx-auto w-full max-w-[1120px] rounded-[24px] border border-[#dce6f2] bg-white/96 p-4 shadow-[0_16px_34px_rgba(15,23,42,0.08)] backdrop-blur sm:p-5">
+          <article className="bg-white/96 mx-auto -mt-[158px] w-full max-w-[1120px] rounded-[24px] border border-[#dce6f2] p-4 shadow-[0_16px_34px_rgba(15,23,42,0.08)] backdrop-blur sm:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-[760px]">
                 <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#3f7de0]">
@@ -401,7 +405,9 @@ function SafeSpeakAssistantPage({
                         onClick={() => triggerQuickExit()}
                         className="rounded-[18px] border border-[#f1d6d6] bg-[#fff7f7] p-3 text-left transition hover:border-[#eabcbc] hover:bg-[#fff2f2]"
                       >
-                        <p className="text-[12px] font-bold text-[#1f2a3a]">{action.label}</p>
+                        <p className="text-[12px] font-bold text-[#1f2a3a]">
+                          {action.label}
+                        </p>
                         <p className="mt-1 text-[10px] leading-[1.55] text-[#7688a0]">
                           {action.description}
                         </p>
@@ -409,7 +415,10 @@ function SafeSpeakAssistantPage({
                     );
                   }
 
-                  const actionHref = getDashboardActionHref(assistantFlow.id, action.id);
+                  const actionHref = getDashboardActionHref(
+                    assistantFlow.id,
+                    action.id
+                  );
 
                   if (!actionHref) {
                     return null;
@@ -421,7 +430,9 @@ function SafeSpeakAssistantPage({
                       href={actionHref}
                       className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-3 text-left transition hover:border-[#c5d8ec] hover:bg-[#f7fbff]"
                     >
-                      <p className="text-[12px] font-bold text-[#1f2a3a]">{action.label}</p>
+                      <p className="text-[12px] font-bold text-[#1f2a3a]">
+                        {action.label}
+                      </p>
                       <p className="mt-1 text-[10px] leading-[1.55] text-[#7688a0]">
                         {action.description}
                       </p>
@@ -439,7 +450,10 @@ function SafeSpeakAssistantPage({
                 <div className="mt-2 flex flex-wrap gap-2">
                   {assistantTopicChips.map((topicChip) => {
                     const resolvedChipHref = topicChip.starterPrompt
-                      ? getDashboardActionHref(topicChip.id, "talk_with_assistant")
+                      ? getDashboardActionHref(
+                          topicChip.id,
+                          "talk_with_assistant"
+                        )
                       : null;
 
                     if (!resolvedChipHref) {
@@ -504,8 +518,9 @@ function SafeSpeakAssistantConversationPage({
   const [timeline, setTimeline] = useState<AssistantTimeline>(
     existingDraft?.timeline ?? emptyTimeline
   );
-  const [messages, setMessages] = useState<ConversationUiMessage[]>(() =>
-    existingDraft?.messages ??
+  const [messages, setMessages] = useState<ConversationUiMessage[]>(
+    () =>
+      existingDraft?.messages ??
       ([
         {
           role: "assistant",
@@ -542,7 +557,10 @@ function SafeSpeakAssistantConversationPage({
   );
   const continueReportSubmissionHref =
     getContinueReportSubmissionHref(initialCategory);
-  const assistantEntryHref = getAssistantEntryHref(initialTopic, initialCategory);
+  const assistantEntryHref = getAssistantEntryHref(
+    initialTopic,
+    initialCategory
+  );
   const transcriptionLanguage = useMemo(() => {
     return i18n.resolvedLanguage === "es" || i18n.language === "es"
       ? "es"
@@ -654,16 +672,19 @@ function SafeSpeakAssistantConversationPage({
       timeline,
       incidentCategory: initialCategory,
     });
-    saveAssistantConversationDraft({
-      messages: conversationMessages,
-      timeline,
-      timelineFieldOrder,
-      incidentCategory: initialCategory,
-      topic: initialTopic,
-    }, {
-      topic: initialTopic,
-      incidentCategory: initialCategory,
-    });
+    saveAssistantConversationDraft(
+      {
+        messages: conversationMessages,
+        timeline,
+        timelineFieldOrder,
+        incidentCategory: initialCategory,
+        topic: initialTopic,
+      },
+      {
+        topic: initialTopic,
+        incidentCategory: initialCategory,
+      }
+    );
   }, [
     conversationMessages,
     initialCategory,
@@ -706,10 +727,7 @@ function SafeSpeakAssistantConversationPage({
   }, [cleanupRecording, stopLiveTranscriptPreview]);
 
   const requestAssistantTurn = useCallback(
-    async (
-      message: string,
-      conversation: AssistantConversationMessage[]
-    ) => {
+    async (message: string, conversation: AssistantConversationMessage[]) => {
       setIsSending(true);
       setError(null);
 
@@ -997,72 +1015,84 @@ function SafeSpeakAssistantConversationPage({
         </div>
 
         <div className="mt-3 grid min-h-0 grid-cols-1 gap-3 xl:flex-1 xl:grid-cols-[minmax(0,1.72fr)_minmax(340px,0.96fr)] xl:items-stretch xl:overflow-hidden">
-          <div className="flex min-h-[520px] flex-col rounded-[22px] border border-[#d6e7f6] bg-[linear-gradient(180deg,#dff0fb_0%,#e8f5ff_100%)] p-4 shadow-[0_18px_40px_rgba(113,161,204,0.12)] xl:min-h-0 xl:h-full xl:overflow-hidden">
-            <div className="min-h-0 flex-1 overflow-hidden rounded-[18px]">
+          <div className="relative flex min-h-[520px] flex-col overflow-hidden rounded-[22px] border border-[#d6e7f6] bg-[linear-gradient(180deg,#dff0fb_0%,#e8f5ff_100%)] p-4 shadow-[0_18px_40px_rgba(113,161,204,0.12)] xl:h-full xl:min-h-0">
+            <div
+              className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center opacity-95"
+              aria-hidden="true"
+            >
+              <AssistantSphereAnimated
+                alt={t("dashboard.assistant.sphereAlt")}
+                particleCount={900}
+              />
+            </div>
+
+            <div className="relative z-10 min-h-0 flex-1 overflow-hidden rounded-[18px]">
               <div className="flex h-full flex-col gap-3 overflow-y-auto overscroll-contain pr-1.5">
-              {messages.map((message, index) => (
-                <div
-                  key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
-                  className={message.role === "user" ? "flex justify-end" : ""}
-                >
-                  <div className="max-w-[min(88%,540px)]">
+                {messages.map((message, index) => (
                   <div
-                    className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-2.5 text-[11px] leading-[1.55] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
-                      message.role === "user"
-                        ? "rounded-tr-[8px] text-[#314256]"
-                        : "rounded-tl-[8px] text-[#5f6f86]"
-                    }`}
+                    key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
+                    className={
+                      message.role === "user" ? "flex justify-end" : ""
+                    }
                   >
-                    {message.content}
+                    <div className="max-w-[min(88%,540px)]">
+                      <div
+                        className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-2.5 text-[11px] leading-[1.55] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
+                          message.role === "user"
+                            ? "rounded-tr-[8px] text-[#314256]"
+                            : "rounded-tl-[8px] text-[#5f6f86]"
+                        }`}
+                      >
+                        {message.content}
+                      </div>
+                    </div>
                   </div>
+                ))}
+
+                {isSending ? (
+                  <div className="inline-flex w-fit items-center rounded-[18px] rounded-tl-[8px] bg-white px-3 py-2 shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                    <span className="sr-only">Assistant is typing</span>
+                    <div className="flex items-center gap-1" aria-hidden="true">
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:0ms]" />
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:150ms]" />
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:300ms]" />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ) : null}
 
-              {isSending ? (
-                <div className="inline-flex w-fit items-center rounded-[18px] rounded-tl-[8px] bg-white px-3 py-2 shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
-                  <span className="sr-only">Assistant is typing</span>
-                  <div className="flex items-center gap-1" aria-hidden="true">
-                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:0ms]" />
-                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:150ms]" />
-                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:300ms]" />
+                {error ? (
+                  <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                    <IconAlertCircle size={12} />
+                    {error}
                   </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {error ? (
-                <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
-                  <IconAlertCircle size={12} />
-                  {error}
-                </div>
-              ) : null}
+                {speechError ? (
+                  <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                    <IconAlertCircle size={12} />
+                    {speechError}
+                  </div>
+                ) : null}
 
-              {speechError ? (
-                <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
-                  <IconAlertCircle size={12} />
-                  {speechError}
-                </div>
-              ) : null}
-
-              {isRecordingActive || isTranscribing || liveTranscript ? (
-                <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
-                  {isTranscribing ? (
-                    <IconLoader2 size={12} className="animate-spin" />
-                  ) : (
-                    <IconMicrophone size={12} />
-                  )}
-                  {isTranscribing
-                    ? t("dashboard.assistant.transcribing")
-                    : liveTranscript || t("dashboard.assistant.listening")}
-                </div>
-              ) : null}
-              <div ref={messagesEndRef} aria-hidden="true" />
+                {isRecordingActive || isTranscribing || liveTranscript ? (
+                  <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                    {isTranscribing ? (
+                      <IconLoader2 size={12} className="animate-spin" />
+                    ) : (
+                      <IconMicrophone size={12} />
+                    )}
+                    {isTranscribing
+                      ? t("dashboard.assistant.transcribing")
+                      : liveTranscript || t("dashboard.assistant.listening")}
+                  </div>
+                ) : null}
+                <div ref={messagesEndRef} aria-hidden="true" />
               </div>
             </div>
 
             <form
               onSubmit={handleSubmit}
-              className="mt-4 shrink-0 rounded-[20px] border border-white/80 bg-white/92 p-2.5 shadow-[0_16px_36px_rgba(148,163,184,0.18)] backdrop-blur"
+              className="bg-white/92 relative z-20 mt-4 shrink-0 rounded-[20px] border border-white/80 p-2.5 shadow-[0_16px_36px_rgba(148,163,184,0.18)] backdrop-blur"
             >
               <div className="flex items-center gap-2">
                 <input
@@ -1070,7 +1100,7 @@ function SafeSpeakAssistantConversationPage({
                   value={input}
                   onChange={handleInputChange}
                   placeholder={t("dashboard.assistant.typeYourResponse")}
-                  className="h-11 flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-sm text-[#1f2937] outline-none placeholder:text-[#95a3b8] transition-[background-color,box-shadow,border-color] duration-150 focus:border-white/70 focus:bg-white focus:shadow-[0_8px_22px_rgba(148,163,184,0.12)] focus-visible:outline-none"
+                  className="h-11 flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-sm text-[#1f2937] outline-none transition-[background-color,box-shadow,border-color] duration-150 placeholder:text-[#95a3b8] focus:border-white/70 focus:bg-white focus:shadow-[0_8px_22px_rgba(148,163,184,0.12)] focus-visible:outline-none"
                 />
                 <button
                   type="button"
@@ -1113,7 +1143,7 @@ function SafeSpeakAssistantConversationPage({
             </form>
           </div>
 
-          <div className="flex rounded-[22px] border border-[#e2e9f3] bg-white p-4 shadow-[0_18px_40px_rgba(148,163,184,0.14)] xl:min-h-0 xl:h-full xl:flex-col xl:overflow-hidden">
+          <div className="flex rounded-[22px] border border-[#e2e9f3] bg-white p-4 shadow-[0_18px_40px_rgba(148,163,184,0.14)] xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
             <div className="flex items-start justify-between gap-3 border-b border-[#edf2f7] pb-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#5f6f86]">
@@ -1143,9 +1173,7 @@ function SafeSpeakAssistantConversationPage({
                 <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#9aa8ba]">
                   Status
                 </p>
-                <p className="mt-1 text-sm font-bold text-[#3f7de0]">
-                  Live
-                </p>
+                <p className="mt-1 text-sm font-bold text-[#3f7de0]">Live</p>
               </div>
             </div>
 
@@ -1192,12 +1220,12 @@ function SafeSpeakAssistantConversationPage({
             </div>
 
             <div className="border-t border-[#edf2f7] pt-4">
-                <Link
-                  href={continueReportSubmissionHref}
-                  className="inline-flex h-11 items-center rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.25)] transition hover:bg-[#0b528d]"
-                >
-                  {t("dashboard.assistant.continueToReportSubmission")}
-                </Link>
+              <Link
+                href={continueReportSubmissionHref}
+                className="inline-flex h-11 items-center rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.25)] transition hover:bg-[#0b528d]"
+              >
+                {t("dashboard.assistant.continueToReportSubmission")}
+              </Link>
             </div>
           </div>
         </div>

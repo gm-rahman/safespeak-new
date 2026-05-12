@@ -70,9 +70,12 @@ export async function getCurrentConsent(
   headers?: HeadersInit
 ): Promise<ConsentFlags> {
   const resolvedHeaders = headers ?? (await getSessionAwareAuthHeaders());
-  const response = await apiRequest<CurrentConsentResponse>("/consents/current", {
-    headers: resolvedHeaders,
-  });
+  const response = await apiRequest<CurrentConsentResponse>(
+    "/consents/current",
+    {
+      headers: resolvedHeaders,
+    }
+  );
 
   return response.data.consent;
 }
@@ -97,14 +100,17 @@ export async function grantConsent(
   headers?: HeadersInit
 ): Promise<ConsentFlags> {
   const resolvedHeaders = headers ?? (await getSessionAwareAuthHeaders());
-  const response = await apiRequest<CurrentConsentResponse>("/consents/update", {
-    method: "POST",
-    headers: resolvedHeaders,
-    body: {
-      flags,
-      source,
-    },
-  });
+  const response = await apiRequest<CurrentConsentResponse>(
+    "/consents/update",
+    {
+      method: "POST",
+      headers: resolvedHeaders,
+      body: {
+        flags,
+        source,
+      },
+    }
+  );
 
   return response.data.consent;
 }
@@ -115,14 +121,17 @@ export async function withdrawConsent(
   headers?: HeadersInit
 ): Promise<ConsentFlags> {
   const resolvedHeaders = headers ?? (await getSessionAwareAuthHeaders());
-  const response = await apiRequest<CurrentConsentResponse>("/consents/withdraw", {
-    method: "POST",
-    headers: resolvedHeaders,
-    body: {
-      flags,
-      source,
-    },
-  });
+  const response = await apiRequest<CurrentConsentResponse>(
+    "/consents/withdraw",
+    {
+      method: "POST",
+      headers: resolvedHeaders,
+      body: {
+        flags,
+        source,
+      },
+    }
+  );
 
   return response.data.consent;
 }
@@ -131,9 +140,12 @@ export async function getConsentHistory(
   headers?: HeadersInit
 ): Promise<ConsentHistoryEntry[]> {
   const resolvedHeaders = headers ?? (await getSessionAwareAuthHeaders());
-  const response = await apiRequest<ConsentHistoryResponse>("/consents/history", {
-    headers: resolvedHeaders,
-  });
+  const response = await apiRequest<ConsentHistoryResponse>(
+    "/consents/history",
+    {
+      headers: resolvedHeaders,
+    }
+  );
 
   return response.data.history;
 }
@@ -207,6 +219,16 @@ export const consentRequirements = {
       "Cloud evidence upload is disabled until you allow cloud sync. Without it, SafeSpeak can keep evidence metadata on this device only.",
     flags: ["cloud_sync"],
     source: "report_evidence_upload",
+    allowLabel: "Allow cloud sync and continue",
+    declineLabel: "Keep local only",
+    settingsHref: "/dashboard/settings",
+  } satisfies ConsentRequirement,
+  reportStorage: {
+    title: "Report storage consent required",
+    description:
+      "SafeSpeak needs cloud sync consent before report details can be stored on SafeSpeak servers. Without it, keep the draft on this device only.",
+    flags: ["cloud_sync"],
+    source: "report_draft_storage",
     allowLabel: "Allow cloud sync and continue",
     declineLabel: "Keep local only",
     settingsHref: "/dashboard/settings",
