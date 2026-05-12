@@ -24,6 +24,72 @@ export type ReportRecord = {
   updatedAt?: string;
 };
 
+export type ReportDestinationPreview = {
+  destinationId: string;
+  destinationKey: string;
+  destinationType: string;
+  destinationName: string;
+  channel: string;
+  jurisdiction: string;
+  languages: string[];
+  endpoint?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  minimumRequiredInfo: string[];
+  missingRequiredInfo: string[];
+  anonymityOptions: string[];
+  expectedNextSteps: string[];
+  consentRequired: boolean;
+  supportsAcknowledgement: boolean;
+  requiredConsentFlags: string[];
+  matchedIncidentTypes: string[];
+  payloadPreview: {
+    refNo: string;
+    title: string;
+    summary: string;
+    language: string;
+    jurisdiction: string;
+    incidentType?: string;
+    severity?: string;
+    structuredFields: Record<string, unknown>;
+    evidence: Array<Record<string, unknown>>;
+  };
+};
+
+export type ReportSubmissionRecord = {
+  _id: string;
+  reportId: string;
+  destinationId: string;
+  destinationKey: string;
+  destinationType: string;
+  destinationName: string;
+  channel: string;
+  jurisdiction: string;
+  languages: string[];
+  status: string;
+  anonymityMode: "identified" | "anonymous" | "pseudonymous";
+  minimumRequiredInfo: string[];
+  missingRequiredInfo: string[];
+  requiredConsentFlags: string[];
+  expectedNextSteps: string[];
+  notes?: string;
+  endpoint?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  payloadSnapshot: Record<string, unknown>;
+  evidenceSnapshot: Array<Record<string, unknown>>;
+  consentSnapshot: Record<string, unknown>;
+  externalReference?: string;
+  acknowledgementMessage?: string;
+  acknowledgementPayload?: Record<string, unknown>;
+  previewGeneratedAt?: string;
+  submittedAt?: string;
+  acknowledgementReceivedAt?: string;
+  lastAttemptAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type ReportCreateInput = {
   language: string;
   jurisdiction: string;
@@ -58,6 +124,18 @@ type ReportStatusResponse = {
 
 type ReportTimelineResponse = {
   timeline: Array<Record<string, unknown>>;
+};
+
+type ReportDestinationResponse = {
+  destinations: ReportDestinationPreview[];
+};
+
+type ReportSubmissionResponse = {
+  submission: ReportSubmissionRecord;
+};
+
+type ReportSubmissionListResponse = {
+  submissions: ReportSubmissionRecord[];
 };
 
 async function reportApiRequest<TData>(
@@ -129,4 +207,64 @@ export async function getReportTimeline(reportId: string): Promise<ReportTimelin
   const response = await reportApiRequest<ReportTimelineResponse>(`/reports/${reportId}/timeline`);
 
   return response.data.timeline;
+}
+
+export async function getReportDestinations(
+  reportId: string,
+  query: {
+    destinationType?: string;
+    jurisdiction?: string;
+  } = {}
+): Promise<ReportDestinationPreview[]> {
+  const params = new URLSearchParams();
+
+  if (query.destinationType) {
+    params.set("destinationType", query.destinationType);
+  }
+
+  if (query.jurisdiction) {
+    params.set("jurisdiction", query.jurisdiction);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const response = await reportApiRequest<ReportDestinationResponse>(
+    `/reports/${reportId}/destinations${suffix}`
+  );
+
+  return response.data.destinations;
+}
+
+export async function listReportSubmissions(
+  reportId: string
+): Promise<ReportSubmissionRecord[]> {
+  const response = await reportApiRequest<ReportSubmissionListResponse>(
+    `/reports/${reportId}/submissions`
+  );
+
+  return response.data.submissions;
+}
+
+export async function submitReportToDestination(
+  reportId: string,
+  input: {
+    destinationId: string;
+    anonymityMode?: "identified" | "anonymous" | "pseudonymous";
+    notes?: string;
+    confirmConsent?: boolean;
+  }
+): Promise<ReportSubmissionRecord> {
+  const response = await reportApiRequest<ReportSubmissionResponse>(
+    `/reports/${reportId}/submissions`,
+    {
+      method: "POST",
+      body: {
+        destinationId: input.destinationId,
+        anonymityMode: input.anonymityMode ?? "identified",
+        notes: input.notes,
+        confirmConsent: input.confirmConsent ?? true,
+      },
+    }
+  );
+
+  return response.data.submission;
 }

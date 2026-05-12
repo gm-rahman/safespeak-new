@@ -7,6 +7,8 @@ const REPORT_FLOW_DRAFT_KEY = "safespeak_report_flow_draft";
 
 export type ReportFlowDraft = {
   reportId?: string;
+  selectedDestinationId?: string;
+  latestSubmissionId?: string;
   title: string;
   date: string;
   location: string;

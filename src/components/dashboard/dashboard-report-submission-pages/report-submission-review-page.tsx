@@ -17,12 +17,14 @@ import {
 } from "@tabler/icons-react";
 
 import {
+  getReportDestinations,
   getReport,
+  type ReportDestinationPreview,
   getReportStatus,
   getReportTimeline,
-  updateReport,
+  submitReportToDestination,
 } from "@/lib/reports-client";
-import { getReportFlowDraft } from "@/lib/report-flow";
+import { getReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
 
 type TimelineEntry = {
   id: string;
@@ -187,6 +189,14 @@ function ReportSubmissionReviewPage() {
   const [reportRef, setReportRef] = useState<string | null>(reportDraft?.reportId ?? null);
   const [reportLanguage, setReportLanguage] = useState("en");
   const [reportJurisdiction, setReportJurisdiction] = useState("NSW");
+  const [destinations, setDestinations] = useState<ReportDestinationPreview[]>([]);
+  const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(
+    reportDraft?.selectedDestinationId ?? null
+  );
+  const [anonymityMode, setAnonymityMode] = useState<
+    "identified" | "anonymous" | "pseudonymous"
+  >("identified");
+  const [submissionNotes, setSubmissionNotes] = useState("");
   const [statusHistoryEntries, setStatusHistoryEntries] = useState<StatusHistoryEntry[]>([]);
   const [hasLocalOnlyTimelineContent, setHasLocalOnlyTimelineContent] = useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(reportDraft?.reportId));
@@ -220,10 +230,11 @@ function ReportSubmissionReviewPage() {
 
     void (async () => {
       try {
-        const [report, status, timeline] = await Promise.all([
+        const [report, status, timeline, destinationOptions] = await Promise.all([
           getReport(reportId),
           getReportStatus(reportId),
           getReportTimeline(reportId),
+          getReportDestinations(reportId),
         ]);
 
         if (!isActive) {
@@ -243,6 +254,28 @@ function ReportSubmissionReviewPage() {
         setReportRef(report.refNo ?? report._id);
         setReportLanguage(report.language ?? "en");
         setReportJurisdiction(report.jurisdiction ?? "NSW");
+        setDestinations(destinationOptions);
+        setSelectedDestinationId((currentDestinationId) => {
+          if (
+            currentDestinationId &&
+            destinationOptions.some(
+              (destination) => destination.destinationId === currentDestinationId
+            )
+          ) {
+            return currentDestinationId;
+          }
+
+          const preferredDestinationId =
+            reportDraft?.selectedDestinationId &&
+            destinationOptions.some(
+              (destination) =>
+                destination.destinationId === reportDraft.selectedDestinationId
+            )
+              ? reportDraft.selectedDestinationId
+              : destinationOptions[0]?.destinationId ?? null;
+
+          return preferredDestinationId;
+        });
         setLoadError(null);
       } catch (error) {
         if (!isActive) {
@@ -257,6 +290,7 @@ function ReportSubmissionReviewPage() {
           setHasLocalOnlyTimelineContent(localEntries.some((entry) => entry.isLocalOnly));
           setStatusHistoryEntries([]);
           setReportStatus("local_only");
+          setDestinations([]);
         }
 
         setLoadError(
@@ -319,14 +353,40 @@ function ReportSubmissionReviewPage() {
       return;
     }
 
+    if (!selectedDestinationId) {
+      setLoadError("Choose a destination before submitting this report.");
+      return;
+    }
+
+    const selectedDestination = destinations.find(
+      (destination) => destination.destinationId === selectedDestinationId
+    );
+
+    if (!selectedDestination) {
+      setLoadError("The selected destination is no longer available.");
+      return;
+    }
+
+    if (selectedDestination.missingRequiredInfo.length > 0) {
+      setLoadError(
+        `This destination still needs: ${selectedDestination.missingRequiredInfo.join(", ")}`
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     setLoadError(null);
 
     try {
-      await updateReport(reportDraft.reportId, {
-        status: "ready_for_review",
-        language: reportLanguage || "en",
-        jurisdiction: reportJurisdiction || "NSW",
+      const submission = await submitReportToDestination(reportDraft.reportId, {
+        destinationId: selectedDestinationId,
+        anonymityMode,
+        notes: submissionNotes.trim() || undefined,
+        confirmConsent: true,
+      });
+      mergeReportFlowDraft({
+        selectedDestinationId,
+        latestSubmissionId: submission._id,
       });
       router.push("/dashboard?view=reportsubmissionsuccess");
     } catch (error) {
@@ -339,6 +399,10 @@ function ReportSubmissionReviewPage() {
       setIsSubmitting(false);
     }
   };
+
+  const selectedDestination =
+    destinations.find((destination) => destination.destinationId === selectedDestinationId) ??
+    null;
 
   return (
     <div className="px-6 pb-12 pt-12">
@@ -413,11 +477,127 @@ function ReportSubmissionReviewPage() {
               </div>
             ) : null}
             <div className="mb-4 rounded-[12px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3 text-[11px] leading-[1.55] text-[#60728a]">
-              Guidance only: this review prepares or saves your SafeSpeak report. It does not send anything to an external authority unless a backend submission action confirms that separately.
+              Submission routing is now destination-aware. Choose where this report should go, review the required fields, and then create a tracked submission record.
               {hasLocalOnlyTimelineContent ? (
                 <span className="mt-2 block font-semibold text-[#9a5b12]">
                   Stored locally only: some review fields are shown from this browser session and are not stored in the backend.
                 </span>
+              ) : null}
+            </div>
+            <div className="mb-4 rounded-[16px] border border-[#dce5f1] bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                    Submission destination
+                  </p>
+                  <p className="mt-1 text-[12px] text-[#60728a]">
+                    Language `{reportLanguage}` in `{reportJurisdiction}`.
+                  </p>
+                </div>
+                <p className="text-[10px] text-[#8ea0b8]">
+                  {destinations.length} destination{destinations.length === 1 ? "" : "s"} available
+                </p>
+              </div>
+              <div className="mt-3 space-y-2">
+                {destinations.length ? (
+                  destinations.map((destination) => {
+                    const isSelected =
+                      destination.destinationId === selectedDestinationId;
+                    const hasMissingInfo =
+                      destination.missingRequiredInfo.length > 0;
+
+                    return (
+                      <button
+                        key={destination.destinationId}
+                        type="button"
+                        onClick={() =>
+                          setSelectedDestinationId(destination.destinationId)
+                        }
+                        className={`w-full rounded-[12px] border px-4 py-3 text-left transition ${
+                          isSelected
+                            ? "border-[#0f52ba] bg-[#f7fbff]"
+                            : "border-[#dce5f1] bg-white"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[12px] font-semibold text-[#1f2a3a]">
+                              {destination.destinationName}
+                            </p>
+                            <p className="mt-1 text-[10px] text-[#6d8199]">
+                              {destination.destinationType} via {destination.channel}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] ${
+                              hasMissingInfo
+                                ? "bg-[#fff2df] text-[#9a6a2e]"
+                                : "bg-[#e9f7ef] text-[#0b8b54]"
+                            }`}
+                          >
+                            {hasMissingInfo
+                              ? `${destination.missingRequiredInfo.length} fields missing`
+                              : "Ready"}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-[10px] leading-[1.55] text-[#60728a]">
+                          Required: {destination.minimumRequiredInfo.join(", ") || "None listed"}
+                        </p>
+                        {destination.expectedNextSteps.length ? (
+                          <p className="mt-1 text-[10px] leading-[1.55] text-[#60728a]">
+                            Next: {destination.expectedNextSteps.join(" / ")}
+                          </p>
+                        ) : null}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-[12px] border border-[#f2d8b0] bg-[#fffaf2] px-3 py-2 text-[11px] text-[#9a5b12]">
+                    No active destinations match this report yet. Add or activate them in the admin dashboard.
+                  </div>
+                )}
+              </div>
+              {selectedDestination ? (
+                <div className="mt-3 grid gap-3 rounded-[12px] border border-[#edf2f8] bg-[#f9fbfe] p-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold text-[#7f90a6]">
+                      Identity mode
+                    </span>
+                    <select
+                      value={anonymityMode}
+                      onChange={(event) =>
+                        setAnonymityMode(
+                          event.target.value as
+                            | "identified"
+                            | "anonymous"
+                            | "pseudonymous"
+                        )
+                      }
+                      className="h-9 rounded-[8px] border border-[#dce5f1] bg-white px-2.5 text-[12px] font-semibold text-[#1f2a3a] outline-none"
+                    >
+                      <option value="identified">Identified</option>
+                      <option value="anonymous">Anonymous</option>
+                      <option value="pseudonymous">Pseudonymous</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold text-[#7f90a6]">
+                      Submission notes
+                    </span>
+                    <input
+                      value={submissionNotes}
+                      onChange={(event) => setSubmissionNotes(event.target.value)}
+                      placeholder="Optional routing note"
+                      className="h-9 rounded-[8px] border border-[#dce5f1] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none placeholder:text-[#9eb0c7]"
+                    />
+                  </label>
+                  {selectedDestination.requiredConsentFlags.length ? (
+                    <div className="sm:col-span-2 rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[10px] leading-[1.55] text-[#60728a]">
+                      Required consent flags:{" "}
+                      {selectedDestination.requiredConsentFlags.join(", ")}
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </div>
             <div className="relative">
@@ -624,7 +804,7 @@ function ReportSubmissionReviewPage() {
                 {isSubmitting ? (
                   <IconLoader2 size={14} className="mr-1 animate-spin" />
                 ) : null}
-                {isSubmitting ? "Saving..." : "Save prepared report"}
+                {isSubmitting ? "Submitting..." : "Submit to selected destination"}
                 <IconChevronRight size={14} className="ml-1" />
               </button>
             </div>

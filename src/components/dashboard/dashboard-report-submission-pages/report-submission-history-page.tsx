@@ -36,11 +36,16 @@ type HistoryReport = {
 };
 
 function normalizeHistoryStatus(status?: string): HistoryStatus {
-  if (status === "submitted") {
+  if (status === "submitted" || status === "received" || status === "closed") {
     return "SUBMITTED";
   }
 
-  if (status === "in_review" || status === "in-review") {
+  if (
+    status === "in_review" ||
+    status === "in-review" ||
+    status === "pending_submission" ||
+    status === "ready_for_review"
+  ) {
     return "ACTION REQUIRED";
   }
 
