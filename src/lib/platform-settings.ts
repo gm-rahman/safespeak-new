@@ -21,6 +21,10 @@ export type PlatformSettingsPayload = {
   ai: {
     disclaimerText: string;
     humanReviewText: string;
+    triageSystemPrompt: string;
+    triageResponseTemplate: string;
+    triageFallbackText: string;
+    triageTemplateStatus: "draft" | "approved";
   };
 };
 
@@ -49,6 +53,13 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettingsPayload = {
     disclaimerText: "This is information only, not legal advice.",
     humanReviewText:
       "Review and edit all AI-generated text before saving or sharing.",
+    triageSystemPrompt:
+      "Triage reports into information-only support guidance without legal, clinical, counselling, crisis-service, or case-management advice.",
+    triageResponseTemplate:
+      "Return severity, support need, concise explanation, confidence, citations, fallback reason, and review status.",
+    triageFallbackText:
+      "SafeSpeak cannot confidently triage this with the available information.",
+    triageTemplateStatus: "approved",
   },
 };
 

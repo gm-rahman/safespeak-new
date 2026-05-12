@@ -29,6 +29,7 @@ import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import {
   type AssistantConversationMessage,
   type AssistantTimeline,
+  type LegalAwareness,
   sendTimelineAssistantMessage,
 } from "@/lib/assistant-conversation";
 import {
@@ -239,6 +240,132 @@ function getAssistantEntryHref(
       category: initialCategory,
     },
   } as const;
+}
+
+function shouldUseNswLegalAwareness(
+  topic?: DashboardCardFlowId,
+  category?: AssistantIncidentCategory
+) {
+  return (
+    topic === "racial_abuse" ||
+    topic === "migrant_challenges" ||
+    category === "racial_abuse" ||
+    category === "migrant_challenges"
+  );
+}
+
+const staticNswLegalAwareness: LegalAwareness = {
+  jurisdiction: "NSW",
+  topic: "racial_abuse",
+  informationOnly: true,
+  sourceStatus: "insufficient_approved_sources",
+  keyPoints: [
+    "Keep a dated record of what happened if it is safe.",
+    "NSW and Commonwealth pathways can both be relevant for racial abuse or discrimination concerns.",
+    "Online abuse may also involve platform reporting, eSafety information, and immediate safety planning.",
+  ],
+  pathwayCards: [
+    {
+      title: "NSW discrimination pathway",
+      body: "SafeSpeak can help organize details for Anti-Discrimination NSW style complaint information once approved sources are available.",
+      sourceRequirement:
+        "Detailed legal explanations require approved NSW sources.",
+    },
+    {
+      title: "Commonwealth pathway",
+      body: "Some racial discrimination concerns may involve Australian Human Rights Commission information.",
+      sourceRequirement:
+        "Citations appear only from approved Commonwealth sources.",
+    },
+    {
+      title: "Online abuse pathway",
+      body: "For online incidents, evidence collection, platform reports, and eSafety information may be relevant.",
+      sourceRequirement: "Use approved eSafety sources before public citation.",
+    },
+  ],
+  citationPolicy:
+    "No citations are shown until approved, current, legally reviewed sources are available.",
+};
+
+function NswLegalAwarenessPanel({
+  legalAwareness,
+  compact = false,
+}: {
+  legalAwareness: LegalAwareness;
+  compact?: boolean;
+}) {
+  return (
+    <section
+      className={`rounded-[20px] border border-[#d6e2f0] bg-[#fbfdff] ${
+        compact ? "p-3" : "p-4"
+      }`}
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#3f7de0]">
+            NSW legal awareness
+          </p>
+          <p className="mt-1 text-[12px] leading-[1.55] text-[#5f6f86]">
+            Information only, not legal advice. SafeSpeak will cite only
+            approved, current, legally reviewed sources.
+          </p>
+        </div>
+        <span className="rounded-full border border-[#d6e2f0] bg-white px-3 py-1 text-[10px] font-semibold text-[#51657f]">
+          {legalAwareness.sourceStatus === "approved_sources_used"
+            ? "Approved sources available"
+            : "Sources pending approval"}
+        </span>
+      </div>
+
+      {legalAwareness.keyPoints.length > 0 ? (
+        <ul className="mt-3 space-y-1.5 text-[10px] leading-[1.55] text-[#617289]">
+          {legalAwareness.keyPoints.map((point) => (
+            <li key={point} className="flex gap-2">
+              <span className="mt-[0.55em] h-1 w-1 shrink-0 rounded-full bg-[#82aee8]" />
+              <span>{point}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
+        {legalAwareness.pathwayCards.map((card) => (
+          <article
+            key={card.title}
+            className="rounded-[16px] border border-[#e2e9f3] bg-white p-3"
+          >
+            <h4 className="text-[12px] font-bold text-[#1f2a3a]">
+              {card.title}
+            </h4>
+            <p className="mt-1 text-[10px] leading-[1.55] text-[#697b92]">
+              {card.body}
+            </p>
+            <p className="mt-2 text-[9px] font-semibold uppercase tracking-[0.06em] text-[#9aa8ba]">
+              {card.sourceRequirement}
+            </p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatAssistantCitationDate(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleDateString("en-AU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function hasActiveAssistantDraftForScope(input: {
@@ -473,6 +600,21 @@ function SafeSpeakAssistantPage({
                 </div>
               </div>
             ) : null}
+
+            {shouldUseNswLegalAwareness(initialTopic, initialCategory) ? (
+              <div className="mt-4">
+                <NswLegalAwarenessPanel
+                  legalAwareness={{
+                    ...staticNswLegalAwareness,
+                    topic:
+                      initialTopic === "migrant_challenges" ||
+                      initialCategory === "migrant_challenges"
+                        ? "migrant_challenges"
+                        : "racial_abuse",
+                  }}
+                />
+              </div>
+            ) : null}
           </article>
         ) : null}
       </div>
@@ -496,16 +638,22 @@ function SafeSpeakAssistantConversationPage({
     responseMeta?: {
       disclaimer?: string;
       citations?: Array<{
+        sourceId?: string;
         title: string;
         publisher?: string;
         url?: string;
         jurisdiction?: string;
+        sourceCategory?: string;
+        sourceType?: string;
+        topic?: string;
         sectionRef?: string;
+        lastUpdated?: string;
       }>;
       confidence?: string;
       reviewStatus?: string;
       ragUnavailable?: boolean;
       pendingHumanReview?: boolean;
+      legalAwareness?: LegalAwareness;
     };
   };
   const seededMessage = initialMessage?.trim();
@@ -558,6 +706,10 @@ function SafeSpeakAssistantConversationPage({
   const continueReportSubmissionHref =
     getContinueReportSubmissionHref(initialCategory);
   const assistantEntryHref = getAssistantEntryHref(
+    initialTopic,
+    initialCategory
+  );
+  const useNswLegalAwareness = shouldUseNswLegalAwareness(
     initialTopic,
     initialCategory
   );
@@ -737,6 +889,7 @@ function SafeSpeakAssistantConversationPage({
           conversation,
           timeline,
           incidentCategory: initialCategory,
+          jurisdiction: useNswLegalAwareness ? "NSW" : undefined,
         });
         const assistantContent = buildAssistantBubbleContent(
           response.assistantMessage ?? "",
@@ -780,6 +933,7 @@ function SafeSpeakAssistantConversationPage({
               ragUnavailable: response.rag?.unavailable,
               pendingHumanReview:
                 response.reviewStatus === "pending_human_review",
+              legalAwareness: response.legalAwareness,
             },
           },
         ]);
@@ -793,7 +947,7 @@ function SafeSpeakAssistantConversationPage({
         setIsSending(false);
       }
     },
-    [initialCategory, timeline]
+    [initialCategory, timeline, useNswLegalAwareness]
   );
 
   useEffect(() => {
@@ -1045,6 +1199,91 @@ function SafeSpeakAssistantConversationPage({
                       >
                         {message.content}
                       </div>
+
+                      {message.role === "assistant" && message.responseMeta ? (
+                        <div className="mt-2 space-y-2">
+                          {message.responseMeta.legalAwareness ? (
+                            <NswLegalAwarenessPanel
+                              legalAwareness={
+                                message.responseMeta.legalAwareness
+                              }
+                              compact
+                            />
+                          ) : null}
+
+                          <div className="rounded-[18px] border border-[#dce6f2] bg-white/95 p-3 text-[10px] leading-[1.55] text-[#65748a] shadow-[0_8px_22px_rgba(148,163,184,0.1)]">
+                            <div className="flex flex-wrap gap-1.5">
+                              {message.responseMeta.confidence ? (
+                                <span className="rounded-full bg-[#eef6ff] px-2 py-1 font-semibold text-[#3f7de0]">
+                                  Confidence: {message.responseMeta.confidence}
+                                </span>
+                              ) : null}
+                              {message.responseMeta.pendingHumanReview ? (
+                                <span className="rounded-full bg-[#fff7ed] px-2 py-1 font-semibold text-[#b45309]">
+                                  Human review recommended
+                                </span>
+                              ) : null}
+                              {message.responseMeta.ragUnavailable ? (
+                                <span className="rounded-full bg-[#fff1f2] px-2 py-1 font-semibold text-[#be123c]">
+                                  Source retrieval unavailable
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {message.responseMeta.disclaimer ? (
+                              <p className="mt-2">
+                                {message.responseMeta.disclaimer}
+                              </p>
+                            ) : null}
+
+                            {message.responseMeta.citations?.length ? (
+                              <div className="mt-2 border-t border-[#edf2f7] pt-2">
+                                <p className="font-bold uppercase tracking-[0.08em] text-[#7d8ea5]">
+                                  Sources
+                                </p>
+                                <div className="mt-1.5 space-y-1.5">
+                                  {message.responseMeta.citations.map(
+                                    (citation) => (
+                                      <div
+                                        key={
+                                          citation.sourceId ??
+                                          `${citation.title}-${citation.url ?? ""}`
+                                        }
+                                      >
+                                        {citation.url ? (
+                                          <a
+                                            href={citation.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="font-semibold text-[#2f6fca] underline-offset-2 hover:underline"
+                                          >
+                                            {citation.title}
+                                          </a>
+                                        ) : (
+                                          <span className="font-semibold text-[#344359]">
+                                            {citation.title}
+                                          </span>
+                                        )}
+                                        <p className="text-[9px] text-[#8190a3]">
+                                          {[
+                                            citation.publisher,
+                                            citation.jurisdiction,
+                                            formatAssistantCitationDate(
+                                              citation.lastUpdated
+                                            ),
+                                          ]
+                                            .filter(Boolean)
+                                            .join(" | ")}
+                                        </p>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))}

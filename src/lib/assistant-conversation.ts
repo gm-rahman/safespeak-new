@@ -1,10 +1,8 @@
 import { apiRequest } from "@/lib/api";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import {
-  consentRequirements,
-  grantConsent,
-} from "@/lib/consent";
+import { consentRequirements, grantConsent } from "@/lib/consent";
 import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
+
 const MAX_TIMELINE_CONVERSATION_MESSAGES = 100;
 
 export type AssistantConversationMessage = {
@@ -14,6 +12,20 @@ export type AssistantConversationMessage = {
 
 export type AssistantTimeline = {
   [key: string]: string;
+};
+
+export type LegalAwareness = {
+  jurisdiction: "NSW";
+  topic: "racial_abuse" | "migrant_challenges";
+  informationOnly: true;
+  sourceStatus: "approved_sources_used" | "insufficient_approved_sources";
+  keyPoints: string[];
+  pathwayCards: Array<{
+    title: string;
+    body: string;
+    sourceRequirement: string;
+  }>;
+  citationPolicy: string;
 };
 
 function trimConversationForTimelineAssistant(
@@ -34,10 +46,14 @@ export type TimelineAssistantResponse = {
   confidence: "low" | "medium" | "high";
   disclaimer: string;
   citations: Array<{
+    sourceId?: string;
     title: string;
     publisher?: string;
     url?: string;
     jurisdiction?: string;
+    sourceCategory?: string;
+    sourceType?: string;
+    topic?: string;
     sectionRef?: string;
     lastUpdated?: string;
   }>;
@@ -46,6 +62,7 @@ export type TimelineAssistantResponse = {
     unavailable: boolean;
     resultCount: number;
   };
+  legalAwareness?: LegalAwareness;
   reviewStatus?: string;
   interactionId?: string;
 };
@@ -64,6 +81,7 @@ export async function sendTimelineAssistantMessage(input: {
   conversation: AssistantConversationMessage[];
   timeline: AssistantTimeline;
   language?: string;
+  jurisdiction?: "NSW";
   incidentCategory?: AssistantIncidentCategory;
 }): Promise<TimelineAssistantResponse> {
   const normalizedInput = {

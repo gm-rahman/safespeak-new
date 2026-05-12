@@ -413,6 +413,28 @@ function ReportSubmissionSupportPage() {
       resourceCards: buildResourceCards(triageResult, t),
     };
   }, [t, triageResult, triageSource]);
+  const citationItems = useMemo(
+    () =>
+      Array.isArray(triageResult?.citations)
+        ? triageResult.citations.filter(
+            (citation) =>
+              citation &&
+              (citation.title || citation.sourceId || citation.excerpt),
+          )
+        : [],
+    [triageResult],
+  );
+  const confidenceLabel = triageResult?.confidence
+    ? toDisplayLabel(String(triageResult.confidence))
+    : "Low";
+  const fallbackReason =
+    triageResult?.fallbackReason && triageResult.fallbackReason !== "none"
+      ? toDisplayLabel(triageResult.fallbackReason)
+      : "";
+  const reviewStatusLabel =
+    triageResult?.pendingHumanReview || triageResult?.reviewStatus === "pending_human_review"
+      ? "Human review recommended"
+      : "No human review flag";
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -494,8 +516,42 @@ function ReportSubmissionSupportPage() {
           </div>
 
           <p className="mx-auto mt-3 max-w-[650px] text-center text-[9px] leading-[1.45] text-[#b0bccb]">
-            {t("dashboard.assistant.triage.legalInfo")}
+            {triageResult?.disclaimer ?? t("dashboard.assistant.triage.legalInfo")}
           </p>
+
+          <section className="mx-auto mt-3 grid w-full max-w-[1136px] gap-2 rounded-[18px] border border-[#d9e6f3] bg-white px-4 py-3 text-left text-[11px] text-[#607B90] md:grid-cols-3">
+            <p>
+              <span className="font-semibold text-[#1f2a3a]">Confidence:</span>{" "}
+              {confidenceLabel}
+            </p>
+            <p>
+              <span className="font-semibold text-[#1f2a3a]">Review:</span>{" "}
+              {reviewStatusLabel}
+            </p>
+            <p>
+              <span className="font-semibold text-[#1f2a3a]">Fallback:</span>{" "}
+              {fallbackReason || "None"}
+            </p>
+            {triageResult?.humanReviewNote ? (
+              <p className="md:col-span-3">
+                <span className="font-semibold text-[#1f2a3a]">Review note:</span>{" "}
+                {triageResult.humanReviewNote}
+              </p>
+            ) : null}
+            {citationItems.length > 0 ? (
+              <div className="md:col-span-3">
+                <p className="font-semibold text-[#1f2a3a]">Citations</p>
+                <ul className="mt-1 space-y-1">
+                  {citationItems.slice(0, 3).map((citation, index) => (
+                    <li key={`${citation.sourceId ?? citation.title ?? index}`}>
+                      {citation.title ?? citation.sourceId ?? "Source"}
+                      {citation.excerpt ? ` - ${citation.excerpt}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </section>
 
           <div className="mt-4 flex items-center justify-between gap-3">
             <h3 className="text-lg font-bold text-[#1f2a3a]">

@@ -30,8 +30,22 @@ export type AssistantTriageApiResult = {
   resourceRecommendations?: unknown;
   nonLegalSafetyNotes?: unknown;
   immediateSafetyFlag?: boolean | string;
-  citations?: unknown;
+  confidence?: "low" | "medium" | "high" | string;
+  citations?: Array<{
+    sourceType?: string;
+    sourceId?: string;
+    title?: string;
+    excerpt?: string;
+  }>;
+  fallbackReason?: string;
+  pendingHumanReview?: boolean;
+  safetyFlags?: Record<string, boolean>;
+  disclaimer?: string;
+  humanReviewNote?: string;
   reviewStatus?: string;
+  interactionId?: string;
+  templateVersion?: number;
+  templateStatus?: string;
 };
 
 type TriageReportResponse = {
