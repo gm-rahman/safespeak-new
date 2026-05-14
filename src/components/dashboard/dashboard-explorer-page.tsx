@@ -14,8 +14,10 @@ import {
   IconHomeFilled,
   IconLoader2,
   IconMicrophone,
+  IconPhone,
   IconSearch,
   IconShieldFilled,
+  IconSparkles,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
@@ -34,13 +36,25 @@ import migrateImage from "@/assets/migrate.jpg";
 import topRight from "@/assets/top-right.svg?url";
 import { cn } from "@/lib/utils";
 
+type SupportCardVisual = {
+  imageSrc?: React.ComponentProps<typeof Image>["src"];
+  imageUrl?: string;
+  imageAlt?: string;
+  gradientClassName?: string;
+  overlayClassName?: string;
+  icon: React.ReactNode;
+};
+
 function ExplorerSupportCard({
   title,
   subtitle,
   icon,
   className,
   imageSrc,
+  imageUrl,
+  imageAlt,
   gradientClassName,
+  overlayClassName,
   href,
 }: {
   title: string;
@@ -48,42 +62,154 @@ function ExplorerSupportCard({
   icon: React.ReactNode;
   className?: string;
   imageSrc?: React.ComponentProps<typeof Image>["src"];
+  imageUrl?: string;
+  imageAlt?: string;
   gradientClassName?: string;
+  overlayClassName?: string;
   href: React.ComponentProps<typeof Link>["href"];
 }) {
   return (
     <Link
       href={href}
       className={cn(
-        "group relative min-h-[198px] overflow-hidden rounded-[18px] border border-white/20 transition duration-200 ease-out hover:scale-[1.01]",
+        "group relative min-h-[220px] overflow-hidden rounded-[24px] border border-white/20 bg-white/[0.002] shadow-[0_10px_15px_-3px_rgba(0,0,0,0.10),0_4px_6px_-4px_rgba(0,0,0,0.10)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_32px_-14px_rgba(15,23,42,0.36)] sm:min-h-[260px] xl:rounded-[32px]",
         className
       )}
     >
-      {imageSrc ? (
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={imageAlt ?? title}
+          className="absolute inset-0 h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.04]"
+        />
+      ) : imageSrc ? (
         <Image
           src={imageSrc}
-          alt={title}
+          alt={imageAlt ?? title}
           fill
-          className="object-cover transition duration-300 ease-out group-hover:scale-[1.03]"
+          sizes="(min-width: 1280px) 728px, (min-width: 768px) 50vw, 100vw"
+          className="object-cover transition duration-500 ease-out group-hover:scale-[1.04]"
         />
       ) : (
-        <div className={cn("absolute inset-0", gradientClassName)} />
+        <div
+          className={cn(
+            "absolute inset-0 bg-[linear-gradient(135deg,#0F5D9F_0%,#1D72D8_100%)]",
+            gradientClassName
+          )}
+        />
       )}
 
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.06)_5%,rgba(15,23,42,0.62)_72%,rgba(15,23,42,0.8)_100%)]" />
+      {overlayClassName ? <div className={cn("absolute inset-0", overlayClassName)} /> : null}
+      <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.82)_0%,rgba(0,0,0,0.34)_42%,rgba(0,0,0,0)_100%)]" />
 
-      <span className="bg-white/28 absolute left-3 top-3 inline-flex h-5 w-5 items-center justify-center rounded-full text-white backdrop-blur-sm">
+      <span className="absolute left-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/30 bg-white/25 text-white backdrop-blur-[2px] sm:left-5 sm:top-5 sm:h-10 sm:w-10 xl:left-6 xl:top-6 xl:h-12 xl:w-12">
         {icon}
       </span>
 
-      <div className="absolute inset-x-3 bottom-3">
-        <h3 className="text-[22px] font-bold leading-tight text-white">
+      <div className="absolute inset-x-0 bottom-0 px-4 pb-4 pt-10 sm:px-5 sm:pb-5 xl:px-8 xl:pb-8">
+        <h3 className="line-clamp-2 text-[20px] font-bold leading-[1.15] text-white sm:text-[22px] xl:text-2xl xl:leading-8">
           {title}
         </h3>
-        <p className="mt-1 text-[11px] text-white/80">{subtitle}</p>
+        <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-[#E5E7EB] sm:text-xs xl:text-sm xl:leading-5">
+          {subtitle}
+        </p>
       </div>
     </Link>
   );
+}
+
+function supportIcon(icon?: SupportServiceRecord["cardIcon"], size = 18) {
+  if (icon === "scale") return <IconFolderFilled size={size} />;
+  if (icon === "phone") return <IconPhone size={size} />;
+  if (icon === "community") return <IconCompassFilled size={size} />;
+  if (icon === "counselling") return <IconMicrophone size={size} />;
+  if (icon === "home") return <IconHomeFilled size={size} />;
+  if (icon === "bell") return <IconBellFilled size={size} />;
+  if (icon === "sparkles") return <IconSparkles size={size} />;
+
+  return <IconShieldFilled size={size} />;
+}
+
+function overlayClassForTone(tone?: SupportServiceRecord["cardOverlayTone"]) {
+  if (tone === "blue") return "bg-[#0F5D9F]/30 mix-blend-multiply";
+  if (tone === "red") return "bg-[#7F1D1D]/35 mix-blend-multiply";
+  if (tone === "brown") return "bg-[#7C2D12]/25 mix-blend-overlay";
+  if (tone === "purple") return "bg-[#4F46E5]/25 mix-blend-multiply";
+  if (tone === "dark") return "bg-black/15";
+
+  return undefined;
+}
+
+function getSupportCardVisual(service: SupportServiceRecord, index: number): SupportCardVisual {
+  const searchable = `${service.name} ${service.type ?? ""} ${service.description ?? ""}`.toLowerCase();
+  const adminVisual: Partial<SupportCardVisual> = {
+    imageUrl: service.cardImageUrl,
+    imageAlt: service.cardImageAlt || service.name,
+    overlayClassName: overlayClassForTone(service.cardOverlayTone),
+    icon: supportIcon(service.cardIcon),
+  };
+
+  if (service.cardImageUrl) {
+    return {
+      ...adminVisual,
+      icon: adminVisual.icon ?? supportIcon(service.cardIcon),
+    } as SupportCardVisual;
+  }
+
+  if (searchable.includes("legal") || searchable.includes("rights")) {
+    return { ...adminVisual, imageSrc: hackerImage, icon: supportIcon(service.cardIcon ?? "scale") };
+  }
+
+  if (searchable.includes("community") || searchable.includes("advocate")) {
+    return { ...adminVisual, imageSrc: abuseImage, icon: supportIcon(service.cardIcon ?? "community") };
+  }
+
+  if (searchable.includes("counsel") || searchable.includes("mental")) {
+    return { ...adminVisual, imageSrc: domesticViolanceImage, icon: supportIcon(service.cardIcon ?? "counselling") };
+  }
+
+  if (searchable.includes("health") || searchable.includes("clinic") || searchable.includes("medical")) {
+    return { ...adminVisual, imageSrc: topRight, icon: supportIcon(service.cardIcon ?? "shield") };
+  }
+
+  if (searchable.includes("crisis") || searchable.includes("urgent") || searchable.includes("lifeline")) {
+    return {
+      ...adminVisual,
+      imageSrc: bottomLeft,
+      icon: supportIcon(service.cardIcon ?? "bell"),
+      overlayClassName: adminVisual.overlayClassName ?? "bg-[#7F1D1D]/35 mix-blend-multiply",
+    };
+  }
+
+  if (searchable.includes("elder") || searchable.includes("senior")) {
+    return {
+      ...adminVisual,
+      imageSrc: migrateImage,
+      icon: supportIcon(service.cardIcon ?? "home"),
+      overlayClassName: adminVisual.overlayClassName ?? "bg-[#7C2D12]/25 mix-blend-overlay",
+    };
+  }
+
+  if (searchable.includes("online") || searchable.includes("cyber") || searchable.includes("safety")) {
+    return {
+      ...adminVisual,
+      icon: supportIcon(service.cardIcon ?? "shield"),
+      gradientClassName: "bg-[linear-gradient(135deg,#4F46E5_0%,#7E22CE_100%)]",
+    };
+  }
+
+  const fallbackVisuals: SupportCardVisual[] = [
+    { imageSrc: hackerImage, icon: <IconShieldFilled size={18} /> },
+    { imageSrc: abuseImage, icon: <IconCompassFilled size={18} /> },
+    { imageSrc: domesticViolanceImage, icon: <IconMicrophone size={18} /> },
+    { gradientClassName: "bg-[linear-gradient(135deg,#0F5D9F_0%,#1D72D8_100%)]", icon: <IconSparkles size={18} /> },
+  ];
+
+  return {
+    ...fallbackVisuals[index % fallbackVisuals.length],
+    ...adminVisual,
+    icon: adminVisual.icon ?? fallbackVisuals[index % fallbackVisuals.length].icon,
+  };
 }
 
 function getExplorerContextCopy(
@@ -144,13 +270,11 @@ export function ExplorerPage({
   const { t } = useTranslation();
   const contextCopy = getExplorerContextCopy(category, focus);
   const [services, setServices] = useState<SupportServiceRecord[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedType, setSelectedType] = useState("");
+  const [selectedRegion, setSelectedRegion] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const filters = [
-    t("dashboard.explorer.filterLanguage"),
-    t("dashboard.explorer.filterRegion"),
-    t("dashboard.explorer.filterServiceType"),
-  ];
   const recommendationNeeds = useMemo(() => {
     switch (category) {
       case "domestic_violence":
@@ -167,9 +291,28 @@ export function ExplorerPage({
         return [];
     }
   }, [category, focus]);
+  const recommendationProfile = useMemo(() => {
+    if (focus === "safety_plan") {
+      return "safety_plan";
+    }
+
+    switch (category) {
+      case "domestic_violence":
+        return "domestic_violence";
+      case "racial_abuse":
+        return "racial_abuse";
+      case "migrant_challenges":
+        return "migrant_support";
+      case "cyber_scam":
+        return "online_safety";
+      default:
+        return "";
+    }
+  }, [category, focus]);
 
   useEffect(() => {
     let isActive = true;
+    setIsLoading(true);
 
     void (async () => {
       try {
@@ -179,8 +322,15 @@ export function ExplorerPage({
                 needs: recommendationNeeds,
                 jurisdiction: "AU",
                 language: "en",
+                region: selectedRegion || undefined,
+                profile: recommendationProfile || undefined,
               })
-            : await listSupportServices({ jurisdiction: "AU", language: "en" });
+            : await listSupportServices({
+                jurisdiction: "AU",
+                language: "en",
+                region: selectedRegion || undefined,
+                type: selectedType || undefined,
+              });
 
         if (!isActive) {
           return;
@@ -208,9 +358,30 @@ export function ExplorerPage({
     return () => {
       isActive = false;
     };
-  }, [category, focus, recommendationNeeds]);
+  }, [category, focus, recommendationNeeds, recommendationProfile, selectedRegion, selectedType]);
 
-  const dynamicServices = services.slice(0, 6);
+  const visibleServices = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    if (!normalizedSearch) {
+      return services;
+    }
+
+    return services.filter(service =>
+      [
+        service.name,
+        service.description,
+        service.type,
+        service.jurisdiction,
+        ...(service.regions ?? []),
+        ...(service.eligibility ?? []),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedSearch),
+    );
+  }, [searchTerm, services]);
+  const dynamicServices = visibleServices.slice(0, 6);
   const shouldShowFallbackResources = !isLoading && dynamicServices.length === 0;
 
   return (
@@ -242,20 +413,50 @@ export function ExplorerPage({
             <input
               type="text"
               placeholder={t("dashboard.explorer.searchPlaceholder")}
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
               className="h-9 w-full rounded-full border border-[#dbe4f0] bg-white px-9 text-[11px] text-[#1f2937] outline-none placeholder:text-[#a2afc2] focus:border-[#3b82f6]"
             />
           </div>
 
-          <div className="mt-3 flex items-center justify-center gap-4 text-[10px] font-semibold text-[#2f6fca]">
-            {filters.map((filter) => (
-              <button
-                key={filter}
-                className="inline-flex items-center gap-1 rounded-full px-1 py-0.5 hover:text-[#0f5d9f]"
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-[10px] font-semibold text-[#2f6fca]">
+            <label className="relative">
+              <select
+                className="h-8 appearance-none rounded-full border border-[#dbe4f0] bg-white px-3 pr-7 outline-none"
+                value={selectedRegion}
+                onChange={(event) => setSelectedRegion(event.target.value)}
               >
-                {filter}
-                <IconChevronDown size={11} />
-              </button>
-            ))}
+                <option value="">{t("dashboard.explorer.filterRegion")}</option>
+                <option value="national">National</option>
+                <option value="NSW">NSW</option>
+                <option value="VIC">VIC</option>
+                <option value="QLD">QLD</option>
+              </select>
+              <IconChevronDown
+                size={11}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
+              />
+            </label>
+            <label className="relative">
+              <select
+                className="h-8 appearance-none rounded-full border border-[#dbe4f0] bg-white px-3 pr-7 outline-none"
+                value={selectedType}
+                onChange={(event) => setSelectedType(event.target.value)}
+                disabled={Boolean(category || focus)}
+              >
+                <option value="">{t("dashboard.explorer.filterServiceType")}</option>
+                <option value="crisis">Crisis</option>
+                <option value="counselling">Counselling</option>
+                <option value="legal_information">Legal information</option>
+                <option value="community">Community</option>
+                <option value="housing">Housing</option>
+                <option value="financial">Financial</option>
+              </select>
+              <IconChevronDown
+                size={11}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
+              />
+            </label>
           </div>
         </div>
 
@@ -301,25 +502,34 @@ export function ExplorerPage({
         ) : null}
 
         {dynamicServices.length > 0 ? (
-          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {dynamicServices.map((service, index) => (
-              <ExplorerSupportCard
-                key={service._id ?? service.id ?? `${service.name}-${index}`}
-                title={service.name}
-                subtitle={
-                  service.description ||
-                  service.type ||
-                  service.jurisdiction ||
-                  "Support service"
-                }
-                icon={<IconShieldFilled size={10} />}
-                gradientClassName="bg-[linear-gradient(135deg,#0f5d9f_0%,#1d72d8_100%)]"
-                href={{
-                  pathname: "/dashboard/explorer/service-details",
-                  query: { service: service.id ?? service._id },
-                }}
-              />
-            ))}
+          <div className="mx-auto mt-6 grid w-full max-w-[1152px] grid-cols-1 gap-5 md:grid-cols-2 xl:gap-6">
+            {dynamicServices.map((service, index) => {
+              const visual = getSupportCardVisual(service, index);
+
+              return (
+                <ExplorerSupportCard
+                  key={service._id ?? service.id ?? `${service.name}-${index}`}
+                  className="md:min-h-[280px] xl:min-h-[320px]"
+                  title={service.name}
+                  subtitle={
+                    service.description ||
+                    service.type ||
+                    service.jurisdiction ||
+                    "Support service"
+                  }
+                  icon={visual.icon}
+                  imageSrc={visual.imageSrc}
+                  imageUrl={visual.imageUrl}
+                  imageAlt={visual.imageAlt}
+                  gradientClassName={visual.gradientClassName}
+                  overlayClassName={visual.overlayClassName}
+                  href={{
+                    pathname: "/dashboard/explorer/service-details",
+                    query: { service: service.id ?? service._id },
+                  }}
+                />
+              );
+            })}
           </div>
         ) : null}
 
@@ -372,12 +582,12 @@ export function ExplorerPage({
         ) : null}
 
         {shouldShowFallbackResources ? (
-        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mx-auto mt-6 grid w-full max-w-[1152px] grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 xl:gap-6">
           <ExplorerSupportCard
-            className="md:col-span-2 xl:col-span-2"
+            className="md:col-span-2 md:min-h-[320px] xl:col-span-2"
             title={t("dashboard.explorer.legalAid")}
             subtitle={t("dashboard.explorer.legalAidSubtitle")}
-            icon={<IconFolderFilled size={10} />}
+            icon={<IconFolderFilled size={18} />}
             imageSrc={hackerImage}
             href={{
               pathname: "/dashboard/explorer/service-details",
@@ -387,7 +597,7 @@ export function ExplorerPage({
           <ExplorerSupportCard
             title={t("dashboard.explorer.communitySupport")}
             subtitle={t("dashboard.explorer.communitySupportSubtitle")}
-            icon={<IconCompassFilled size={10} />}
+            icon={<IconCompassFilled size={18} />}
             imageSrc={abuseImage}
             href={{
               pathname: "/dashboard/explorer/service-details",
@@ -395,9 +605,10 @@ export function ExplorerPage({
             }}
           />
           <ExplorerSupportCard
+            className="xl:min-h-[416px]"
             title={t("dashboard.explorer.counselling")}
             subtitle={t("dashboard.explorer.counsellingSubtitle")}
-            icon={<IconMicrophone size={10} />}
+            icon={<IconMicrophone size={18} />}
             imageSrc={domesticViolanceImage}
             href={{
               pathname: "/dashboard/explorer/service-details",
@@ -405,9 +616,10 @@ export function ExplorerPage({
             }}
           />
           <ExplorerSupportCard
+            className="xl:min-h-[416px]"
             title={t("dashboard.explorer.healthServices")}
             subtitle={t("dashboard.explorer.healthServicesSubtitle")}
-            icon={<IconShieldFilled size={10} />}
+            icon={<IconShieldFilled size={18} />}
             imageSrc={topRight}
             href={{
               pathname: "/dashboard/explorer/service-details",
@@ -415,31 +627,35 @@ export function ExplorerPage({
             }}
           />
           <ExplorerSupportCard
+            className="xl:min-h-[416px]"
             title={t("dashboard.explorer.elderSupport")}
             subtitle={t("dashboard.explorer.elderSupportSubtitle")}
-            icon={<IconHomeFilled size={10} />}
+            icon={<IconHomeFilled size={18} />}
             imageSrc={migrateImage}
+            overlayClassName="bg-[#7C2D12]/25 mix-blend-overlay"
             href={{
               pathname: "/dashboard/explorer/service-details",
               query: { service: "elder-support" },
             }}
           />
           <ExplorerSupportCard
+            className="md:min-h-[320px]"
             title={t("dashboard.explorer.crisisSupport")}
             subtitle={t("dashboard.explorer.crisisSupportSubtitle")}
-            icon={<IconBellFilled size={10} />}
+            icon={<IconBellFilled size={18} />}
             imageSrc={bottomLeft}
+            overlayClassName="bg-[#7F1D1D]/35 mix-blend-multiply"
             href={{
               pathname: "/dashboard/explorer/service-details",
               query: { service: "crisis-support" },
             }}
           />
           <ExplorerSupportCard
-            className="md:col-span-2 xl:col-span-2"
+            className="md:col-span-2 md:min-h-[320px] xl:col-span-2"
             title={t("dashboard.explorer.onlineSafety")}
             subtitle={t("dashboard.explorer.onlineSafetySubtitle")}
-            icon={<IconShieldFilled size={10} />}
-            gradientClassName="bg-[linear-gradient(130deg,#6240e6_0%,#6f4fe8_50%,#7f61ee_100%)]"
+            icon={<IconShieldFilled size={18} />}
+            gradientClassName="bg-[linear-gradient(135deg,#4F46E5_0%,#7E22CE_100%)]"
             href={{
               pathname: "/dashboard/explorer/service-details",
               query: { service: "online-safety" },

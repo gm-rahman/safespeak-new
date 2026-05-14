@@ -20,8 +20,10 @@ import {
   getReportDestinations,
   getReport,
   type ReportDestinationPreview,
+  type ReportSubmissionPayloadPreview,
   getReportStatus,
   getReportTimeline,
+  previewReportSubmissions,
   submitReportToDestination,
 } from "@/lib/reports-client";
 import { getReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
@@ -179,6 +181,9 @@ const buildStatusHistoryEntries = (
     return entries;
   }, []);
 
+const stringifyPreviewPayload = (payload: Record<string, unknown>): string =>
+  JSON.stringify(payload, null, 2);
+
 function ReportSubmissionReviewPage() {
   const router = useRouter();
   const reportDraft = useMemo(() => getReportFlowDraft(), []);
@@ -193,6 +198,10 @@ function ReportSubmissionReviewPage() {
   const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(
     reportDraft?.selectedDestinationId ?? null
   );
+  const [selectedDestinationIds, setSelectedDestinationIds] = useState<string[]>(
+    reportDraft?.selectedDestinationId ? [reportDraft.selectedDestinationId] : []
+  );
+  const [submissionPreviews, setSubmissionPreviews] = useState<ReportSubmissionPayloadPreview[]>([]);
   const [anonymityMode, setAnonymityMode] = useState<
     "identified" | "anonymous" | "pseudonymous"
   >("identified");
@@ -200,6 +209,7 @@ function ReportSubmissionReviewPage() {
   const [statusHistoryEntries, setStatusHistoryEntries] = useState<StatusHistoryEntry[]>([]);
   const [hasLocalOnlyTimelineContent, setHasLocalOnlyTimelineContent] = useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(reportDraft?.reportId));
+  const [isLoadingSubmissionPreviews, setIsLoadingSubmissionPreviews] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(
@@ -276,6 +286,26 @@ function ReportSubmissionReviewPage() {
 
           return preferredDestinationId;
         });
+        setSelectedDestinationIds((currentDestinationIds) => {
+          const validDestinationIds = currentDestinationIds.filter((destinationId) =>
+            destinationOptions.some((destination) => destination.destinationId === destinationId)
+          );
+
+          if (validDestinationIds.length) {
+            return validDestinationIds;
+          }
+
+          const fallbackDestinationId =
+            reportDraft?.selectedDestinationId &&
+            destinationOptions.some(
+              (destination) =>
+                destination.destinationId === reportDraft.selectedDestinationId
+            )
+              ? reportDraft.selectedDestinationId
+              : destinationOptions[0]?.destinationId;
+
+          return fallbackDestinationId ? [fallbackDestinationId] : [];
+        });
         setLoadError(null);
       } catch (error) {
         if (!isActive) {
@@ -308,7 +338,48 @@ function ReportSubmissionReviewPage() {
     return () => {
       isActive = false;
     };
-  }, [reportDraft?.reportId, reportDraft?.structuredFields]);
+  }, [reportDraft?.reportId, reportDraft?.selectedDestinationId, reportDraft?.structuredFields]);
+
+  useEffect(() => {
+    const reportId = reportDraft?.reportId;
+
+    if (!reportId || !selectedDestinationIds.length) {
+      setSubmissionPreviews([]);
+      return;
+    }
+
+    let isActive = true;
+    setIsLoadingSubmissionPreviews(true);
+
+    void previewReportSubmissions(reportId, {
+      destinationIds: selectedDestinationIds,
+      anonymityMode,
+      notes: submissionNotes.trim() || undefined,
+    })
+      .then((previews) => {
+        if (isActive) {
+          setSubmissionPreviews(previews);
+        }
+      })
+      .catch((error) => {
+        if (isActive) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Submission previews could not be generated."
+          );
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoadingSubmissionPreviews(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [anonymityMode, reportDraft?.reportId, selectedDestinationIds, submissionNotes]);
 
   const toggleEntry = (entryId: string) => {
     setExpandedEntryId((currentEntryId) =>
@@ -345,6 +416,23 @@ function ReportSubmissionReviewPage() {
     setTimelineEntries((currentEntries) => [...currentEntries, newEntry]);
     setExpandedEntryId(entryId);
     closeManualEntry();
+  };
+
+  const toggleDestinationSelection = (destinationId: string) => {
+    setSelectedDestinationIds((currentDestinationIds) => {
+      if (currentDestinationIds.includes(destinationId)) {
+        const nextDestinationIds = currentDestinationIds.filter((id) => id !== destinationId);
+
+        if (selectedDestinationId === destinationId) {
+          setSelectedDestinationId(nextDestinationIds[0] ?? null);
+        }
+
+        return nextDestinationIds;
+      }
+
+      setSelectedDestinationId(destinationId);
+      return [...currentDestinationIds, destinationId];
+    });
   };
 
   const handleSubmitReport = async () => {
@@ -503,6 +591,7 @@ function ReportSubmissionReviewPage() {
                   destinations.map((destination) => {
                     const isSelected =
                       destination.destinationId === selectedDestinationId;
+                    const isIncluded = selectedDestinationIds.includes(destination.destinationId);
                     const hasMissingInfo =
                       destination.missingRequiredInfo.length > 0;
 
@@ -510,9 +599,7 @@ function ReportSubmissionReviewPage() {
                       <button
                         key={destination.destinationId}
                         type="button"
-                        onClick={() =>
-                          setSelectedDestinationId(destination.destinationId)
-                        }
+                        onClick={() => toggleDestinationSelection(destination.destinationId)}
                         className={`w-full rounded-[12px] border px-4 py-3 text-left transition ${
                           isSelected
                             ? "border-[#0f52ba] bg-[#f7fbff]"
@@ -521,9 +608,22 @@ function ReportSubmissionReviewPage() {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <p className="text-[12px] font-semibold text-[#1f2a3a]">
-                              {destination.destinationName}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`inline-flex h-4 w-4 items-center justify-center rounded border ${
+                                  isIncluded
+                                    ? "border-[#0f52ba] bg-[#0f52ba]"
+                                    : "border-[#cbd8e8] bg-white"
+                                }`}
+                              >
+                                {isIncluded ? (
+                                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                                ) : null}
+                              </span>
+                              <p className="text-[12px] font-semibold text-[#1f2a3a]">
+                                {destination.destinationName}
+                              </p>
+                            </div>
                             <p className="mt-1 text-[10px] text-[#6d8199]">
                               {destination.destinationType} via {destination.channel}
                             </p>
@@ -541,6 +641,9 @@ function ReportSubmissionReviewPage() {
                           </span>
                         </div>
                         <p className="mt-2 text-[10px] leading-[1.55] text-[#60728a]">
+                          Why: {destination.reason}
+                        </p>
+                        <p className="mt-1 text-[10px] leading-[1.55] text-[#60728a]">
                           Required: {destination.minimumRequiredInfo.join(", ") || "None listed"}
                         </p>
                         {destination.expectedNextSteps.length ? (
@@ -597,6 +700,76 @@ function ReportSubmissionReviewPage() {
                       {selectedDestination.requiredConsentFlags.join(", ")}
                     </div>
                   ) : null}
+                  <div className="sm:col-span-2 rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[10px] leading-[1.55] text-[#60728a]">
+                    Anonymity options:{" "}
+                    {selectedDestination.anonymityOptions.join(", ") || "Not specified by this destination"}
+                  </div>
+                </div>
+              ) : null}
+              {selectedDestinationIds.length ? (
+                <div className="mt-3 rounded-[12px] border border-[#edf2f8] bg-white p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                      Generated submission previews
+                    </p>
+                    <p className="text-[10px] text-[#8ea0b8]">
+                      {selectedDestinationIds.length} selected
+                    </p>
+                  </div>
+                  {isLoadingSubmissionPreviews ? (
+                    <div className="mt-3 inline-flex items-center gap-2 text-[10px] text-[#60728a]">
+                      <IconLoader2 size={12} className="animate-spin" />
+                      Mapping report fields...
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      {submissionPreviews.map((preview) => (
+                        <article
+                          key={preview.destination.destinationId}
+                          className="rounded-[10px] border border-[#dce5f1] bg-[#f9fbfe] p-3"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="text-[11px] font-semibold text-[#1f2a3a]">
+                                {preview.destination.destinationName}
+                              </p>
+                              <p className="mt-1 text-[10px] text-[#6d8199]">
+                                Template: {preview.template.templateName ?? "Default SafeSpeak payload"}
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] ${
+                                preview.missingRequiredInfo.length ||
+                                preview.missingMappedFields.length ||
+                                preview.missingConsentFlags.length
+                                  ? "bg-[#fff2df] text-[#9a6a2e]"
+                                  : "bg-[#e9f7ef] text-[#0b8b54]"
+                              }`}
+                            >
+                              {preview.missingRequiredInfo.length ||
+                              preview.missingMappedFields.length ||
+                              preview.missingConsentFlags.length
+                                ? "Needs review"
+                                : "Ready preview"}
+                            </span>
+                          </div>
+                          {preview.missingMappedFields.length ? (
+                            <p className="mt-2 text-[10px] leading-[1.55] text-[#9a5b12]">
+                              Missing mapped fields: {preview.missingMappedFields.join(", ")}
+                            </p>
+                          ) : null}
+                          {preview.missingConsentFlags.length ? (
+                            <p className="mt-1 text-[10px] leading-[1.55] text-[#9a5b12]">
+                              Consent needed before send: {preview.missingConsentFlags.join(", ")}
+                            </p>
+                          ) : null}
+                          <pre className="mt-3 max-h-[220px] overflow-auto rounded-[8px] bg-[#101827] p-3 text-[10px] leading-[1.5] text-[#dce8f8]">
+                            {stringifyPreviewPayload(preview.payload)}
+                          </pre>
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : null}
             </div>

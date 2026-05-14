@@ -49,6 +49,8 @@ import {
 
 import { interFont } from "./dashboard-shared";
 
+const SCAM_SHIELD_MEDIA_ASSET_CATEGORY = "Cybersecurity";
+
 function ScamShieldIntakePage({
   initialTopic,
 }: {
@@ -532,7 +534,7 @@ function ScamShieldAssetsPage() {
   useEffect(() => {
     let isMounted = true;
 
-    void listPublishedMediaAssets().then((assets) => {
+    void listPublishedMediaAssets(SCAM_SHIELD_MEDIA_ASSET_CATEGORY).then((assets) => {
       if (isMounted) {
         setMediaAssets(assets);
       }

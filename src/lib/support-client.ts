@@ -10,10 +10,33 @@ export type SupportServiceRecord = {
   name: string;
   type?: string;
   jurisdiction?: string;
+  cardImageUrl?: string;
+  cardImageAlt?: string;
+  cardIcon?:
+    | "scale"
+    | "shield"
+    | "phone"
+    | "community"
+    | "counselling"
+    | "home"
+    | "bell"
+    | "sparkles";
+  cardOverlayTone?: "default" | "dark" | "blue" | "red" | "brown" | "purple";
+  availabilityLabel?: string;
+  referralTitle?: string;
+  referralDescription?: string;
+  resourceLinks?: Array<{ label: string; url: string }>;
+  regions?: string[];
   languages?: string[];
+  eligibility?: string[];
   description?: string;
   phone?: string;
   email?: string;
+  websiteUrl?: string;
+  bookingUrl?: string;
+  address?: string;
+  crisis?: boolean;
+  informationOnly?: boolean;
   url?: string;
   metadata?: Record<string, unknown>;
 };
@@ -54,6 +77,9 @@ export async function listSupportServices(query?: {
   type?: string;
   jurisdiction?: string;
   language?: string;
+  region?: string;
+  eligibility?: string;
+  profile?: string;
 }): Promise<SupportServiceRecord[]> {
   const headers = await getSessionAwareAuthHeaders();
   const params = new URLSearchParams();
@@ -66,6 +92,15 @@ export async function listSupportServices(query?: {
   }
   if (query?.language) {
     params.set("language", query.language);
+  }
+  if (query?.region) {
+    params.set("region", query.region);
+  }
+  if (query?.eligibility) {
+    params.set("eligibility", query.eligibility);
+  }
+  if (query?.profile) {
+    params.set("profile", query.profile);
   }
 
   const response = await apiRequest<SupportServicesResponse>(
@@ -89,6 +124,9 @@ export async function getSupportRecommendations(input: {
   reportId?: string;
   needs?: string[];
   jurisdiction?: string;
+  region?: string;
+  eligibility?: string;
+  profile?: string;
   language?: string;
 }): Promise<SupportServiceRecord[]> {
   const headers = await getSessionAwareAuthHeaders();
@@ -106,6 +144,17 @@ export async function createWarmReferral(input: {
   contactPreference: "phone" | "email" | "in_app";
   safeContact: string;
   notes?: string;
+  minimalSummary?: {
+    incidentSummary?: string;
+    immediateSafetyConcerns?: string;
+    preferredContactMethod?: string;
+    interpreterPreference?: string;
+    culturalContext?: string;
+    informationOnlyDisclaimer?: boolean;
+  };
+  includedFields?: string[];
+  shareProfileContext?: boolean;
+  metadata?: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.warmReferral, headers);

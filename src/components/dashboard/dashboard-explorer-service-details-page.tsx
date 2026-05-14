@@ -6,11 +6,18 @@ import { useEffect, useState } from "react";
 import {
   IconArrowLeft,
   IconArrowRight,
+  IconBellFilled,
   IconChevronDown,
+  IconCompassFilled,
+  IconFolderFilled,
+  IconHomeFilled,
   IconLanguage,
   IconMail,
+  IconMicrophone,
   IconPhone,
   IconScale,
+  IconShieldFilled,
+  IconSparkles,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
@@ -27,6 +34,7 @@ import {
   listAdvocates,
   type SupportServiceRecord,
 } from "@/lib/support-client";
+import { getAuthSession } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const explorerServiceIds = [
@@ -77,6 +85,19 @@ function ContactInfoItem({
   );
 }
 
+function serviceDetailIcon(icon?: SupportServiceRecord["cardIcon"]) {
+  if (icon === "shield") return <IconShieldFilled size={23} />;
+  if (icon === "phone") return <IconPhone size={23} />;
+  if (icon === "community") return <IconCompassFilled size={23} />;
+  if (icon === "counselling") return <IconMicrophone size={23} />;
+  if (icon === "home") return <IconHomeFilled size={23} />;
+  if (icon === "bell") return <IconBellFilled size={23} />;
+  if (icon === "sparkles") return <IconSparkles size={23} />;
+  if (icon === "scale") return <IconScale size={23} />;
+
+  return <IconFolderFilled size={23} />;
+}
+
 export function ExplorerServiceDetailsPage({
   serviceId,
 }: {
@@ -86,6 +107,7 @@ export function ExplorerServiceDetailsPage({
   const { profile } = useSafeSpeakProfile();
   const [includeIncidentSummary, setIncludeIncidentSummary] = useState(true);
   const [isReferralPrepared, setIsReferralPrepared] = useState(false);
+  const [isReferralPreviewOpen, setIsReferralPreviewOpen] = useState(false);
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [serviceRecord, setServiceRecord] = useState<SupportServiceRecord | null>(null);
   const [serviceError, setServiceError] = useState<string | null>(null);
@@ -94,6 +116,7 @@ export function ExplorerServiceDetailsPage({
   const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const [isSubmittingReferral, setIsSubmittingReferral] = useState(false);
   const [advocateCount, setAdvocateCount] = useState(0);
+  const authSession = getAuthSession();
   const selectedServiceId: ExplorerServiceId = isExplorerServiceId(serviceId)
     ? serviceId
     : "community-support";
@@ -130,8 +153,12 @@ export function ExplorerServiceDetailsPage({
   };
   const selectedService = serviceMap[selectedServiceId];
   const serviceTitle = serviceRecord?.name ?? selectedService.title;
-  const phoneValue = t("dashboard.explorer.serviceDetails.phoneValue");
-  const emailValue = t("dashboard.explorer.serviceDetails.emailValue");
+  const phoneValue = serviceRecord?.phone ?? "Not provided";
+  const emailValue = serviceRecord?.email ?? "Not provided";
+  const userSafeContact = authSession?.user.email;
+  const referralContactPreference = userSafeContact ? "email" : "in_app";
+  const safeReferralContact = userSafeContact ?? "SafeSpeak in-app follow-up";
+  const requestedServiceId = serviceRecord?.id ?? serviceRecord?._id ?? serviceId ?? selectedServiceId;
   const referralNotes = [
     `Warm referral request for ${serviceTitle}.`,
     includeIncidentSummary
@@ -143,9 +170,26 @@ export function ExplorerServiceDetailsPage({
       : "Cultural profile withheld at the user's request.",
     "SafeSpeak is acting as a guidance and connection layer, not a legal or clinical provider.",
   ].join(" ");
-  const emailHref = `mailto:${emailValue}?subject=${encodeURIComponent(
+  const emailHref = `mailto:${serviceRecord?.email ?? ""}?subject=${encodeURIComponent(
     `Warm referral request - ${serviceTitle}`
   )}&body=${encodeURIComponent(referralNotes)}`;
+  const referralMinimalSummary = {
+    incidentSummary: includeIncidentSummary
+      ? "The user is requesting support and has approved sharing a concise incident summary prepared in SafeSpeak."
+      : undefined,
+    immediateSafetyConcerns: serviceRecord?.crisis
+      ? "The selected support service is marked as crisis-capable. Immediate danger still requires 000."
+      : undefined,
+    preferredContactMethod: referralContactPreference === "email" ? "email" : "in-app",
+    interpreterPreference: profile.interpreterLanguage,
+    culturalContext: profile.shareProfileInReferral
+      ? `${profile.culturalProfile}; ${profile.faithProfile}; ${profile.communityBackground}`
+      : undefined,
+    informationOnlyDisclaimer: true,
+  };
+  const referralIncludedFields = Object.entries(referralMinimalSummary)
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(([key]) => key);
 
   useEffect(() => {
     let isActive = true;
@@ -197,17 +241,30 @@ export function ExplorerServiceDetailsPage({
   };
 
   const prepareWarmReferral = async () => {
+    if (!isReferralPreviewOpen) {
+      setIsReferralPreviewOpen(true);
+      return;
+    }
+
     setIsSubmittingReferral(true);
     setServiceError(null);
 
     try {
       await createWarmReferral({
-        serviceId: serviceId ?? selectedServiceId,
-        contactPreference: "email",
-        safeContact: emailValue,
+        serviceId: requestedServiceId,
+        contactPreference: referralContactPreference,
+        safeContact: safeReferralContact,
         notes: referralNotes,
+        minimalSummary: referralMinimalSummary,
+        includedFields: referralIncludedFields,
+        shareProfileContext: profile.shareProfileInReferral,
+        metadata: {
+          serviceType: serviceRecord?.type,
+          source: "support_explorer",
+        },
       });
       setIsReferralPrepared(true);
+      setIsReferralPreviewOpen(false);
     } catch (error) {
       if (error instanceof ConsentRequiredError) {
         setPendingConsentRequirement(error.requirement);
@@ -243,7 +300,7 @@ export function ExplorerServiceDetailsPage({
         <section className="mt-4 rounded-[16px] border border-[#dae3f0] bg-white px-4 py-8 sm:px-6">
           <div className="mx-auto flex max-w-[560px] flex-col items-center text-center">
             <div className="relative inline-flex h-12 w-12 items-center justify-center rounded-xl bg-[#eef3fb] text-[#24344d]">
-              <IconScale size={23} />
+              {serviceDetailIcon(serviceRecord?.cardIcon)}
               <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#35c66a] ring-2 ring-white" />
             </div>
 
@@ -263,7 +320,7 @@ export function ExplorerServiceDetailsPage({
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#2dc567]">
                 <span className="h-1.5 w-1.5 rounded-full bg-white" />
               </span>
-              {t("dashboard.explorer.serviceDetails.availableNow")}
+              {serviceRecord?.availabilityLabel ?? t("dashboard.explorer.serviceDetails.availableNow")}
             </span>
           </div>
         </section>
@@ -281,19 +338,49 @@ export function ExplorerServiceDetailsPage({
             <ContactInfoItem
               icon={<IconPhone size={13} />}
               label={t("dashboard.explorer.serviceDetails.phone")}
-              value={serviceRecord?.phone ?? t("dashboard.explorer.serviceDetails.phoneValue")}
+              value={phoneValue}
             />
             <ContactInfoItem
               icon={<IconMail size={13} />}
               label={t("dashboard.explorer.serviceDetails.email")}
-              value={serviceRecord?.email ?? t("dashboard.explorer.serviceDetails.emailValue")}
+              value={emailValue}
             />
             <ContactInfoItem
               icon={<IconLanguage size={13} />}
               label={t("dashboard.explorer.serviceDetails.languages")}
-              value={`${serviceRecord?.languages?.join(", ") ?? t("dashboard.explorer.serviceDetails.languagesValue")} | ${profile.interpreterLanguage}`}
+              value={`${serviceRecord?.languages?.join(", ") ?? "Not provided"} | ${profile.interpreterLanguage}`}
             />
           </div>
+          {serviceRecord?.websiteUrl || serviceRecord?.bookingUrl || serviceRecord?.eligibility?.length ? (
+            <div className="mt-4 rounded-[14px] border border-[#e1eaf4] bg-[#f8fbff] px-4 py-3 text-[11px] text-[#60728a]">
+              {serviceRecord?.eligibility?.length ? (
+                <p>
+                  <span className="font-bold text-[#2b3d58]">Eligibility:</span>{" "}
+                  {serviceRecord.eligibility.join(", ")}
+                </p>
+              ) : null}
+              {serviceRecord?.websiteUrl ? (
+                <a
+                  className="mt-2 inline-flex font-bold text-[#0f5d9f]"
+                  href={serviceRecord.websiteUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Visit website
+                </a>
+              ) : null}
+              {serviceRecord?.bookingUrl ? (
+                <a
+                  className="mt-2 inline-flex font-bold text-[#0f5d9f]"
+                  href={serviceRecord.bookingUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Open booking link
+                </a>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         <section className="mt-3 rounded-[16px] border border-[#dae3f0] bg-[#edf3fb] px-4 py-5 sm:px-6 sm:py-6">
@@ -303,10 +390,11 @@ export function ExplorerServiceDetailsPage({
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[#dbe4f1] text-[13px] font-bold text-[#2b3d58]">
                   *
                 </span>
-                {t("dashboard.explorer.serviceDetails.warmReferral")}
+                {serviceRecord?.referralTitle ?? t("dashboard.explorer.serviceDetails.warmReferral")}
               </h3>
               <p className="mt-4 text-sm leading-6 text-[#6e8099]">
-                {t("dashboard.explorer.serviceDetails.warmReferralDescription")}
+                {serviceRecord?.referralDescription ??
+                  t("dashboard.explorer.serviceDetails.warmReferralDescription")}
               </p>
             </div>
 
@@ -355,6 +443,48 @@ export function ExplorerServiceDetailsPage({
                 </div>
               </div>
 
+              {isReferralPreviewOpen ? (
+                <div className="mt-3 rounded-xl bg-white px-3 py-3 shadow-sm ring-1 ring-[#d7deea]">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8092aa]">
+                    Sharing preview
+                  </p>
+                  <div className="mt-2 space-y-2 text-[11px] leading-5 text-[#42566d]">
+                    <p>
+                      <span className="font-bold text-[#273955]">Service:</span> {serviceTitle}
+                    </p>
+                    <p>
+                      <span className="font-bold text-[#273955]">Safe contact:</span> {safeReferralContact}
+                    </p>
+                    {referralMinimalSummary.incidentSummary ? (
+                      <p>
+                        <span className="font-bold text-[#273955]">Summary:</span>{" "}
+                        {referralMinimalSummary.incidentSummary}
+                      </p>
+                    ) : null}
+                    <p>
+                      <span className="font-bold text-[#273955]">Interpreter:</span>{" "}
+                      {referralMinimalSummary.interpreterPreference}
+                    </p>
+                    {referralMinimalSummary.culturalContext ? (
+                      <p>
+                        <span className="font-bold text-[#273955]">Profile context:</span>{" "}
+                        {referralMinimalSummary.culturalContext}
+                      </p>
+                    ) : null}
+                    <p className="text-[#6e8099]">
+                      No evidence files, full report payload, or hidden profile data will be shared by this request.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsReferralPreviewOpen(false)}
+                    className="mt-3 text-[11px] font-bold text-[#60728a]"
+                  >
+                    Edit before sending
+                  </button>
+                </div>
+              ) : null}
+
               <button
                 type="button"
                 onClick={() => {
@@ -364,7 +494,9 @@ export function ExplorerServiceDetailsPage({
               >
                 {isSubmittingReferral
                   ? "Preparing referral..."
-                  : t("dashboard.explorer.serviceDetails.sendReferral")}
+                  : isReferralPreviewOpen
+                    ? "Confirm and send referral"
+                    : t("dashboard.explorer.serviceDetails.sendReferral")}
                 <IconArrowRight size={16} />
               </button>
             </div>
@@ -465,6 +597,21 @@ export function ExplorerServiceDetailsPage({
             {t("dashboard.explorer.serviceDetails.relevantResources")}
             <IconChevronDown size={15} className="text-[#7e8fa6]" />
           </button>
+          {serviceRecord?.resourceLinks?.length ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {serviceRecord.resourceLinks.map(link => (
+                <a
+                  key={`${link.label}-${link.url}`}
+                  href={link.url}
+                  rel="noreferrer"
+                  target="_blank"
+                  className="rounded-[12px] border border-[#d8e3ef] bg-white px-4 py-3 text-xs font-semibold text-[#0f5d9f]"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          ) : null}
         </section>
       </div>
     </div>

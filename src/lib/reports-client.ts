@@ -33,6 +33,7 @@ export type ReportDestinationPreview = {
   destinationKey: string;
   destinationType: string;
   destinationName: string;
+  reason: string;
   channel: string;
   jurisdiction: string;
   languages: string[];
@@ -83,6 +84,8 @@ export type ReportSubmissionRecord = {
   payloadSnapshot: Record<string, unknown>;
   evidenceSnapshot: Array<Record<string, unknown>>;
   consentSnapshot: Record<string, unknown>;
+  deliveryArtifacts?: Array<Record<string, unknown>>;
+  deliveryMessage?: string;
   externalReference?: string;
   acknowledgementMessage?: string;
   acknowledgementPayload?: Record<string, unknown>;
@@ -92,6 +95,27 @@ export type ReportSubmissionRecord = {
   lastAttemptAt?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type ReportSubmissionPayloadPreview = {
+  destination: Omit<ReportDestinationPreview, "payloadPreview">;
+  template: {
+    templateId?: string;
+    templateKey?: string;
+    templateName?: string;
+    fieldMappings: Array<{
+      source: string;
+      target: string;
+      required: boolean;
+      transform?: string;
+    }>;
+  };
+  missingRequiredInfo: string[];
+  missingMappedFields: string[];
+  requiredConsentFlags: string[];
+  missingConsentFlags: string[];
+  payload: Record<string, unknown>;
+  evidence: Array<Record<string, unknown>>;
 };
 
 export type ReportCreateInput = {
@@ -140,6 +164,10 @@ type ReportSubmissionResponse = {
 
 type ReportSubmissionListResponse = {
   submissions: ReportSubmissionRecord[];
+};
+
+type ReportSubmissionPreviewResponse = {
+  previews: ReportSubmissionPayloadPreview[];
 };
 
 async function reportApiRequest<TData>(
@@ -267,6 +295,29 @@ export async function listReportSubmissions(
   );
 
   return response.data.submissions;
+}
+
+export async function previewReportSubmissions(
+  reportId: string,
+  input: {
+    destinationIds: string[];
+    anonymityMode?: "identified" | "anonymous" | "pseudonymous";
+    notes?: string;
+  }
+): Promise<ReportSubmissionPayloadPreview[]> {
+  const response = await reportApiRequest<ReportSubmissionPreviewResponse>(
+    `/reports/${reportId}/submission-previews`,
+    {
+      method: "POST",
+      body: {
+        destinationIds: input.destinationIds,
+        anonymityMode: input.anonymityMode ?? "identified",
+        notes: input.notes,
+      },
+    }
+  );
+
+  return response.data.previews;
 }
 
 export async function submitReportToDestination(

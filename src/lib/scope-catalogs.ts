@@ -2,6 +2,22 @@
 
 import { apiRequest } from "@/lib/api";
 
+export type ScopeTaxonomyRecord = {
+  type: "incident_type" | "support_need" | "language" | "culture";
+  key: string;
+  label: string;
+  description?: string;
+  isActive: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export type ScopeTaxonomyCatalog = {
+  incidentTypes: ScopeTaxonomyRecord[];
+  supportNeeds: ScopeTaxonomyRecord[];
+  languages: ScopeTaxonomyRecord[];
+  cultures: ScopeTaxonomyRecord[];
+};
+
 type ScopeBootstrapResponse = {
   bootstrap: {
     scopeVersion: string;
@@ -24,6 +40,7 @@ type ScopeBootstrapResponse = {
       aggregationLevel: string;
       timeBuckets: string[];
     };
+    taxonomies?: ScopeTaxonomyCatalog;
   };
 };
 
@@ -31,4 +48,10 @@ export async function getScopeBootstrap() {
   const response = await apiRequest<ScopeBootstrapResponse>("/scope/bootstrap");
 
   return response.data.bootstrap;
+}
+
+export async function getScopeTaxonomyCatalog(): Promise<ScopeTaxonomyCatalog | null> {
+  const bootstrap = await getScopeBootstrap();
+
+  return bootstrap.taxonomies ?? null;
 }

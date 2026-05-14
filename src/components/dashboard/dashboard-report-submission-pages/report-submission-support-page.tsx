@@ -27,6 +27,10 @@ import {
   type AssistantTriageApiResult,
   type AssistantTriageSource,
 } from "@/lib/assistant-triage";
+import {
+  getScopeTaxonomyCatalog,
+  type ScopeTaxonomyRecord,
+} from "@/lib/scope-catalogs";
 
 import { interFont } from "../dashboard-shared";
 
@@ -87,6 +91,20 @@ function toDisplayLabel(value: string): string {
     .join(" ");
 }
 
+function getTaxonomyDisplayLabel(
+  records: ScopeTaxonomyRecord[] | undefined,
+  value: string
+): string {
+  const normalizedValue = value.trim().toLowerCase();
+  const record = records?.find(
+    (item) =>
+      item.key.toLowerCase() === normalizedValue ||
+      item.label.toLowerCase() === normalizedValue
+  );
+
+  return record?.label ?? toDisplayLabel(value);
+}
+
 function getCategorySupportType(
   incidentCategory?: AssistantTriageSource["incidentCategory"]
 ): string | null {
@@ -122,7 +140,8 @@ function shouldPreferCategorySupportType(
 function buildSupportType(
   triageResult: AssistantTriageApiResult | null,
   source: AssistantTriageSource | null,
-  fallback: string
+  fallback: string,
+  formatSupportNeed: (value: string) => string = toDisplayLabel
 ): string {
   const normalizedPrimarySupportNeed =
     typeof triageResult?.primarySupportNeed === "string" &&
@@ -145,13 +164,13 @@ function buildSupportType(
       !hasImpact
     )
   ) {
-    return normalizedPrimarySupportNeed;
+    return formatSupportNeed(normalizedPrimarySupportNeed);
   }
 
   const categories = normalizeStringList(triageResult?.suggestedSupportCategories);
 
   if (categories.length > 0 && !categorySupportType) {
-    return toDisplayLabel(categories[0]);
+    return formatSupportNeed(categories[0]);
   }
 
   if (categorySupportType) {
@@ -293,6 +312,9 @@ function ReportSubmissionSupportPage() {
   const [pendingConsentRequirement, setPendingConsentRequirement] =
     useState<ConsentRequirement | null>(null);
   const [isGrantingConsent, setIsGrantingConsent] = useState(false);
+  const [supportNeedTaxonomies, setSupportNeedTaxonomies] = useState<
+    ScopeTaxonomyRecord[] | null
+  >(null);
 
   useEffect(() => {
     const source = getAssistantTriageSource();
@@ -306,6 +328,20 @@ function ReportSubmissionSupportPage() {
     }
 
     let isActive = true;
+
+    void getScopeTaxonomyCatalog()
+      .then((catalog) => {
+        if (!isActive || !catalog) {
+          return;
+        }
+
+        setSupportNeedTaxonomies(catalog.supportNeeds);
+      })
+      .catch(() => {
+        if (isActive) {
+          setSupportNeedTaxonomies(null);
+        }
+      });
 
     void (async () => {
       try {
@@ -369,10 +405,13 @@ function ReportSubmissionSupportPage() {
   };
 
   const viewModel = useMemo<TriageViewModel>(() => {
+    const formatSupportNeed = (value: string) =>
+      getTaxonomyDisplayLabel(supportNeedTaxonomies ?? undefined, value);
     const supportType = buildSupportType(
       triageResult,
       triageSource,
-      t("dashboard.assistant.triage.supportType")
+      t("dashboard.assistant.triage.supportType"),
+      formatSupportNeed
     );
     const riskFactors = normalizeStringList(triageResult?.riskFactors);
     const recommendedActions = normalizeStringList(triageResult?.recommendedActions);
@@ -399,7 +438,7 @@ function ReportSubmissionSupportPage() {
         riskFactors[1] ??
         t("dashboard.assistant.triage.primaryStepBody"),
       worriedOthersBody:
-        categories.slice(0, 2).map(toDisplayLabel).join(" • ") ||
+        categories.slice(0, 2).map(formatSupportNeed).join(" • ") ||
         riskFactors[0] ||
         t("dashboard.assistant.triage.worriedOthersBody"),
       selfHelpBody:
@@ -412,7 +451,7 @@ function ReportSubmissionSupportPage() {
       showUrgentState,
       resourceCards: buildResourceCards(triageResult, t),
     };
-  }, [t, triageResult, triageSource]);
+  }, [t, triageResult, triageSource, supportNeedTaxonomies]);
   const citationItems = useMemo(
     () =>
       Array.isArray(triageResult?.citations)

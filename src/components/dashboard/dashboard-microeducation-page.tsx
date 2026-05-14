@@ -33,10 +33,12 @@ import mentalHealth2 from "@/assets/mental_health_2.svg?url";
 import mentalHealthLove from "@/assets/mental_health_love.svg?url";
 import {
   getContentResourceDownloadUrl,
+  getContentResourceImageUrl,
   listPublishedContentResources,
   type ContentResourceItem,
 } from "@/lib/content-resources";
 import {
+  getMicroEducationImageUrl,
   listPublishedMicroEducation,
   type MicroEducationChip,
   type MicroEducationDuration,
@@ -65,6 +67,7 @@ type MicroTopic = {
   chips: MicroEducationChip[];
   duration: LessonDuration;
   format: LessonFormat;
+  imagePath?: string;
 };
 
 type LessonFilters = {
@@ -229,6 +232,7 @@ function MicroEducationPage() {
             chips: item.chips,
             duration: item.duration,
             format: item.format,
+            imagePath: item.imagePath,
           }))
         );
       } catch {
@@ -518,6 +522,7 @@ function MicroEducationPage() {
               {filteredTopics.map((topic) => {
                 const tone = topicToneStyles(topic.tone);
                 const isActive = activeTopicId === topic.id;
+                const topicImageUrl = getMicroEducationImageUrl(topic);
 
                 return (
                   <motion.button
@@ -535,12 +540,13 @@ function MicroEducationPage() {
                       tone.card,
                       isActive && "pointer-events-none opacity-0"
                     )}
+                    style={topicImageUrl ? { backgroundImage: `linear-gradient(90deg, rgba(8, 29, 48, 0.78), rgba(8, 29, 48, 0.36)), url(${topicImageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
                     aria-label={topic.title}
                   >
                     <p
                       className={cn(
                         "text-[10px] font-semibold uppercase tracking-[0.12em]",
-                        tone.tag
+                        topicImageUrl ? "text-white/85" : tone.tag
                       )}
                     >
                       {topic.tag}
@@ -548,12 +554,12 @@ function MicroEducationPage() {
                     <h3
                       className={cn(
                         `${interFont.className} mt-2 max-w-[480px] text-[30px] font-black leading-[0.95] sm:text-[36px]`,
-                        tone.title
+                        topicImageUrl ? "text-white" : tone.title
                       )}
                     >
                       {topic.title}
                     </h3>
-                    <p className={cn("mt-2 max-w-[420px] text-xs", tone.tag)}>
+                    <p className={cn("mt-2 max-w-[420px] text-xs", topicImageUrl ? "text-white/85" : tone.tag)}>
                       {topic.summary}
                     </p>
                     <span
@@ -567,7 +573,7 @@ function MicroEducationPage() {
                       {topic.cta}
                     </span>
 
-                    {topic.id === "mentalHealth" ? (
+                    {topicImageUrl ? null : topic.id === "mentalHealth" ? (
                       <>
                         <div className="pointer-events-none absolute bottom-8 left-8">
                           <Image
@@ -649,9 +655,17 @@ function MicroEducationPage() {
                       key={resource.id}
                       className="flex min-h-[104px] items-center gap-3 rounded-[14px] border border-[#e1eaf4] bg-[#f8fbff] p-3"
                     >
-                      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#eaf2ff] text-[#0f5fa7]">
-                        {contentResourceIcon(resource.mimeType)}
-                      </span>
+                      {getContentResourceImageUrl(resource) ? (
+                        <span
+                          aria-hidden="true"
+                          style={{ backgroundImage: `url(${getContentResourceImageUrl(resource)})` }}
+                          className="h-11 w-11 shrink-0 rounded-[12px] border border-[#dce5f1] bg-cover bg-center"
+                        />
+                      ) : (
+                        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#eaf2ff] text-[#0f5fa7]">
+                          {contentResourceIcon(resource.mimeType)}
+                        </span>
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-bold text-[#1f2a3a]">
                           {resource.name}
@@ -871,14 +885,19 @@ function MicroEducationPage() {
             exit={{ opacity: 0 }}
             transition={fadeTransition}
           >
-            <motion.button
-              type="button"
-              className="absolute inset-0 bg-[#0b1728]/35 backdrop-blur-[1px]"
-              onClick={closeActiveTopic}
-              aria-label={t("common.cancel")}
-            />
+            {(() => {
+              const activeTopicImageUrl = getMicroEducationImageUrl(activeTopic);
 
-            <div className="relative h-full w-full p-3 sm:p-4 lg:p-6">
+              return (
+                <>
+                  <motion.button
+                    type="button"
+                    className="absolute inset-0 bg-[#0b1728]/35 backdrop-blur-[1px]"
+                    onClick={closeActiveTopic}
+                    aria-label={t("common.cancel")}
+                  />
+
+                  <div className="relative h-full w-full p-3 sm:p-4 lg:p-6">
               <motion.article
                 layoutId={`microeducation-topic-${activeTopic.id}`}
                 transition={sharedTransition}
@@ -908,6 +927,13 @@ function MicroEducationPage() {
                 <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.12fr_0.88fr]">
                     <section className="rounded-2xl bg-[#f6f9fd] p-4 sm:p-5">
+                      {activeTopicImageUrl ? (
+                        <span
+                          aria-hidden="true"
+                          style={{ backgroundImage: `url(${activeTopicImageUrl})` }}
+                          className="mb-4 block h-44 rounded-[18px] bg-cover bg-center sm:h-56"
+                        />
+                      ) : null}
                       <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#4f647f]">
                         {activeTopic.tag}
                       </p>
@@ -953,7 +979,10 @@ function MicroEducationPage() {
                   </section>
                 </div>
               </motion.article>
-            </div>
+                  </div>
+                </>
+              );
+            })()}
           </motion.div>
         )}
       </AnimatePresence>

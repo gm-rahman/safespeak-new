@@ -14,6 +14,10 @@ export type ContentResourceItem = {
   originalFileName: string;
   mimeType: string;
   fileSizeBytes: number;
+  imageOriginalFileName?: string;
+  imageMimeType?: string;
+  imageSizeBytes?: number;
+  imagePath?: string;
   downloadPath: string;
   createdAt?: string;
   updatedAt?: string;
@@ -27,4 +31,8 @@ export async function listPublishedContentResources(): Promise<ContentResourceIt
 
 export function getContentResourceDownloadUrl(resource: Pick<ContentResourceItem, "downloadPath">): string {
   return `${getApiBaseUrl()}${resource.downloadPath}`;
+}
+
+export function getContentResourceImageUrl(resource: Pick<ContentResourceItem, "imagePath">): string | undefined {
+  return resource.imagePath ? `${getApiBaseUrl()}${resource.imagePath}` : undefined;
 }

@@ -40,7 +40,7 @@ function ReportSubmissionSuccessPage() {
       listReportSubmissions(reportDraft.reportId),
     ])
       .then(([report, status, submissions]) => {
-        setReportRef(report._id);
+        setReportRef(report.refNo ?? report._id);
         setReportStatus(status.current);
         setLatestSubmission(
           submissions.find(
@@ -49,7 +49,7 @@ function ReportSubmissionSuccessPage() {
         );
       })
       .catch(() => setReportStatus("prepared"));
-  }, [reportDraft?.reportId]);
+  }, [reportDraft?.latestSubmissionId, reportDraft?.reportId]);
 
   return (
     <div className="px-6 pb-12 pt-12">
@@ -88,13 +88,18 @@ function ReportSubmissionSuccessPage() {
             <p className="mt-1 text-[14px] font-bold text-[#1f2a3a]">
               {reportRef ?? "Draft only"}
             </p>
-            <p className="mt-1 text-[10px] text-[#60728a]">
-              Current status: {reportStatus}
-            </p>
+              <p className="mt-1 text-[10px] text-[#60728a]">
+                Current status: {reportStatus}
+              </p>
             {latestSubmission ? (
               <p className="mt-1 text-[10px] text-[#60728a]">
                 Routed to: {latestSubmission.destinationName} via{" "}
                 {latestSubmission.channel}
+              </p>
+            ) : null}
+            {latestSubmission?.externalReference ? (
+              <p className="mt-1 text-[10px] font-semibold text-[#0b8b54]">
+                External reference: {latestSubmission.externalReference}
               </p>
             ) : null}
           </div>
@@ -202,6 +207,21 @@ function ReportSubmissionSuccessPage() {
                   ? ` - Ref ${latestSubmission.externalReference}`
                   : ""}
               </p>
+              {latestSubmission.deliveryMessage ? (
+                <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+                  Delivery note: {latestSubmission.deliveryMessage}
+                </p>
+              ) : null}
+              {latestSubmission.deliveryArtifacts?.length ? (
+                <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+                  Delivery artifacts: {latestSubmission.deliveryArtifacts.length}
+                </p>
+              ) : null}
+              {latestSubmission.status === "requires_manual_action" ? (
+                <p className="mt-1 text-[10px] font-semibold leading-[16px] text-[#9a5b12]">
+                  Manual follow-up is required before this destination can treat the report as sent.
+                </p>
+              ) : null}
               {latestSubmission.expectedNextSteps.length ? (
                 <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
                   Next steps: {latestSubmission.expectedNextSteps.join(" / ")}

@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -10,7 +10,6 @@ import {
   IconChevronRight,
   IconClock,
   IconSearch,
-  IconX,
 } from "@tabler/icons-react";
 import {
   AnimatePresence,
@@ -29,6 +28,7 @@ import safeReporting from "@/assets/safe_reporting.svg?url";
 import {
   type MicroEducationItem,
   type MicroEducationTone,
+  getMicroEducationImageUrl,
   listPublishedMicroEducation,
 } from "@/lib/microeducation";
 import { cn } from "@/lib/utils";
@@ -50,6 +50,13 @@ type MicroCardItem = {
   tag: string;
   summary: string;
   cta: string;
+  readTimeLabel: string;
+  detailHeading: string;
+  detailSummary: string;
+  detailBody: string;
+  detailTakeaway: string;
+  imageUrl?: string;
+  imageAlt: string;
   iconSrc: string;
   tone: MicroCardTone;
   theme: MicroCardTheme;
@@ -240,6 +247,7 @@ function iconForTheme(theme: MicroCardTheme) {
 
 function toMicroCardItem(item: MicroEducationItem): MicroCardItem {
   const theme = inferMicroCardTheme(item);
+  const imageUrl = getMicroEducationImageUrl(item);
 
   return {
     id: item.id,
@@ -247,6 +255,13 @@ function toMicroCardItem(item: MicroEducationItem): MicroCardItem {
     tag: item.tag,
     summary: item.summary,
     cta: item.cta,
+    readTimeLabel: item.readTimeLabel || "4 min read",
+    detailHeading: item.detailHeading || item.title,
+    detailSummary: item.detailSummary || item.summary,
+    detailBody: item.detailBody || item.summary,
+    detailTakeaway: item.detailTakeaway || item.summary,
+    imageUrl,
+    imageAlt: item.imageAlt || item.title,
     iconSrc: iconForTheme(theme),
     tone: item.tone,
     theme,
@@ -259,29 +274,56 @@ function getMicroCardDetail(card: MicroCardItem) {
   return {
     ...baseDetail,
     eyebrow: card.tag || baseDetail.eyebrow,
-    summary: card.summary || baseDetail.summary,
+    headline: card.detailHeading || baseDetail.headline,
+    summary: card.detailSummary || card.summary || baseDetail.summary,
     paragraphs: [
-      card.summary || baseDetail.summary,
-      ...baseDetail.paragraphs.slice(1),
+      card.detailSummary || card.summary || baseDetail.summary,
+      card.detailBody || baseDetail.paragraphs[1],
     ],
+    takeaway: card.detailTakeaway || baseDetail.takeaway,
     cta: card.cta || baseDetail.cta,
   };
 }
 
-function detailToneBackground(tone: MicroCardTone) {
-  if (tone === "orange" || tone === "amber") {
-    return "bg-[#fff4cf]";
+type MicroCardRowVariant = "narrow-wide" | "wide-narrow" | "full";
+
+function buildMicroCardRows(cards: MicroCardItem[]) {
+  const rows: Array<{ variant: MicroCardRowVariant; cards: MicroCardItem[] }> =
+    [];
+  let cursor = 0;
+
+  while (cursor < cards.length) {
+    const variantIndex = rows.length % 3;
+
+    if (variantIndex === 2) {
+      rows.push({ variant: "full", cards: [cards[cursor]] });
+      cursor += 1;
+      continue;
+    }
+
+    rows.push({
+      variant: variantIndex === 0 ? "narrow-wide" : "wide-narrow",
+      cards: cards.slice(cursor, cursor + 2),
+    });
+    cursor += 2;
   }
 
-  if (tone === "green" || tone === "teal") {
-    return "bg-[#e4f8f5]";
+  return rows;
+}
+
+function toneForMicroCardRow(
+  rowVariant: MicroCardRowVariant,
+  cardIndex: number
+): MicroCardTone {
+  if (rowVariant === "full") {
+    return "teal";
   }
 
-  if (tone === "violet") {
-    return "bg-[#f0ebff]";
+  if (rowVariant === "narrow-wide") {
+    return cardIndex === 0 ? "blue" : "amber";
   }
 
-  return "bg-[#eaf2ff]";
+  return cardIndex === 0 ? "amber" : "blue";
 }
 
 function MicroCardLesson({
@@ -289,6 +331,7 @@ function MicroCardLesson({
   title,
   iconSrc,
   tone,
+  readTimeLabel,
   onOpen,
   isActive,
   className,
@@ -297,6 +340,7 @@ function MicroCardLesson({
   title: string;
   iconSrc: string;
   tone: MicroCardTone;
+  readTimeLabel: string;
   onOpen: () => void;
   isActive: boolean;
   className?: string;
@@ -313,46 +357,46 @@ function MicroCardLesson({
     }
   > = {
     blue: {
-      card: "bg-[#0f5fa7]",
+      card: "bg-[#01579B]",
       title: "text-white",
-      meta: "text-white/80",
-      iconWrap: "bg-white/20",
-      button: "bg-white text-[#0d4d85]",
+      meta: "text-[#E1F5FE]",
+      iconWrap: "bg-white/30",
+      button: "bg-white text-[#111827]",
     },
     orange: {
-      card: "bg-[#f48c06]",
-      title: "text-white",
-      meta: "text-white/80",
-      iconWrap: "bg-white/25",
-      button: "bg-white text-[#8a3d00]",
+      card: "bg-[#FFB300]",
+      title: "text-[#111827]",
+      meta: "text-[#1F2937]",
+      iconWrap: "bg-white/30",
+      button: "bg-white text-[#111827]",
     },
     amber: {
-      card: "bg-[#f7b500]",
+      card: "bg-[#FFB300]",
       title: "text-[#111827]",
-      meta: "text-[#5f4b00]",
-      iconWrap: "bg-white/35",
-      button: "bg-white text-[#312600]",
+      meta: "text-[#1F2937]",
+      iconWrap: "bg-white/30",
+      button: "bg-white text-[#111827]",
     },
     green: {
-      card: "bg-[#10b981]",
+      card: "bg-[#0D9488]",
       title: "text-white",
-      meta: "text-white/80",
-      iconWrap: "bg-white/22",
-      button: "bg-white text-[#087457]",
+      meta: "text-white/85",
+      iconWrap: "bg-white/30",
+      button: "bg-white text-[#111827]",
     },
     violet: {
-      card: "bg-[#8157e8]",
+      card: "bg-[#01579B]",
       title: "text-white",
-      meta: "text-white/80",
-      iconWrap: "bg-white/22",
-      button: "bg-white text-[#5635a6]",
+      meta: "text-[#E1F5FE]",
+      iconWrap: "bg-white/30",
+      button: "bg-white text-[#111827]",
     },
     teal: {
-      card: "bg-[#1f9f97]",
+      card: "bg-[#0D9488]",
       title: "text-white",
-      meta: "text-white/80",
-      iconWrap: "bg-white/22",
-      button: "bg-white text-[#0e6e67]",
+      meta: "text-white/85",
+      iconWrap: "bg-white/30",
+      button: "bg-white text-[#111827]",
     },
   };
 
@@ -364,7 +408,7 @@ function MicroCardLesson({
       layout
       layoutId={`microcard-${id}`}
       className={cn(
-        "relative overflow-hidden rounded-2xl p-4 text-left sm:p-5",
+        "relative overflow-hidden rounded-[24px] p-5 text-left shadow-[0_10px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.024)] sm:p-6 xl:rounded-[32px] xl:p-8",
         currentTone.card,
         isActive && "pointer-events-none opacity-0",
         className
@@ -372,11 +416,12 @@ function MicroCardLesson({
       onClick={onOpen}
       aria-label={title}
     >
-      <div className="flex h-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="absolute bottom-0 left-0 h-24 w-24 rounded-full bg-white/10 blur-[12px]" />
+      <div className="relative flex h-full flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex h-full min-w-0 flex-col">
           <h3
             className={cn(
-              `${interFont.className} text-[22px] font-extrabold leading-[0.95] sm:text-[28px]`,
+              `${interFont.className} text-[22px] font-bold leading-[1.08] tracking-normal sm:text-2xl sm:leading-8`,
               currentTone.title
             )}
           >
@@ -384,29 +429,29 @@ function MicroCardLesson({
           </h3>
           <div
             className={cn(
-              "mt-3 inline-flex h-9 w-9 items-center justify-center rounded-xl",
+              "mt-4 inline-flex h-12 w-12 items-center justify-center rounded-[18px] backdrop-blur-sm sm:h-14 sm:w-14 xl:h-16 xl:w-16 xl:rounded-[24px]",
               currentTone.iconWrap
             )}
           >
             <Image
               src={iconSrc}
               alt={title}
-              width={18}
-              height={18}
-              className="h-[18px] w-[18px]"
+              width={30}
+              height={30}
+              className="h-6 w-6 sm:h-7 sm:w-7 xl:h-[30px] xl:w-[30px]"
             />
           </div>
           <div className="mt-auto inline-flex items-center gap-1.5">
-            <IconClock size={10} className={currentTone.meta} />
-            <span className={cn("text-[10px] font-semibold", currentTone.meta)}>
-              {t("dashboard.microcards.fourMinRead")}
+            <IconClock size={12} className={currentTone.meta} />
+            <span className={cn("text-xs font-semibold", currentTone.meta)}>
+              {readTimeLabel || t("dashboard.microcards.fourMinRead")}
             </span>
           </div>
         </div>
 
         <span
           className={cn(
-            "self-start rounded-full px-4 py-2 text-[11px] font-bold leading-none sm:mt-1 sm:self-auto",
+            "inline-flex h-10 shrink-0 items-center justify-center self-start whitespace-nowrap rounded-full px-5 text-xs font-bold leading-none sm:mt-1 sm:self-auto xl:h-[54px] xl:px-6 xl:text-lg",
             currentTone.button
           )}
         >
@@ -414,6 +459,155 @@ function MicroCardLesson({
         </span>
       </div>
     </motion.button>
+  );
+}
+
+function MicroCardArticle({
+  title,
+  badge,
+  sectionTitle,
+  summary,
+  paragraph,
+  takeaway,
+  imageSrc,
+  imageAlt,
+  onPrevious,
+  onNext,
+}: {
+  title: string;
+  badge: string;
+  sectionTitle: string;
+  summary: string;
+  paragraph: string;
+  takeaway: string;
+  imageSrc?: string | StaticImageData;
+  imageAlt?: string;
+  onPrevious?: () => void;
+  onNext?: () => void;
+}) {
+  const { t } = useTranslation();
+
+  const previousContent = (
+    <>
+      <IconChevronLeft size={18} />
+      <span>{t("dashboard.microcardDetail.previousMicrocards")}</span>
+    </>
+  );
+  const nextContent = (
+    <>
+      <span>{t("dashboard.microcardDetail.nextMicrocards")}</span>
+      <IconChevronRight size={18} />
+    </>
+  );
+
+  return (
+    <article className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.06)]">
+      <section className="relative h-[280px] overflow-hidden sm:h-[360px] lg:h-[466px]">
+        {typeof imageSrc === "string" ? (
+          <img
+            src={imageSrc}
+            alt={imageAlt ?? t("dashboard.microcardDetail.internetHoaxAwareness")}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <Image
+            src={imageSrc ?? hackerImage}
+            alt={imageAlt ?? t("dashboard.microcardDetail.internetHoaxAwareness")}
+            fill
+            priority
+            className="object-cover"
+          />
+        )}
+        <div className="absolute inset-0 bg-[#0A6FAF]/35 mix-blend-multiply" />
+        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.64)_0%,rgba(0,0,0,0)_55%)]" />
+        <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
+          <span className="inline-flex rounded-lg bg-[#01579B] px-2 py-1 text-[10px] font-bold uppercase leading-[15px] tracking-[0.05em] text-white">
+            {badge}
+          </span>
+          <h2
+            className={`${interFont.className} mt-2 text-[28px] font-bold leading-9 text-white sm:text-[30px]`}
+          >
+            {title}
+          </h2>
+        </div>
+      </section>
+
+      <div className="p-6 sm:p-8 lg:p-10">
+        <div className="space-y-6">
+          <section className="space-y-4">
+            <h3
+              className={`${interFont.className} text-xl font-semibold leading-7 text-[#111827]`}
+            >
+              {sectionTitle}
+            </h3>
+            <p className="text-base leading-[1.62] text-[#4B5563] sm:text-lg">
+              {summary}
+            </p>
+
+            <div className="rounded-r-md border-l-4 border-[#01579B] bg-[#EFF6FF] px-4 py-4 sm:py-[22px]">
+              <div className="flex items-start gap-3">
+                <IconAlertCircleFilled
+                  size={20}
+                  className="mt-0.5 shrink-0 text-[#01579B]"
+                />
+                <div className="min-w-0 pt-1">
+                  <p className="text-sm font-bold uppercase leading-5 tracking-[0.025em] text-[#01579B]">
+                    {t("dashboard.microcardDetail.keyTakeaway")}
+                  </p>
+                  <p className="mt-1 text-sm leading-5 text-[#111827]">
+                    {takeaway}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <p className="pt-2 text-base leading-[1.62] text-[#4B5563] sm:text-lg">
+              {paragraph}
+            </p>
+          </section>
+
+          <section className="flex flex-col gap-4 border-t border-[#E5E7EB] pt-8 sm:flex-row sm:items-center sm:justify-between">
+            {onPrevious ? (
+              <button
+                type="button"
+                onClick={onPrevious}
+                className="inline-flex items-center justify-center gap-2 text-sm font-medium leading-5 text-[#4B5563] transition hover:text-[#111827]"
+              >
+                {previousContent}
+              </button>
+            ) : (
+              <Link
+                href="/dashboard?view=microcards"
+                className="inline-flex items-center justify-center gap-2 text-sm font-medium leading-5 text-[#4B5563] transition hover:text-[#111827]"
+              >
+                {previousContent}
+              </Link>
+            )}
+
+            {onNext ? (
+              <button
+                type="button"
+                onClick={onNext}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#01579B] px-8 text-base font-semibold leading-6 text-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)] transition hover:bg-[#014681]"
+              >
+                {nextContent}
+              </button>
+            ) : (
+              <Link
+                href="/dashboard?view=microcards"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#01579B] px-8 text-base font-semibold leading-6 text-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)] transition hover:bg-[#014681]"
+              >
+                {nextContent}
+              </Link>
+            )}
+          </section>
+
+          <p className="text-center text-xs italic leading-4 text-[#9CA3AF]">
+            {t("dashboard.microcardDetail.educationalDisclaimer")}
+          </p>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -483,18 +677,25 @@ function MicroCardsPage() {
     const detailCopy = detailContentByTheme[card.theme];
     return (
       card.title.toLowerCase().includes(normalizedQuery) ||
+      card.summary.toLowerCase().includes(normalizedQuery) ||
+      card.detailHeading.toLowerCase().includes(normalizedQuery) ||
+      card.detailSummary.toLowerCase().includes(normalizedQuery) ||
+      card.detailBody.toLowerCase().includes(normalizedQuery) ||
       detailCopy.eyebrow.toLowerCase().includes(normalizedQuery) ||
       detailCopy.headline.toLowerCase().includes(normalizedQuery)
     );
   });
+  const microCardRows = buildMicroCardRows(filteredCards);
 
   useEffect(() => {
     if (!activeCardId) {
       return;
     }
 
-    pushedHistoryRef.current = true;
-    window.history.pushState({ microcardId: activeCardId }, "");
+    if (!pushedHistoryRef.current) {
+      pushedHistoryRef.current = true;
+      window.history.pushState({ microcardId: activeCardId }, "");
+    }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -539,10 +740,33 @@ function MicroCardsPage() {
     }
   };
 
+  const openAdjacentCard = (direction: -1 | 1) => {
+    if (!activeCard) {
+      return;
+    }
+
+    const navigableCards = filteredCards.length > 0 ? filteredCards : cards;
+
+    if (navigableCards.length === 0) {
+      return;
+    }
+
+    const currentIndex = navigableCards.findIndex(
+      (card) => card.id === activeCard.id
+    );
+    const nextIndex =
+      ((currentIndex >= 0 ? currentIndex : 0) +
+        direction +
+        navigableCards.length) %
+      navigableCards.length;
+
+    setActiveCardId(navigableCards[nextIndex].id);
+  };
+
   return (
     <LayoutGroup id="microcards-morph">
       <div className="px-3 pb-4 pt-3 sm:px-4 sm:pb-5 sm:pt-4">
-        <div className="mx-auto w-full xl:max-w-[1120px] 2xl:max-w-[1184px]">
+        <div className="mx-auto w-full max-w-[1136px]">
           <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
             <Link
               href="/dashboard"
@@ -583,25 +807,57 @@ function MicroCardsPage() {
               />
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              {filteredCards.map((card) => (
-                <MicroCardLesson
-                  key={card.id}
-                  id={card.id}
-                  title={card.title}
-                  iconSrc={card.iconSrc}
-                  tone={card.tone}
-                  className="min-h-[132px] xl:h-[140px]"
-                  isActive={activeCardId === card.id}
-                  onOpen={() => {
-                    pushedHistoryRef.current = false;
-                    setActiveCardId(card.id);
-                  }}
-                />
-              ))}
+            <div className="mt-6 flex flex-col gap-5 xl:gap-6">
+              {microCardRows.map((row) =>
+                row.variant === "full" ? (
+                  row.cards.map((card, cardIndex) => (
+                    <MicroCardLesson
+                      key={card.id}
+                      id={card.id}
+                      title={card.title}
+                      iconSrc={card.iconSrc}
+                      tone={toneForMicroCardRow(row.variant, cardIndex)}
+                      readTimeLabel={card.readTimeLabel}
+                      className="min-h-[164px] md:min-h-[220px] xl:h-[240px]"
+                      isActive={activeCardId === card.id}
+                      onOpen={() => {
+                        pushedHistoryRef.current = false;
+                        setActiveCardId(card.id);
+                      }}
+                    />
+                  ))
+                ) : (
+                  <div
+                    key={row.cards.map((card) => card.id).join("-")}
+                    className={cn(
+                      "grid grid-cols-1 gap-5 md:gap-6",
+                      row.variant === "narrow-wide"
+                        ? "md:grid-cols-[minmax(0,467fr)_minmax(0,645fr)]"
+                        : "md:grid-cols-[minmax(0,645fr)_minmax(0,467fr)]"
+                    )}
+                  >
+                    {row.cards.map((card, cardIndex) => (
+                      <MicroCardLesson
+                        key={card.id}
+                        id={card.id}
+                        title={card.title}
+                        iconSrc={card.iconSrc}
+                        tone={toneForMicroCardRow(row.variant, cardIndex)}
+                        readTimeLabel={card.readTimeLabel}
+                        className="min-h-[164px] md:h-[192px]"
+                        isActive={activeCardId === card.id}
+                        onOpen={() => {
+                          pushedHistoryRef.current = false;
+                          setActiveCardId(card.id);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )
+              )}
 
               {filteredCards.length === 0 ? (
-                <article className="rounded-2xl border border-[#dce5f1] bg-white p-6 text-center md:col-span-2">
+                <article className="rounded-2xl border border-[#dce5f1] bg-white p-6 text-center">
                   <p className="text-sm font-semibold text-[#22344a]">
                     {isLoadingCards
                       ? "Loading micro-cards..."
@@ -629,154 +885,57 @@ function MicroCardsPage() {
       <AnimatePresence>
         {activeCard && activeCardDetail ? (
           <motion.div
-            className="fixed inset-0 z-50"
+            className="fixed inset-0 z-50 overflow-y-auto bg-[#EEF4FB]/95"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={fadeTransition}
           >
-            <motion.button
-              type="button"
-              className="absolute inset-0 bg-[#0b1728]/35 backdrop-blur-[1px]"
-              onClick={closeActiveCard}
-              aria-label={t("common.cancel")}
-            />
-
-            <div className="relative h-full w-full p-3 sm:p-4 lg:p-6">
-              <motion.article
-                layoutId={`microcard-${activeCard.id}`}
-                transition={sharedTransition}
-                className="mx-auto flex h-full w-full max-w-[1184px] flex-col overflow-hidden rounded-[26px] bg-white shadow-[0_24px_70px_rgba(15,33,59,0.25)] sm:rounded-[32px]"
-              >
-                <header className="flex items-center justify-between border-b border-[#e3eaf4] px-4 py-3 sm:px-6">
+            <div className="min-h-full">
+              <header className="sticky top-0 z-10 border-b border-[#E5E7EB] bg-white/80 backdrop-blur-md">
+                <div className="mx-auto flex h-[61px] w-full max-w-[1184px] items-center justify-between px-6 lg:px-20">
                   <button
                     type="button"
                     onClick={closeActiveCard}
-                    className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
+                    className="inline-flex h-10 items-center gap-4 text-lg font-bold leading-7 text-[#111827]"
                   >
-                    <IconChevronLeft size={14} />
-                    {t("dashboard.microcards.title")}
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full">
+                      <IconChevronLeft size={24} />
+                    </span>
+                    {t("dashboard.microcardDetail.safeSpeakEducation")}
                   </button>
                   <button
                     type="button"
                     onClick={closeActiveCard}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d9e2ee] text-[#50627a]"
-                    aria-label={t("common.cancel")}
+                    className="text-base font-medium leading-6 text-[#64748B]"
                   >
-                    <IconX size={14} />
+                    {t("common.cancel")}
                   </button>
-                </header>
-
-                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
-                  <section
-                    className={cn(
-                      "rounded-[24px] p-5 sm:p-6",
-                      detailToneBackground(activeCard.tone)
-                    )}
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4f647f]">
-                      {activeCardDetail.eyebrow}
-                    </p>
-                    <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                      <div className="max-w-[720px]">
-                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4f647f]">
-                          {activeCardDetail.eyebrow}
-                        </p>
-                        <h2
-                          className={`${interFont.className} text-[34px] font-black leading-[0.95] text-[#12243c] sm:text-[44px]`}
-                        >
-                          {activeCard.title}
-                        </h2>
-                        <p className="mt-3 text-sm leading-[1.65] text-[#4f647f] sm:text-base">
-                          {activeCardDetail.summary}
-                        </p>
-                      </div>
-                      <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-white/80 shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
-                        <Image
-                          src={activeCard.iconSrc}
-                          alt={activeCard.title}
-                          width={24}
-                          height={24}
-                          className="h-6 w-6"
-                        />
-                      </div>
-                    </div>
-                  </section>
-
-                  <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1.06fr_0.94fr]">
-                    <section className="rounded-2xl border border-[#e1eaf4] bg-white p-4 sm:p-6">
-                      <h3
-                        className={`${interFont.className} text-[22px] font-extrabold text-[#12243c]`}
-                      >
-                        {activeCardDetail.headline}
-                      </h3>
-                      {activeCardDetail.paragraphs.map((paragraph) => (
-                        <p
-                          key={paragraph}
-                          className="mt-3 text-sm leading-[1.7] text-[#4f647f]"
-                        >
-                          {paragraph}
-                        </p>
-                      ))}
-
-                      <div className="mt-5 rounded-[18px] border border-[#dbe5f2] bg-[#f7fbff] p-4">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#1f63c9]">
-                          Checklist
-                        </p>
-                        <ul className="mt-3 space-y-2">
-                          {activeCardDetail.checklist.map((item) => (
-                            <li
-                              key={item}
-                              className="flex items-start gap-2 text-sm leading-6 text-[#42566d]"
-                            >
-                              <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#0f5fa7]" />
-                              <span>{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </section>
-
-                    <section className="rounded-2xl border border-[#e1eaf4] p-4 sm:p-6">
-                      <div className="relative aspect-[16/10] overflow-hidden rounded-[18px]">
-                        <Image
-                          src={hackerImage}
-                          alt={t(
-                            "dashboard.microcardDetail.internetHoaxAwareness"
-                          )}
-                          fill
-                          className="object-cover"
-                        />
-                        <div className="absolute inset-0 bg-[linear-gradient(170deg,rgba(16,132,220,0.14)_0%,rgba(10,49,91,0.62)_62%,rgba(4,26,51,0.88)_100%)]" />
-                      </div>
-
-                      <div className="mt-4 rounded-[18px] bg-[#e9eef5] px-4 py-3">
-                        <div className="flex items-start gap-3">
-                          <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#3b82f6]/40 text-[#2d74d7]">
-                            <IconAlertCircleFilled size={12} />
-                          </span>
-                          <div>
-                            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#1f63c9]">
-                              {t("dashboard.microcardDetail.keyTakeaway")}
-                            </p>
-                            <p className="mt-0.5 text-[12px] leading-[1.55] text-[#4e5f76]">
-                              {activeCardDetail.takeaway}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <button className="mt-4 inline-flex rounded-full bg-[#0c5aa4] px-4 py-2 text-[11px] font-semibold text-white transition hover:bg-[#0b4f90]">
-                        {activeCardDetail.cta}
-                      </button>
-
-                      <p className="mt-4 text-[12px] leading-[1.65] text-[#5f6f86]">
-                        {t("dashboard.microcardDetail.educationalDisclaimer")}
-                      </p>
-                    </section>
-                  </div>
                 </div>
-              </motion.article>
+              </header>
+
+              <main className="mx-auto w-full max-w-[1184px] px-6 py-8 sm:py-10 lg:py-12">
+                <motion.div
+                  layoutId={`microcard-${activeCard.id}`}
+                  transition={sharedTransition}
+                >
+                  <MicroCardArticle
+                    title={activeCard.title}
+                    badge={activeCardDetail.eyebrow}
+                    sectionTitle={activeCardDetail.headline}
+                    summary={activeCardDetail.summary}
+                    paragraph={
+                      activeCardDetail.paragraphs[1] ??
+                      t("dashboard.microcardDetail.overviewParagraph2")
+                    }
+                    takeaway={activeCardDetail.takeaway}
+                    imageSrc={activeCard.imageUrl}
+                    imageAlt={activeCard.imageAlt}
+                    onPrevious={() => openAdjacentCard(-1)}
+                    onNext={() => openAdjacentCard(1)}
+                  />
+                </motion.div>
+              </main>
             </div>
           </motion.div>
         ) : null}
@@ -807,87 +966,20 @@ function MicroCardDetailPage() {
           </Link>
         </div>
 
-        <div className="mt-4 rounded-[12px] border border-[#dce4ef] bg-white p-3">
-          <div className="relative aspect-[16/10] overflow-hidden rounded-[10px] sm:aspect-auto sm:h-[330px]">
-            <Image
-              src={hackerImage}
-              alt={t("dashboard.microcardDetail.internetHoaxAwareness")}
-              fill
-              className="object-cover"
-            />
-            <div className="absolute inset-0 bg-[linear-gradient(170deg,rgba(16,132,220,0.14)_0%,rgba(10,49,91,0.62)_62%,rgba(4,26,51,0.88)_100%)]" />
-            <p
-              className={`${interFont.className} absolute right-8 top-8 rotate-[-10deg] text-[42px] font-black uppercase leading-[0.84] text-[#d42828] sm:text-[52px]`}
-            >
-              {t("dashboard.microcardDetail.internet")}
-              <br />
-              {t("dashboard.microcardDetail.hoax")}
-              <br />!
-            </p>
-            <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,rgba(0,0,0,0)_0%,rgba(0,17,43,0.78)_100%)] px-4 pb-4 pt-10">
-              <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-white/95">
-                {t("dashboard.microcardDetail.safetyEssentials")}
-              </p>
-              <h2
-                className={`${interFont.className} mt-1 text-[34px] font-extrabold leading-[0.95] text-white sm:text-[40px]`}
-              >
-                {t("dashboard.microcardDetail.stayingSafeOnline")}
-              </h2>
-            </div>
-          </div>
-
-          <div className="px-3 pb-3 pt-5 sm:px-4 sm:pb-4">
-            <h3
-              className={`${interFont.className} text-[20px] font-extrabold text-[#0f1f35]`}
-            >
-              {t("dashboard.microcardDetail.digitalHarassmentOverview")}
-            </h3>
-            <p className="mt-2 text-[13px] leading-[1.6] text-[#4e5f76]">
-              {t("dashboard.microcardDetail.overviewParagraph1")}
-            </p>
-
-            <div className="mt-4 rounded-[8px] bg-[#e9eef5] px-4 py-3">
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#3b82f6]/40 text-[#2d74d7]">
-                  <IconAlertCircleFilled size={12} />
-                </span>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#1f63c9]">
-                    {t("dashboard.microcardDetail.keyTakeaway")}
-                  </p>
-                  <p className="mt-0.5 text-[12px] leading-[1.45] text-[#4e5f76]">
-                    {t("dashboard.microcardDetail.keyTakeawayBody")}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <p className="mt-4 text-[13px] leading-[1.6] text-[#4e5f76]">
-              {t("dashboard.microcardDetail.overviewParagraph2")}
-            </p>
-
-            <div className="mt-6 flex items-center justify-between gap-3">
-              <Link
-                href="/dashboard?view=microcards"
-                className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5f2] bg-white px-4 py-2 text-[11px] font-semibold text-[#334155] transition hover:bg-[#f8fafc]"
-              >
-                <IconChevronLeft size={12} />
-                {t("dashboard.microcardDetail.previousMicrocards")}
-              </Link>
-              <Link
-                href="/dashboard?view=microcards"
-                className="inline-flex items-center gap-1.5 rounded-full bg-[#0c5aa4] px-4 py-2 text-[11px] font-semibold text-white transition hover:bg-[#0b4f90]"
-              >
-                {t("dashboard.microcardDetail.nextMicrocards")}
-                <IconChevronRight size={12} />
-              </Link>
-            </div>
-
-            <p className="mt-4 text-center text-[9px] text-[#9aa7b8]">
-              {t("dashboard.microcardDetail.educationalDisclaimer")}
-            </p>
-          </div>
-        </div>
+        <main className="py-8 sm:py-10 lg:py-12">
+          <MicroCardArticle
+            title={t("dashboard.microcardDetail.stayingSafeOnline")}
+            badge={t("dashboard.microcardDetail.safetyEssentials")}
+            sectionTitle={t(
+              "dashboard.microcardDetail.digitalHarassmentOverview"
+            )}
+            summary={t("dashboard.microcardDetail.overviewParagraph1")}
+            paragraph={t("dashboard.microcardDetail.overviewParagraph2")}
+            takeaway={t("dashboard.microcardDetail.keyTakeawayBody")}
+            imageSrc={hackerImage}
+            imageAlt={t("dashboard.microcardDetail.internetHoaxAwareness")}
+          />
+        </main>
       </div>
     </div>
   );

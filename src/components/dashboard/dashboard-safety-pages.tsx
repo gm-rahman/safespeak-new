@@ -15,10 +15,12 @@ import {
 import { useSafeSpeakProfile } from "@/hooks/use-safespeak-profile";
 import {
   getContentResourceDownloadUrl,
+  getContentResourceImageUrl,
   listPublishedContentResources,
   type ContentResourceItem,
 } from "@/lib/content-resources";
 import { listPublishedMicroEducation, type MicroEducationItem } from "@/lib/microeducation";
+import { listPublishedResources, type ResourceItem } from "@/lib/resources";
 import {
   buildSmartDialerScript,
   smartDialerContacts,
@@ -29,6 +31,7 @@ import { useEffect } from "react";
 function ResourcesPage() {
   const [resources, setResources] = useState<ContentResourceItem[]>([]);
   const [microCards, setMicroCards] = useState<MicroEducationItem[]>([]);
+  const [directoryResources, setDirectoryResources] = useState<ResourceItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,14 +40,16 @@ function ResourcesPage() {
     void Promise.all([
       listPublishedContentResources(),
       listPublishedMicroEducation(),
+      listPublishedResources(),
     ])
-      .then(([nextResources, nextMicroCards]) => {
+      .then(([nextResources, nextMicroCards, nextDirectoryResources]) => {
         if (!isActive) {
           return;
         }
 
         setResources(nextResources.slice(0, 6));
         setMicroCards(nextMicroCards.slice(0, 4));
+        setDirectoryResources(nextDirectoryResources.slice(0, 6));
       })
       .catch((error) => {
         if (!isActive) {
@@ -127,30 +132,43 @@ function ResourcesPage() {
 
             <div className="mt-4 space-y-3">
               {resources.length > 0 ? (
-                resources.map((resource) => (
-                  <article
-                    key={resource.id}
-                    className="rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] p-4"
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-sm font-bold text-[#1f2a3a]">{resource.name}</p>
-                        <p className="mt-1 text-[11px] text-[#60728a]">
-                          {resource.category} | {resource.language} | {resource.jurisdiction}
-                        </p>
+                resources.map((resource) => {
+                  const imageUrl = getContentResourceImageUrl(resource);
+
+                  return (
+                    <article
+                      key={resource.id}
+                      className="rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] p-4"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex min-w-0 gap-3">
+                          {imageUrl ? (
+                            <span
+                              aria-hidden="true"
+                              style={{ backgroundImage: `url(${imageUrl})` }}
+                              className="h-14 w-14 shrink-0 rounded-[14px] border border-[#dce5f1] bg-cover bg-center"
+                            />
+                          ) : null}
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-[#1f2a3a]">{resource.name}</p>
+                            <p className="mt-1 text-[11px] text-[#60728a]">
+                              {resource.category} | {resource.language} | {resource.jurisdiction}
+                            </p>
+                          </div>
+                        </div>
+                        <a
+                          href={getContentResourceDownloadUrl(resource)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-9 items-center gap-1 rounded-full bg-[#0f5d9f] px-4 text-[11px] font-bold text-white"
+                        >
+                          Download
+                          <IconExternalLink size={12} />
+                        </a>
                       </div>
-                      <a
-                        href={getContentResourceDownloadUrl(resource)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-9 items-center gap-1 rounded-full bg-[#0f5d9f] px-4 text-[11px] font-bold text-white"
-                      >
-                        Download
-                        <IconExternalLink size={12} />
-                      </a>
-                    </div>
-                  </article>
-                ))
+                    </article>
+                  );
+                })
               ) : (
                 <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] p-4 text-[11px] text-[#60728a]">
                   Resource library items are not available yet. Safe placeholders stay visible until backend content is ready.
@@ -203,6 +221,54 @@ function ResourcesPage() {
               <IconArrowRight size={13} className="ml-1" />
             </Link>
           </aside>
+        </section>
+
+        <section className="rounded-[22px] border border-[#dce5f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+                Support directory
+              </p>
+              <h2 className="mt-1 text-xl font-bold text-[#1f2a3a]">Banks, legal aid, and counseling services</h2>
+              <p className="mt-1 text-xs text-[#60728a]">
+                Published admin directory entries appear here for quick contact and availability checks.
+              </p>
+            </div>
+            <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+              {directoryResources.length} listed
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {directoryResources.length > 0 ? (
+              directoryResources.map((resource) => (
+                <article
+                  key={resource.id}
+                  className="rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="rounded-full bg-[#e6f7ef] px-2 py-0.5 text-[10px] font-bold text-[#0f766e]">
+                        {resource.category}
+                      </span>
+                      <h3 className="mt-2 text-sm font-bold text-[#1f2a3a]">{resource.name}</h3>
+                    </div>
+                    <IconShieldFilled size={16} className="shrink-0 text-[#0f5d9f]" />
+                  </div>
+                  <p className="mt-3 text-[11px] font-semibold text-[#60728a]">
+                    {resource.region}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-[1.55] text-[#60728a]">
+                    {resource.contact}
+                  </p>
+                </article>
+              ))
+            ) : (
+              <div className="col-span-full rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] p-4 text-[11px] text-[#60728a]">
+                Directory resources are not available yet. Published admin entries will appear here.
+              </div>
+            )}
+          </div>
         </section>
       </div>
     </div>
