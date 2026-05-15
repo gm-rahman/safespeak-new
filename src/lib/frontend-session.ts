@@ -1,7 +1,7 @@
 "use client";
 
 import { apiRequest } from "@/lib/api";
-import { getAuthSession } from "@/lib/auth";
+import { ensureValidAuthSession } from "@/lib/auth";
 
 const ANONYMOUS_SESSION_KEY = "safespeak_anonymous_session";
 export const SAFE_SPEAK_SESSION_HEADER = "X-SafeSpeak-Session";
@@ -76,7 +76,7 @@ export async function getAnonymousSessionToken(options?: { forceNew?: boolean })
 }
 
 export async function getSessionAwareAuthHeaders(options?: { forceNewAnonymous?: boolean }): Promise<HeadersInit> {
-  const authSession = getAuthSession();
+  const authSession = await ensureValidAuthSession().catch(() => null);
 
   if (authSession?.tokens.accessToken) {
     return {

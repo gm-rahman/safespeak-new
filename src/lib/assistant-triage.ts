@@ -11,6 +11,7 @@ const ASSISTANT_TRIAGE_CONTEXT_KEY = "safespeak_assistant_triage_context";
 const MAX_TRIAGE_NARRATIVE_LENGTH = 12000;
 
 export type AssistantTriageSource = {
+  conversationSessionId?: string;
   conversation: AssistantConversationMessage[];
   timeline: AssistantTimeline;
   narrative: string;
@@ -73,6 +74,7 @@ export function buildAssistantTriageNarrative(
 }
 
 export function saveAssistantTriageSource(input: {
+  conversationSessionId?: string;
   conversation: AssistantConversationMessage[];
   timeline: AssistantTimeline;
   incidentCategory?: AssistantIncidentCategory;
@@ -82,6 +84,7 @@ export function saveAssistantTriageSource(input: {
   }
 
   const source: AssistantTriageSource = {
+    conversationSessionId: input.conversationSessionId,
     conversation: input.conversation,
     timeline: input.timeline,
     narrative: buildAssistantTriageNarrative(input.conversation),

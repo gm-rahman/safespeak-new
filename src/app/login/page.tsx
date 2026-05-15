@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import type { Route } from "next";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { useTranslation } from "react-i18next";
 
@@ -12,13 +13,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   type SocialAuthProvider,
+  ensureValidAuthSession,
+  getAuthErrorMessage,
   loginUser,
   startSocialAuth,
 } from "@/lib/auth";
 
+function getSafeRedirectTarget(value: string | null): string {
+  if (!value?.startsWith("/") || value.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  return value;
+}
+
 export default function LoginPage() {
   const { t } = useTranslation();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTarget = getSafeRedirectTarget(searchParams.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberSession, setRememberSession] = useState(true);
@@ -27,6 +40,32 @@ export default function LoginPage() {
     useState<SocialAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const authError = searchParams.get("authError");
+
+    if (authError) {
+      setError(authError);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void ensureValidAuthSession()
+      .then((session) => {
+        if (isActive && session) {
+          router.replace(redirectTarget as Route);
+        }
+      })
+      .catch(() => {
+        // Invalid saved sessions are cleared by the auth helper.
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [redirectTarget, router]);
 
   const isDisabled = useMemo(() => {
     return isSubmitting || !email.trim() || !password.trim();
@@ -50,13 +89,9 @@ export default function LoginPage() {
       );
 
       setSuccess(t("auth.login.success"));
-      router.push("/profile");
+      router.push(redirectTarget as Route);
     } catch (submitError) {
-      const message =
-        submitError instanceof Error
-          ? submitError.message
-          : t("auth.login.error");
-      setError(message);
+      setError(getAuthErrorMessage(submitError, t("auth.login.error")));
     } finally {
       setIsSubmitting(false);
     }

@@ -13,6 +13,7 @@ type AssistantDraftScopeInput = {
 };
 
 export type AssistantConversationDraft = {
+  conversationSessionId?: string;
   messages: AssistantConversationMessage[];
   timeline: AssistantTimeline;
   timelineFieldOrder: string[];

@@ -16,6 +16,7 @@ import {
   IconSettingsFilled,
   IconShieldCheck,
   IconShieldFilled,
+  IconUserCircle,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
@@ -507,13 +508,21 @@ export function SettingsPage() {
               <IconPhoneFilled size={14} />
               Open Smart Dialler
             </Link>
+            <Link
+              href="/profile"
+              className="inline-flex h-11 items-center gap-2 rounded-full border border-[#cfe0f3] bg-white px-5 text-sm font-bold text-[#0f5d9f]"
+            >
+              <IconUserCircle size={14} />
+              Open User Profile
+            </Link>
           </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {[
               {
                 title: "Profile management",
-                body: "Language, cultural, faith, community, and accessibility preferences are available above.",
+                body: "Open your account profile, verification status, security summary, and profile data controls.",
+                href: { pathname: "/profile" },
               },
               {
                 title: "Reports center",

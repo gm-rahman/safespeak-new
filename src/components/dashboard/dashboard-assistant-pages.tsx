@@ -30,13 +30,16 @@ import {
   type AssistantConversationMessage,
   type AssistantTimeline,
   type LegalAwareness,
-  sendTimelineAssistantMessage,
 } from "@/lib/assistant-conversation";
 import {
   clearAssistantConversationDraft,
   getAssistantConversationDraft,
   saveAssistantConversationDraft,
 } from "@/lib/assistant-draft";
+import {
+  appendConversationFlowMessage,
+  createConversationFlowSession,
+} from "@/lib/conversation-flow";
 import {
   clearAssistantTriageSource,
   saveAssistantTriageSource,
@@ -223,7 +226,7 @@ function getContinueReportSubmissionHref(
   return {
     pathname: "/dashboard",
     query: {
-      view: "reportsubmissiondetails",
+      view: "reportsubmissionsupport",
     },
   } as const;
 }
@@ -663,6 +666,9 @@ function SafeSpeakAssistantConversationPage({
     incidentCategory: initialCategory,
   });
   const [input, setInput] = useState(seededPrefillMessage ?? "");
+  const [conversationSessionId, setConversationSessionId] = useState<string | null>(
+    existingDraft?.conversationSessionId ?? null
+  );
   const [timeline, setTimeline] = useState<AssistantTimeline>(
     existingDraft?.timeline ?? emptyTimeline
   );
@@ -703,6 +709,8 @@ function SafeSpeakAssistantConversationPage({
   const [timelineFieldOrder, setTimelineFieldOrder] = useState<string[]>(
     existingDraft?.timelineFieldOrder ?? []
   );
+  const [triagePrompt, setTriagePrompt] = useState<string | null>(null);
+  const [showTriageCta, setShowTriageCta] = useState(false);
   const continueReportSubmissionHref =
     getContinueReportSubmissionHref(initialCategory);
   const assistantEntryHref = getAssistantEntryHref(
@@ -820,12 +828,14 @@ function SafeSpeakAssistantConversationPage({
 
   useEffect(() => {
     saveAssistantTriageSource({
+      conversationSessionId: conversationSessionId ?? undefined,
       conversation: conversationMessages,
       timeline,
       incidentCategory: initialCategory,
     });
     saveAssistantConversationDraft(
       {
+        conversationSessionId: conversationSessionId ?? undefined,
         messages: conversationMessages,
         timeline,
         timelineFieldOrder,
@@ -841,6 +851,7 @@ function SafeSpeakAssistantConversationPage({
     conversationMessages,
     initialCategory,
     initialTopic,
+    conversationSessionId,
     timeline,
     timelineFieldOrder,
   ]);

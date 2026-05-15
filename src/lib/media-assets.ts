@@ -7,6 +7,11 @@ export type MediaAssetItem = {
   bodyText: string;
   category: string;
   status: "draft" | "published" | "archived";
+  createdDate?: string;
+  expirationDate?: string;
+  offlineCachingEnabled: boolean;
+  primaryCta?: string;
+  secondaryButton?: string;
   originalFileName: string;
   mimeType: string;
   fileSizeBytes: number;

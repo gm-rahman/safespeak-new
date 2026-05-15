@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 import { AuthShell } from "@/components/auth/auth-shell";
@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   type SocialAuthProvider,
+  ensureValidAuthSession,
+  getAuthErrorMessage,
   registerUser,
   startSocialAuth,
 } from "@/lib/auth";
@@ -18,6 +20,7 @@ import {
 export default function RegisterPage() {
   const { t } = useTranslation();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -27,6 +30,32 @@ export default function RegisterPage() {
     useState<SocialAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const authError = searchParams.get("authError");
+
+    if (authError) {
+      setError(authError);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void ensureValidAuthSession()
+      .then((session) => {
+        if (isActive && session) {
+          router.replace("/dashboard");
+        }
+      })
+      .catch(() => {
+        // Invalid saved sessions are cleared by the auth helper.
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [router]);
 
   const isDisabled = useMemo(() => {
     return (
@@ -71,13 +100,9 @@ export default function RegisterPage() {
       setPassword("");
       setConfirmPassword("");
       setAcceptedTerms(false);
-      router.push("/profile");
+      router.push("/dashboard");
     } catch (submitError) {
-      const message =
-        submitError instanceof Error
-          ? submitError.message
-          : t("auth.register.error");
-      setError(message);
+      setError(getAuthErrorMessage(submitError, t("auth.register.error")));
     } finally {
       setIsSubmitting(false);
     }

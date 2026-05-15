@@ -3,7 +3,7 @@
 import { Plus_Jakarta_Sans } from "next/font/google";
 import type { Route } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { UrlObject } from "url";
 
 import {
@@ -34,6 +34,7 @@ import {
   SUPPORT_NUMBER_DISPLAY,
   triggerQuickExit,
 } from "@/lib/safety";
+import { getAuthSession, getCurrentUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 import type { DashboardTab, HomeView } from "./dashboard-types";
@@ -306,6 +307,7 @@ function MobileDashboardNav({
 
 function EmergencyToolbar() {
   const { t, i18n } = useTranslation();
+  const [userName, setUserName] = useState<string | null>(null);
   const resolvedLanguage =
     i18n.resolvedLanguage ?? i18n.language ?? DEFAULT_LANGUAGE;
   const currentLanguage = isSupportedLanguage(resolvedLanguage)
@@ -323,6 +325,31 @@ function EmergencyToolbar() {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
     document.documentElement.lang = nextLanguage;
   };
+
+  useEffect(() => {
+    let isActive = true;
+    const sessionUser = getAuthSession()?.user;
+
+    if (sessionUser?.fullName) {
+      setUserName(sessionUser.fullName);
+    }
+
+    void getCurrentUser()
+      .then((user) => {
+        if (isActive) {
+          setUserName(user.fullName || user.email);
+        }
+      })
+      .catch(() => {
+        if (isActive && sessionUser?.email && !sessionUser.fullName) {
+          setUserName(sessionUser.email);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   return (
     <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
@@ -384,8 +411,8 @@ function EmergencyToolbar() {
         <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#93a3b8]">
           {t("dashboard.toolbar.welcomeBack")}
         </p>
-        <p className="text-sm font-bold text-[#1f2a3a]">
-          {t("dashboard.toolbar.userName")}
+        <p className="max-w-[180px] truncate text-sm font-bold text-[#1f2a3a]">
+          {userName ?? "SafeSpeak User"}
         </p>
       </div>
     </div>

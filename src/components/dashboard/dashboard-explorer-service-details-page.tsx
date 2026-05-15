@@ -28,13 +28,13 @@ import {
   type ConsentRequirement,
 } from "@/lib/consent";
 import { useSafeSpeakProfile } from "@/hooks/use-safespeak-profile";
+import { ensureValidAuthSession, type AuthSession } from "@/lib/auth";
 import {
   createWarmReferral,
   getSupportService,
   listAdvocates,
   type SupportServiceRecord,
 } from "@/lib/support-client";
-import { getAuthSession } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const explorerServiceIds = [
@@ -116,7 +116,7 @@ export function ExplorerServiceDetailsPage({
   const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const [isSubmittingReferral, setIsSubmittingReferral] = useState(false);
   const [advocateCount, setAdvocateCount] = useState(0);
-  const authSession = getAuthSession();
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const selectedServiceId: ExplorerServiceId = isExplorerServiceId(serviceId)
     ? serviceId
     : "community-support";
@@ -193,6 +193,18 @@ export function ExplorerServiceDetailsPage({
 
   useEffect(() => {
     let isActive = true;
+
+    void ensureValidAuthSession()
+      .then((session) => {
+        if (isActive) {
+          setAuthSession(session);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setAuthSession(null);
+        }
+      });
 
     void getSupportService(serviceId ?? selectedServiceId)
       .then((service) => {
