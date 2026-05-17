@@ -31,12 +31,18 @@ import {
 
 import {
   type AuthSession,
+  clearAuthSession,
   ensureValidAuthSession,
   getAuthSession,
   getCurrentUser,
   logoutUser,
 } from "@/lib/auth";
 import { getProfile, type ProfileRecord } from "@/lib/profile-client";
+import {
+  deactivateAccount,
+  downloadPrivacyExport,
+  savePrivacyExportFile,
+} from "@/lib/privacy-client";
 import { listReports } from "@/lib/reports-client";
 import { listSupportServices } from "@/lib/support-client";
 import { cn } from "@/lib/utils";
@@ -358,6 +364,10 @@ export default function Profile() {
   const [activity, setActivity] = useState<ActivitySummary>(defaultActivity);
   const [loaded, setLoaded] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isDownloadingData, setIsDownloadingData] = useState(false);
+  const [isDeactivating, setIsDeactivating] = useState(false);
+  const [accountActionMessage, setAccountActionMessage] = useState<string | null>(null);
+  const [accountActionError, setAccountActionError] = useState<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -428,27 +438,62 @@ export default function Profile() {
     profile?.preferredLanguage ?? profile?.interpreterLanguage ?? "English";
   const preferredContact = profile?.referralSharingPreference ? "Email" : "In-app";
 
-  const downloadProfileData = () => {
-    if (!session || typeof window === "undefined") {
+  const downloadProfileData = async () => {
+    if (!session) {
       return;
     }
 
-    const payload = {
-      user: session.user,
-      profile,
-      activity,
-      exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
+    setIsDownloadingData(true);
+    setAccountActionError(null);
+    setAccountActionMessage(null);
 
-    anchor.href = url;
-    anchor.download = "safespeak-profile-data.json";
-    anchor.click();
-    window.URL.revokeObjectURL(url);
+    try {
+      const exportPayload = await downloadPrivacyExport();
+
+      savePrivacyExportFile(exportPayload);
+      setAccountActionMessage("Backend data export generated.");
+    } catch (error) {
+      setAccountActionError(
+        error instanceof Error
+          ? error.message
+          : "Backend data export could not be generated."
+      );
+    } finally {
+      setIsDownloadingData(false);
+    }
+  };
+
+  const deactivateProfileAccount = async () => {
+    if (!session) {
+      return;
+    }
+
+    const confirmed =
+      typeof window !== "undefined" &&
+      window.confirm(
+        "Deactivate this account now? You will be logged out and need support to reactivate it."
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeactivating(true);
+    setAccountActionError(null);
+    setAccountActionMessage(null);
+
+    try {
+      await deactivateAccount();
+      clearAuthSession();
+      setSession(null);
+      router.replace("/login");
+    } catch (error) {
+      setAccountActionError(
+        error instanceof Error ? error.message : "Account could not be deactivated."
+      );
+    } finally {
+      setIsDeactivating(false);
+    }
   };
 
   if (!loaded) {
@@ -709,16 +754,26 @@ export default function Profile() {
                   Account Actions
                 </h2>
                 <p className="mt-1 text-[12px] font-medium text-[#64748b]">
-                  Take control of your account settings and data.
+                  Download a backend-generated export or deactivate your account.
                 </p>
+                {accountActionMessage ? (
+                  <p className="mt-2 text-[11px] font-bold text-[#0b65d8]">
+                    {accountActionMessage}
+                  </p>
+                ) : null}
+                {accountActionError ? (
+                  <p className="mt-2 text-[11px] font-bold text-[#b91c1c]">
+                    {accountActionError}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
               <ActionButton
                 icon={<IconDownload size={14} />}
-                onClick={downloadProfileData}
+                onClick={() => void downloadProfileData()}
               >
-                Download My Data
+                {isDownloadingData ? "Preparing Export..." : "Download Backend Export"}
               </ActionButton>
               <ActionButton
                 href="/dashboard/settings/privacy-policy"
@@ -729,9 +784,9 @@ export default function Profile() {
               <ActionButton
                 tone="danger"
                 icon={<IconTrash size={14} />}
-                onClick={() => undefined}
+                onClick={() => void deactivateProfileAccount()}
               >
-                Deactivate Account
+                {isDeactivating ? "Deactivating..." : "Deactivate Account"}
               </ActionButton>
               <ActionButton
                 tone="neutral"

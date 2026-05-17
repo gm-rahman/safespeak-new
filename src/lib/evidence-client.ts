@@ -5,21 +5,94 @@ import { consentRequirements, ensureConsent } from "@/lib/consent";
 import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
 
 export type EvidenceRecord = {
-  _id: string;
+  _id?: string;
+  id?: string;
   reportId?: string;
   type?: string;
   fileName?: string;
   mimeType?: string;
   size?: number;
   sha256Hash?: string;
+  status?: string;
   storageStatus?: string;
+  storageProvider?: string;
+  metadata?: Record<string, unknown>;
+  consentSnapshot?: Record<string, unknown>;
+  deletionRequestedAt?: string;
+  deletedAt?: string;
   transcription?: {
+    text?: string;
     transcript?: string;
     language?: string;
+    model?: string;
+    provider?: string;
+    transcribedAt?: string;
     savedAt?: string;
   };
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type EvidenceMetadata = {
+  id?: string;
+  _id?: string;
+  reportId?: string;
+  type?: string;
+  fileName?: string;
+  mimeType?: string;
+  size?: number;
+  storageKey?: string;
+  storageRegion?: string;
+  sha256Hash?: string;
+  encryptionKeyRef?: string;
+  metadata?: Record<string, unknown>;
+  consentSnapshot?: Record<string, unknown>;
+  status?: string;
+  storageProvider?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletionRequestedAt?: string;
+  deletedAt?: string;
+};
+
+export type EvidenceHashVerification = {
+  verified: boolean;
+  expectedSha256Hash?: string;
+  providedSha256Hash?: string;
+  computedSha256Hash?: string;
+};
+
+export type EvidenceAuditChainEntry = {
+  _id?: string;
+  id?: string;
+  evidenceId?: string;
+  reportId?: string;
+  actorType?: "user" | "anonymous_session" | "system" | string;
+  actorId?: string;
+  sessionId?: string;
+  action: string;
+  sequence: number;
+  previousHash?: string;
+  eventHash?: string;
+  signature?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+};
+
+export type EvidenceTranscriptionResult = {
+  evidenceId?: string;
+  reportId?: string;
+  transcript?: string;
+  language?: string;
+  model?: string;
+  saved?: boolean;
+  transcription?: {
+    text?: string;
+    language?: string;
+    model?: string;
+    provider?: string;
+    transcribedAt?: string;
+  };
 };
 
 type UploadUrlInput = {
@@ -44,12 +117,28 @@ type EvidenceResponse = {
   evidence: EvidenceRecord;
 };
 
+type EvidenceMetadataResponse = {
+  metadata: EvidenceMetadata;
+};
+
+type EvidenceHashVerificationResponse = {
+  verification: EvidenceHashVerification;
+};
+
+type EvidenceAuditChainResponse = {
+  auditChain: EvidenceAuditChainEntry[];
+};
+
 type TranscriptResponse = {
   transcript: string;
   language?: string;
   model?: string;
   saved?: boolean;
 };
+
+export function resolveEvidenceId(evidence: Pick<EvidenceRecord, "id" | "_id">): string {
+  return evidence.id ?? evidence._id ?? "";
+}
 
 export async function requestEvidenceUploadUrl(
   input: UploadUrlInput
@@ -118,4 +207,74 @@ export async function getEvidence(evidenceId: string): Promise<EvidenceRecord> {
   });
 
   return response.data.evidence;
+}
+
+export async function getEvidenceMetadata(
+  evidenceId: string
+): Promise<EvidenceMetadata> {
+  const headers = await getSessionAwareAuthHeaders();
+  const response = await apiRequest<EvidenceMetadataResponse>(
+    `/evidence/${evidenceId}/metadata`,
+    {
+      headers,
+    }
+  );
+
+  return response.data.metadata;
+}
+
+export async function verifyEvidenceHash(
+  evidenceId: string,
+  sha256Hash: string
+): Promise<EvidenceHashVerification> {
+  const headers = await getSessionAwareAuthHeaders();
+  const response = await apiRequest<EvidenceHashVerificationResponse>(
+    `/evidence/${evidenceId}/verify-hash`,
+    {
+      method: "POST",
+      headers,
+      body: {
+        sha256Hash,
+      },
+    }
+  );
+
+  return response.data.verification;
+}
+
+export async function getEvidenceAuditChain(
+  evidenceId: string
+): Promise<EvidenceAuditChainEntry[]> {
+  const headers = await getSessionAwareAuthHeaders();
+  const response = await apiRequest<EvidenceAuditChainResponse>(
+    `/evidence/${evidenceId}/audit-chain`,
+    {
+      headers,
+    }
+  );
+
+  return response.data.auditChain;
+}
+
+export async function deleteEvidence(evidenceId: string): Promise<void> {
+  const headers = await getSessionAwareAuthHeaders();
+
+  await apiRequest<null>(`/evidence/${evidenceId}`, {
+    method: "DELETE",
+    headers,
+  });
+}
+
+export async function getEvidenceTranscription(
+  evidenceId: string
+): Promise<EvidenceTranscriptionResult> {
+  const headers = await getSessionAwareAuthHeaders();
+  const response = await apiRequest<EvidenceTranscriptionResult>(
+    `/evidence/${evidenceId}/transcription`,
+    {
+      headers,
+    }
+  );
+
+  return response.data;
 }

@@ -45,6 +45,13 @@ const SmartDiallerPage = dynamic(
     ),
   { loading: DashboardViewFallback }
 );
+const SafetyPlanManager = dynamic(
+  () =>
+    import("./dashboard-safety-pages").then(
+      (module) => module.SafetyPlanManager
+    ),
+  { loading: DashboardViewFallback }
+);
 const MicroCardsPage = dynamic(
   () =>
     import("./dashboard-microcards-pages").then(
@@ -196,6 +203,8 @@ export default function DashboardHomeScreen({
       <LocalIntelligencePage />
     ) : homeView === "smartdialler" ? (
       <SmartDiallerPage />
+    ) : homeView === "safetyplan" ? (
+      <SafetyPlanManager />
     ) : homeView === "microeducation" ? (
       <MicroEducationPage />
     ) : homeView === "microcards" ? (

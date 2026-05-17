@@ -15,6 +15,8 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import { ReportAiHelperPanel } from "@/components/dashboard/report-ai-helper-panel";
+import { SourceBackedQaPanel } from "@/components/dashboard/source-backed-qa-panel";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import { getAssistantTriageSource } from "@/lib/assistant-triage";
 import {
@@ -67,12 +69,39 @@ function ReportSubmissionDetailsPage({
       t("dashboard.reportSubmission.locationValue")
   );
   const [summary, setSummary] = useState(defaultSummary);
+  const [reviewedStructuredFields, setReviewedStructuredFields] = useState<
+    Record<string, unknown>
+  >(existingDraft?.structuredFields ?? {});
   const [isSaving, setIsSaving] = useState(false);
   const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [pendingConsentRequirement, setPendingConsentRequirement] =
     useState<ConsentRequirement | null>(null);
+  const currentStructuredFields = useMemo(
+    () => ({
+      ...reviewedStructuredFields,
+      who: reviewedStructuredFields.who ?? assistantSource?.timeline.who,
+      what: summary,
+      when: date,
+      where: location,
+      how: reviewedStructuredFields.how ?? assistantSource?.timeline.how,
+      witnesses:
+        reviewedStructuredFields.witnesses ?? assistantSource?.timeline.witnesses,
+      injuries:
+        reviewedStructuredFields.injuries ?? assistantSource?.timeline.injuries,
+    }),
+    [
+      assistantSource?.timeline.how,
+      assistantSource?.timeline.injuries,
+      assistantSource?.timeline.who,
+      assistantSource?.timeline.witnesses,
+      date,
+      location,
+      reviewedStructuredFields,
+      summary,
+    ]
+  );
 
   useEffect(() => {
     mergeReportFlowDraft({
@@ -80,26 +109,15 @@ function ReportSubmissionDetailsPage({
       date,
       location,
       summary,
-      structuredFields: {
-        who: assistantSource?.timeline.who,
-        what: summary,
-        when: date,
-        where: location,
-        how: assistantSource?.timeline.how,
-        witnesses: assistantSource?.timeline.witnesses,
-        injuries: assistantSource?.timeline.injuries,
-      },
+      structuredFields: currentStructuredFields,
       incidentCategory: initialCategory,
       incidentType: initialCategory ?? existingDraft?.incidentType,
       topic: initialTopic,
       starterPrompt: initialMessage?.trim(),
     });
   }, [
+    currentStructuredFields,
     date,
-    assistantSource?.timeline.how,
-    assistantSource?.timeline.injuries,
-    assistantSource?.timeline.who,
-    assistantSource?.timeline.witnesses,
     existingDraft?.incidentType,
     initialCategory,
     initialMessage,
@@ -116,22 +134,13 @@ function ReportSubmissionDetailsPage({
 
     try {
       setPendingConsentRequirement(null);
-      const structuredFields = {
-        who: assistantSource?.timeline.who,
-        what: summary,
-        when: date,
-        where: location,
-        how: assistantSource?.timeline.how,
-        witnesses: assistantSource?.timeline.witnesses,
-        injuries: assistantSource?.timeline.injuries,
-      };
       const payload = {
         language: "en",
         jurisdiction: "NSW",
         context: title,
         originalNarrative: summary,
         incidentType: initialCategory ?? contextFlow?.categoryKey ?? undefined,
-        structuredFields,
+        structuredFields: currentStructuredFields,
         status: "draft",
       } as const;
 
@@ -145,7 +154,7 @@ function ReportSubmissionDetailsPage({
         date,
         location,
         summary,
-        structuredFields,
+        structuredFields: currentStructuredFields,
         incidentCategory: initialCategory,
         incidentType:
           savedReport.incidentType ??
@@ -170,6 +179,18 @@ function ReportSubmissionDetailsPage({
       );
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleApplyAiFields = (fields: Record<string, unknown>) => {
+    setReviewedStructuredFields(fields);
+
+    if (typeof fields.when === "string" && fields.when.trim()) {
+      setDate(fields.when);
+    }
+
+    if (typeof fields.where === "string" && fields.where.trim()) {
+      setLocation(fields.where);
     }
   };
 
@@ -329,6 +350,26 @@ function ReportSubmissionDetailsPage({
             </li>
           </ul>
         </aside>
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.3fr_1fr]">
+        <ReportAiHelperPanel
+          reportId={existingDraft?.reportId}
+          summary={summary}
+          structuredFields={currentStructuredFields}
+          incidentCategory={initialCategory}
+          language="en"
+          jurisdiction="NSW"
+          onApplySummary={setSummary}
+          onApplyFields={handleApplyAiFields}
+        />
+        <SourceBackedQaPanel
+          title="Ask approved sources"
+          description="Use this for source-backed questions while drafting. No citations means SafeSpeak shows a fallback instead of a legal conclusion."
+          language="en"
+          jurisdiction="NSW"
+          defaultQuestion="What support or evidence options should I consider for this report?"
+        />
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-2">

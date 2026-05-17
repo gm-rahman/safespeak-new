@@ -61,6 +61,8 @@ export default async function DashboardPage({
     homeView = "localintelligence";
   } else if (view === "smartdialler") {
     homeView = "smartdialler";
+  } else if (view === "safetyplan") {
+    homeView = "safetyplan";
   } else if (view === "microcards") {
     homeView = "microcards";
   } else if (view === "microcarddetail") {

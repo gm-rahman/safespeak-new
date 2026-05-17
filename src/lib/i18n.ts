@@ -431,7 +431,7 @@ const resources = {
             additionalResources: "Additional Safety Resources",
             resourceEsafetyTitle: "eSafety",
             resourceEsafetyBody: "Online abuse removal",
-            resourceCounsellingTitle: "Counselling",
+            resourceCounsellingTitle: "Counseling",
             resourceCounsellingBody: "24/7 Crisis Support",
             footerNote:
               "This tool provides information and support options but is not a substitute for professional medical, legal, or treatment advice.",
@@ -447,7 +447,7 @@ const resources = {
               esafetyBody:
                 "File a formal report regarding online abuse or cyberbullying to get content removed quickly.",
               reportToEsafety: "Report to eSafety",
-              counsellingTitle: "Counselling Support",
+              counsellingTitle: "Counseling Support",
               counsellingBody:
                 "Speak confidentially with a crisis counselor available 24/7 for mental health support and guidance.",
               callLifeline: "Call Lifeline",

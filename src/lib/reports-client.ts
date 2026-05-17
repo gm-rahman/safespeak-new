@@ -24,6 +24,8 @@ export type ReportRecord = {
   structuredFields?: Record<string, unknown>;
   consentSnapshot?: Record<string, unknown>;
   statusHistory?: Array<Record<string, unknown>>;
+  deletionRequestedAt?: string;
+  withdrawnAt?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -147,6 +149,8 @@ type ReportStatusResponse = {
     current: string;
     updatedAt?: string;
     localOnly?: boolean;
+    deletionRequestedAt?: string;
+    withdrawnAt?: string;
   };
 };
 
@@ -262,6 +266,49 @@ export async function getReportTimeline(
   return response.data.timeline;
 }
 
+export async function withdrawReport(reportId: string): Promise<ReportRecord> {
+  const response = await reportApiRequest<ReportResponse>(
+    `/reports/${reportId}/withdraw`,
+    {
+      method: "POST",
+    }
+  );
+
+  return response.data.report;
+}
+
+export async function deleteReport(reportId: string): Promise<void> {
+  await reportApiRequest<null>(`/reports/${reportId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function requestReportDelete(
+  reportId: string
+): Promise<ReportRecord> {
+  const response = await reportApiRequest<ReportResponse>(
+    `/reports/${reportId}/request-delete`,
+    {
+      method: "POST",
+    }
+  );
+
+  return response.data.report;
+}
+
+export async function markReportInfoOnly(
+  reportId: string
+): Promise<ReportRecord> {
+  const response = await reportApiRequest<ReportResponse>(
+    `/reports/${reportId}/mark-info-only`,
+    {
+      method: "POST",
+    }
+  );
+
+  return response.data.report;
+}
+
 export async function getReportDestinations(
   reportId: string,
   query: {
@@ -329,6 +376,9 @@ export async function submitReportToDestination(
     confirmConsent?: boolean;
   }
 ): Promise<ReportSubmissionRecord> {
+  const headers = await getSessionAwareAuthHeaders();
+  await ensureConsent(consentRequirements.reportDestinationSubmit, headers);
+
   const response = await reportApiRequest<ReportSubmissionResponse>(
     `/reports/${reportId}/submissions`,
     {

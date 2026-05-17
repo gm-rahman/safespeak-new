@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   IconAlertCircle,
@@ -10,33 +10,49 @@ import {
   IconChevronRight,
   IconCircleCheckFilled,
   IconCircleDotFilled,
+  IconFileText,
   IconHeartFilled,
   IconLoader2,
   IconLockFilled,
   IconSearch,
   IconShieldFilled,
+  IconTrash,
 } from "@tabler/icons-react";
 
 import {
+  deleteReport,
   getReportStatus,
   listReports,
+  markReportInfoOnly,
+  requestReportDelete,
   type ReportRecord,
+  withdrawReport,
 } from "@/lib/reports-client";
+import {
+  getReportLifecycleActions,
+  getReportStatusLabel,
+  type ReportLifecycleAction,
+  type ReportLifecycleActionConfig,
+} from "@/lib/report-lifecycle";
+import { cn } from "@/lib/utils";
 
-type HistoryStatus = "ACTION REQUIRED" | "SUBMITTED" | "DRAFT";
+type HistoryStatus = "ACTION REQUIRED" | "SUBMITTED" | "DRAFT" | "CLOSED";
 
 type HistoryReport = {
   id: string;
   status: HistoryStatus;
+  rawStatus?: string;
+  statusLabel: string;
   title: string;
   team: string;
   date: string;
+  report: ReportRecord;
   icon: ReactNode;
   iconWrapClassName: string;
 };
 
 function normalizeHistoryStatus(status?: string): HistoryStatus {
-  if (status === "submitted" || status === "received" || status === "closed") {
+  if (status === "submitted" || status === "received") {
     return "SUBMITTED";
   }
 
@@ -44,9 +60,19 @@ function normalizeHistoryStatus(status?: string): HistoryStatus {
     status === "in_review" ||
     status === "in-review" ||
     status === "pending_submission" ||
-    status === "ready_for_review"
+    status === "ready_for_review" ||
+    status === "triaged"
   ) {
     return "ACTION REQUIRED";
+  }
+
+  if (
+    status === "closed" ||
+    status === "deleted" ||
+    status === "withdrawn" ||
+    status === "info_only"
+  ) {
+    return "CLOSED";
   }
 
   return "DRAFT";
@@ -70,6 +96,14 @@ function getHistoryMeta(status: HistoryStatus): {
       team: "Saved in SafeSpeak",
       icon: <IconHeartFilled size={14} />,
       iconWrapClassName: "bg-[#ffe9ea] text-[#f26161]",
+    };
+  }
+
+  if (status === "CLOSED") {
+    return {
+      team: "Lifecycle action recorded",
+      icon: <IconFileText size={14} />,
+      iconWrapClassName: "bg-[#eef1f5] text-[#64748b]",
     };
   }
 
@@ -101,15 +135,22 @@ function formatHistoryDate(value?: string) {
 }
 
 function toHistoryReport(report: ReportRecord, resolvedStatus?: string): HistoryReport {
-  const historyStatus = normalizeHistoryStatus(resolvedStatus ?? report.status);
+  const statusAwareReport = {
+    ...report,
+    status: resolvedStatus ?? report.status,
+  };
+  const historyStatus = normalizeHistoryStatus(statusAwareReport.status);
   const meta = getHistoryMeta(historyStatus);
 
   return {
     id: report._id,
     status: historyStatus,
+    rawStatus: statusAwareReport.status,
+    statusLabel: getReportStatusLabel(statusAwareReport),
     title: report.context || report.incidentType || "SafeSpeak report",
     team: meta.team,
     date: formatHistoryDate(report.updatedAt ?? report.createdAt),
+    report: statusAwareReport,
     icon: meta.icon,
     iconWrapClassName: meta.iconWrapClassName,
   };
@@ -119,60 +160,79 @@ const statusClassNames: Record<HistoryReport["status"], string> = {
   "ACTION REQUIRED": "bg-[#fff1de] text-[#9a6a2e]",
   SUBMITTED: "bg-[#ebf0ff] text-[#526cc6]",
   DRAFT: "bg-[#eef1f5] text-[#5f6f83]",
+  CLOSED: "bg-[#fff1f2] text-[#be123c]",
 };
+
+async function runReportLifecycleAction(
+  reportId: string,
+  action: ReportLifecycleAction
+): Promise<ReportRecord | null> {
+  if (action === "withdraw") {
+    return withdrawReport(reportId);
+  }
+
+  if (action === "mark-info-only") {
+    return markReportInfoOnly(reportId);
+  }
+
+  if (action === "request-delete") {
+    return requestReportDelete(reportId);
+  }
+
+  await deleteReport(reportId);
+  return null;
+}
 
 function ReportSubmissionHistoryPage() {
   const [reports, setReports] = useState<HistoryReport[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeFilter, setActiveFilter] = useState<
-    "all" | "draft" | "action_required"
+    "all" | "draft" | "action_required" | "closed"
   >("all");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [activeActionKey, setActiveActionKey] = useState<string | null>(null);
+
+  const loadReportHistory = useCallback(async () => {
+    setIsLoading(true);
+
+    try {
+      const reportRecords = await listReports();
+      const reportsWithStatuses = await Promise.all(
+        reportRecords.map(async (report) => {
+          try {
+            const status = await getReportStatus(report._id);
+            return toHistoryReport(
+              {
+                ...report,
+                deletionRequestedAt:
+                  status.deletionRequestedAt ?? report.deletionRequestedAt,
+                withdrawnAt: status.withdrawnAt ?? report.withdrawnAt,
+              },
+              status.current
+            );
+          } catch {
+            return toHistoryReport(report);
+          }
+        })
+      );
+
+      setReports(reportsWithStatuses);
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Report history could not be loaded."
+      );
+      setReports([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let isActive = true;
-
-    void (async () => {
-      try {
-        const reportRecords = await listReports();
-        const reportsWithStatuses = await Promise.all(
-          reportRecords.map(async (report) => {
-            try {
-              const status = await getReportStatus(report._id);
-              return toHistoryReport(report, status.current);
-            } catch {
-              return toHistoryReport(report);
-            }
-          })
-        );
-
-        if (!isActive) {
-          return;
-        }
-
-        setReports(reportsWithStatuses);
-        setLoadError(null);
-      } catch (error) {
-        if (!isActive) {
-          return;
-        }
-
-        setLoadError(
-          error instanceof Error ? error.message : "Report history could not be loaded."
-        );
-        setReports([]);
-      } finally {
-        if (isActive) {
-          setIsLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
+    void loadReportHistory();
+  }, [loadReportHistory]);
 
   const filteredReports = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -189,6 +249,10 @@ function ReportSubmissionHistoryPage() {
         return false;
       }
 
+      if (activeFilter === "closed" && report.status !== "CLOSED") {
+        return false;
+      }
+
       if (!normalizedSearch) {
         return true;
       }
@@ -196,6 +260,7 @@ function ReportSubmissionHistoryPage() {
       return (
         report.title.toLowerCase().includes(normalizedSearch) ||
         report.team.toLowerCase().includes(normalizedSearch) ||
+        report.statusLabel.toLowerCase().includes(normalizedSearch) ||
         report.id.toLowerCase().includes(normalizedSearch)
       );
     });
@@ -207,6 +272,49 @@ function ReportSubmissionHistoryPage() {
   const actionRequiredCount = reports.filter(
     (report) => report.status === "ACTION REQUIRED"
   ).length;
+
+  const handleLifecycleAction = async (
+    report: HistoryReport,
+    action: ReportLifecycleActionConfig
+  ) => {
+    if (typeof window !== "undefined" && !window.confirm(action.confirmMessage)) {
+      return;
+    }
+
+    const actionKey = `${report.id}:${action.action}`;
+    setActiveActionKey(actionKey);
+    setLoadError(null);
+    setStatusMessage(null);
+
+    try {
+      const updatedReport = await runReportLifecycleAction(
+        report.id,
+        action.action
+      );
+
+      if (updatedReport) {
+        setReports((currentReports) =>
+          currentReports.map((currentReport) =>
+            currentReport.id === updatedReport._id
+              ? toHistoryReport(updatedReport)
+              : currentReport
+          )
+        );
+        setStatusMessage(`${action.label} completed for ${updatedReport.refNo ?? updatedReport._id}.`);
+      } else {
+        setReports((currentReports) =>
+          currentReports.filter((currentReport) => currentReport.id !== report.id)
+        );
+        setStatusMessage("Report deleted from active history.");
+      }
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Report action could not be completed."
+      );
+    } finally {
+      setActiveActionKey(null);
+    }
+  };
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -236,7 +344,7 @@ function ReportSubmissionHistoryPage() {
               Your Incident History
             </h2>
             <p className="mt-1 text-xs text-[#7b8ca2]">
-              SafeSpeak Secure Records
+              Live SafeSpeak report records and lifecycle actions
             </p>
           </div>
 
@@ -255,39 +363,28 @@ function ReportSubmissionHistoryPage() {
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveFilter("all")}
-              className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-bold ${
-                activeFilter === "all"
-                  ? "bg-[#2f87ff] text-white"
-                  : "bg-white text-[#60728a]"
-              }`}
-            >
-              All Reports
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilter("draft")}
-              className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-semibold ${
-                activeFilter === "draft"
-                  ? "bg-[#2f87ff] text-white"
-                  : "bg-white text-[#60728a]"
-              }`}
-            >
-              Drafts
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilter("action_required")}
-              className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-semibold ${
-                activeFilter === "action_required"
-                  ? "bg-[#2f87ff] text-white"
-                  : "bg-white text-[#60728a]"
-              }`}
-            >
-              In Review
-            </button>
+            {[
+              { id: "all", label: "All Reports" },
+              { id: "draft", label: "Drafts" },
+              { id: "action_required", label: "Needs Review" },
+              { id: "closed", label: "Closed" },
+            ].map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() =>
+                  setActiveFilter(filter.id as typeof activeFilter)
+                }
+                className={cn(
+                  "inline-flex h-8 items-center rounded-full px-3 text-[10px] font-bold",
+                  activeFilter === filter.id
+                    ? "bg-[#2f87ff] text-white"
+                    : "bg-white text-[#60728a]"
+                )}
+              >
+                {filter.label}
+              </button>
+            ))}
           </div>
 
           <div className="mt-3 space-y-3">
@@ -297,6 +394,12 @@ function ReportSubmissionHistoryPage() {
                   <IconAlertCircle size={12} />
                   {loadError}
                 </span>
+              </div>
+            ) : null}
+
+            {statusMessage ? (
+              <div className="rounded-md border border-[#d8e4f2] bg-white px-3 py-2 text-xs font-medium text-[#0f5d9f]">
+                {statusMessage}
               </div>
             ) : null}
 
@@ -315,48 +418,95 @@ function ReportSubmissionHistoryPage() {
               </div>
             ) : null}
 
-            {filteredReports.map((report, index) => (
-              <Link
-                key={report.id}
-                href={`/dashboard/reports/${report.id}`}
-                className="group flex items-center justify-between gap-3 rounded-[16px] border border-[#e3ebf5] bg-white p-3.5 transition hover:border-[#cfdaea] hover:shadow-[0_10px_20px_rgba(15,23,42,0.05)] sm:p-4"
-              >
-                <div className="flex min-w-0 items-start gap-3">
-                  <span
-                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${report.iconWrapClassName}`}
-                  >
-                    {report.icon}
-                  </span>
-                  <div className="min-w-0">
-                    <span
-                      className={`inline-flex rounded-[6px] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] ${statusClassNames[report.status]}`}
-                    >
-                      {report.status}
-                    </span>
-                    <p className="mt-1 truncate text-[14px] font-bold text-[#1f2a3a] sm:text-[15px]">
-                      {report.title}
-                    </p>
-                    <p className="mt-1 inline-flex items-center gap-1 text-[9px] text-[#7f8fa4]">
-                      <IconCircleDotFilled size={8} />
-                      {report.team}
-                    </p>
-                    <p className="mt-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#97a6ba]">
-                      {report.date}
-                    </p>
-                  </div>
-                </div>
+            {filteredReports.map((report, index) => {
+              const actions = getReportLifecycleActions(report.report);
 
-                <span
-                  className={
-                    index === 0
-                      ? "inline-flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-[14px] bg-[#0f5d9f] text-white shadow-[0_10px_20px_rgba(15,93,159,0.35)] transition group-hover:bg-[#0d4f88]"
-                      : "inline-flex h-[56px] w-[56px] shrink-0 items-center justify-center rounded-[14px] border border-[#e4ebf5] bg-[#f9fbff] text-[#7f91a8] transition group-hover:border-[#ccd8e8] group-hover:bg-[#f2f7fd]"
-                  }
+              return (
+                <article
+                  key={report.id}
+                  className="rounded-[16px] border border-[#e3ebf5] bg-white p-3.5 transition hover:border-[#cfdaea] hover:shadow-[0_10px_20px_rgba(15,23,42,0.05)] sm:p-4"
                 >
-                  <IconChevronRight size={16} />
-                </span>
-              </Link>
-            ))}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span
+                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${report.iconWrapClassName}`}
+                      >
+                        {report.icon}
+                      </span>
+                      <div className="min-w-0">
+                        <span
+                          className={`inline-flex rounded-[6px] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] ${statusClassNames[report.status]}`}
+                        >
+                          {report.statusLabel}
+                        </span>
+                        <p className="mt-1 truncate text-[14px] font-bold text-[#1f2a3a] sm:text-[15px]">
+                          {report.title}
+                        </p>
+                        <p className="mt-1 inline-flex items-center gap-1 text-[9px] text-[#7f8fa4]">
+                          <IconCircleDotFilled size={8} />
+                          {report.team}
+                        </p>
+                        <p className="mt-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#97a6ba]">
+                          {report.date}
+                        </p>
+                      </div>
+                    </div>
+
+                    <Link
+                      href={`/dashboard/reports/${report.id}`}
+                      className={
+                        index === 0
+                          ? "inline-flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-[14px] bg-[#0f5d9f] text-white shadow-[0_10px_20px_rgba(15,93,159,0.35)] transition hover:bg-[#0d4f88]"
+                          : "inline-flex h-[56px] w-[56px] shrink-0 items-center justify-center rounded-[14px] border border-[#e4ebf5] bg-[#f9fbff] text-[#7f91a8] transition hover:border-[#ccd8e8] hover:bg-[#f2f7fd]"
+                      }
+                      aria-label={`Open ${report.title}`}
+                    >
+                      <IconChevronRight size={16} />
+                    </Link>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-[#edf2f7] pt-3">
+                    {actions.length ? (
+                      actions.map((action) => {
+                        const actionKey = `${report.id}:${action.action}`;
+                        const isActive = activeActionKey === actionKey;
+
+                        return (
+                          <button
+                            key={action.action}
+                            type="button"
+                            onClick={() => {
+                              void handleLifecycleAction(report, action);
+                            }}
+                            disabled={Boolean(activeActionKey)}
+                            title={action.description}
+                            className={cn(
+                              "inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[10px] font-bold disabled:cursor-wait disabled:opacity-60",
+                              action.destructive
+                                ? "border-[#f4c7c3] bg-[#fff7f6] text-[#b42318]"
+                                : "border-[#d8e4f2] bg-white text-[#40566f]"
+                            )}
+                          >
+                            {isActive ? (
+                              <IconLoader2 size={11} className="animate-spin" />
+                            ) : action.destructive ? (
+                              <IconTrash size={11} />
+                            ) : (
+                              <IconFileText size={11} />
+                            )}
+                            {action.label}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <p className="text-[10px] text-[#8a9ab0]">
+                        No lifecycle actions are available for this status.
+                      </p>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">

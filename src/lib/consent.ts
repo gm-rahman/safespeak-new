@@ -34,6 +34,7 @@ export type ConsentRequirement = {
   title: string;
   description: string;
   flags: ConsentFlag[];
+  grantFlags?: ConsentFlags;
   source: string;
   mode?: "all" | "any";
   allowLabel?: string;
@@ -94,6 +95,24 @@ export async function ensureConsent(
   throw new ConsentRequiredError(requirement, currentConsent);
 }
 
+export function getConsentGrantFlags(
+  requirement: ConsentRequirement
+): ConsentFlags {
+  if (requirement.grantFlags) {
+    return requirement.grantFlags;
+  }
+
+  const flagsToGrant =
+    requirement.mode === "any"
+      ? requirement.flags.slice(0, 1)
+      : requirement.flags;
+
+  return flagsToGrant.reduce<ConsentFlags>((flags, flag) => {
+    flags[flag] = true;
+    return flags;
+  }, {});
+}
+
 export async function grantConsent(
   flags: ConsentFlags,
   source: string,
@@ -150,13 +169,32 @@ export async function getConsentHistory(
   return response.data.history;
 }
 
+export const consentSources = {
+  assistantTimelineBuilder: "assistant_timeline_builder",
+  assistantRagAnswer: "assistant_rag_answer",
+  assistantTriageReport: "assistant_triage_report",
+  assistantVoiceRecorder: "assistant_voice_recorder",
+  reportEvidenceTranscription: "report_evidence_transcription",
+  scamshieldAnalysis: "scamshield_analysis",
+  reportEvidenceUpload: "report_evidence_upload",
+  reportDraftStorage: "report_draft_storage",
+  reportDestinationSubmit: "report_destination_submit",
+  supportWarmReferral: "support_warm_referral",
+  advocateRequest: "advocate_request",
+  safetyPlanStorage: "safety_plan_storage",
+  sourceBackedQuestion: "source_backed_question",
+  externalSharingAction: "external_sharing_action",
+  privacySelfService: "privacy_self_service",
+} as const;
+
 export const consentRequirements = {
   aiAssistant: {
     title: "AI consent required",
     description:
       "SafeSpeak needs your permission to process this conversation with AI. This is information-only support and will not submit a report automatically.",
     flags: ["process_with_ai"],
-    source: "assistant_timeline_builder",
+    grantFlags: { process_with_ai: true },
+    source: consentSources.assistantTimelineBuilder,
     allowLabel: "Allow AI and continue",
     declineLabel: "Not now",
     settingsHref: "/dashboard/settings",
@@ -166,7 +204,8 @@ export const consentRequirements = {
     description:
       "SafeSpeak needs your permission to use approved AI and knowledge sources for this answer.",
     flags: ["process_with_ai"],
-    source: "assistant_rag_answer",
+    grantFlags: { process_with_ai: true },
+    source: consentSources.assistantRagAnswer,
     allowLabel: "Allow AI and continue",
     declineLabel: "Not now",
     settingsHref: "/dashboard/settings",
@@ -176,7 +215,8 @@ export const consentRequirements = {
     description:
       "SafeSpeak needs permission to analyze the incident details you shared before it can prepare triage guidance.",
     flags: ["process_with_ai"],
-    source: "assistant_triage_report",
+    grantFlags: { process_with_ai: true },
+    source: consentSources.assistantTriageReport,
     allowLabel: "Allow AI and continue",
     declineLabel: "Not now",
     settingsHref: "/dashboard/settings",
@@ -186,8 +226,9 @@ export const consentRequirements = {
     description:
       "SafeSpeak needs your permission before transcribing voice input. You can allow transcription only, or allow AI processing more broadly.",
     flags: ["transcribe_audio", "process_with_ai"],
+    grantFlags: { transcribe_audio: true },
     mode: "any",
-    source: "assistant_voice_recorder",
+    source: consentSources.assistantVoiceRecorder,
     allowLabel: "Allow transcription and continue",
     declineLabel: "Not now",
     settingsHref: "/dashboard/settings",
@@ -197,8 +238,9 @@ export const consentRequirements = {
     description:
       "SafeSpeak needs your permission before transcribing audio evidence. You can allow transcription only, or allow AI processing more broadly.",
     flags: ["transcribe_audio", "process_with_ai"],
+    grantFlags: { transcribe_audio: true },
     mode: "any",
-    source: "report_evidence_transcription",
+    source: consentSources.reportEvidenceTranscription,
     allowLabel: "Allow transcription and continue",
     declineLabel: "Not now",
     settingsHref: "/dashboard/settings",
@@ -208,7 +250,8 @@ export const consentRequirements = {
     description:
       "SafeSpeak needs your permission before it can analyze suspicious text, screenshots, URLs, or emails with AI.",
     flags: ["process_with_ai"],
-    source: "scamshield_analysis",
+    grantFlags: { process_with_ai: true },
+    source: consentSources.scamshieldAnalysis,
     allowLabel: "Allow analysis and continue",
     declineLabel: "Not now",
     settingsHref: "/dashboard/settings",
@@ -218,7 +261,8 @@ export const consentRequirements = {
     description:
       "Cloud evidence upload is disabled until you allow cloud sync. Without it, SafeSpeak can keep evidence metadata on this device only.",
     flags: ["cloud_sync"],
-    source: "report_evidence_upload",
+    grantFlags: { cloud_sync: true },
+    source: consentSources.reportEvidenceUpload,
     allowLabel: "Allow cloud sync and continue",
     declineLabel: "Keep local only",
     settingsHref: "/dashboard/settings",
@@ -228,7 +272,8 @@ export const consentRequirements = {
     description:
       "SafeSpeak needs cloud sync consent before report details can be stored on SafeSpeak servers. Without it, keep the draft on this device only.",
     flags: ["cloud_sync"],
-    source: "report_draft_storage",
+    grantFlags: { cloud_sync: true },
+    source: consentSources.reportDraftStorage,
     allowLabel: "Allow cloud sync and continue",
     declineLabel: "Keep local only",
     settingsHref: "/dashboard/settings",
@@ -238,9 +283,54 @@ export const consentRequirements = {
     description:
       "SafeSpeak needs your permission before it can share details with a support service for a warm referral.",
     flags: ["warm_referral"],
-    source: "support_warm_referral",
+    grantFlags: { warm_referral: true },
+    source: consentSources.supportWarmReferral,
     allowLabel: "Allow warm referral",
     declineLabel: "Not now",
+    settingsHref: "/dashboard/settings",
+  } satisfies ConsentRequirement,
+  reportDestinationSubmit: {
+    title: "Report sharing consent required",
+    description:
+      "SafeSpeak needs your permission before sharing prepared information with the selected external service. Calls and emails only happen if you choose them.",
+    flags: ["share_with_agencies"],
+    grantFlags: { share_with_agencies: true },
+    source: consentSources.reportDestinationSubmit,
+    allowLabel: "Allow sharing and continue",
+    declineLabel: "Keep prepared only",
+    settingsHref: "/dashboard/settings",
+  } satisfies ConsentRequirement,
+  sourceBackedQuestion: {
+    title: "Source-backed AI consent required",
+    description:
+      "SafeSpeak needs your permission before using AI to search approved knowledge sources and answer your question.",
+    flags: ["process_with_ai"],
+    grantFlags: { process_with_ai: true },
+    source: consentSources.sourceBackedQuestion,
+    allowLabel: "Allow source Q&A",
+    declineLabel: "Not now",
+    settingsHref: "/dashboard/settings",
+  } satisfies ConsentRequirement,
+  advocateRequest: {
+    title: "Advocate request consent required",
+    description:
+      "SafeSpeak needs your permission before creating an advocate contact request or sharing request details.",
+    flags: ["warm_referral"],
+    grantFlags: { warm_referral: true },
+    source: consentSources.advocateRequest,
+    allowLabel: "Allow advocate request",
+    declineLabel: "Not now",
+    settingsHref: "/dashboard/settings",
+  } satisfies ConsentRequirement,
+  safetyPlanStorage: {
+    title: "Safety plan storage consent required",
+    description:
+      "SafeSpeak needs cloud sync consent before storing a safety plan on SafeSpeak servers.",
+    flags: ["cloud_sync"],
+    grantFlags: { cloud_sync: true },
+    source: consentSources.safetyPlanStorage,
+    allowLabel: "Allow safety plan storage",
+    declineLabel: "Keep local only",
     settingsHref: "/dashboard/settings",
   } satisfies ConsentRequirement,
   shareWithAgencies: {
@@ -248,7 +338,8 @@ export const consentRequirements = {
     description:
       "SafeSpeak needs your permission before it can prepare or submit information to an external service or agency.",
     flags: ["share_with_agencies"],
-    source: "external_sharing_action",
+    grantFlags: { share_with_agencies: true },
+    source: consentSources.externalSharingAction,
     allowLabel: "Allow sharing",
     declineLabel: "Not now",
     settingsHref: "/dashboard/settings",

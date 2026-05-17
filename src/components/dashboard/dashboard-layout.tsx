@@ -432,7 +432,7 @@ export function DashboardShell({
     activeTab === "notifications"
       ? "xl:mx-auto xl:min-h-[calc(100dvh-2rem)] xl:w-full xl:max-w-[1360px]"
       : homeView === "assistantconversation"
-        ? "xl:h-[calc(100dvh-2rem)] xl:min-h-0"
+        ? "xl:h-[100dvh] xl:min-h-0"
       : "xl:min-h-[calc(100dvh-2rem)]";
 
   return (
@@ -446,7 +446,7 @@ export function DashboardShell({
         className={cn(
           "min-w-0 p-3 pb-[168px] sm:p-4 sm:pb-[300px] lg:pb-4 lg:pl-[240px] 2xl:pl-[272px]",
           homeView === "assistantconversation" &&
-            "xl:overflow-hidden xl:pb-[230px]",
+            "xl:overflow-hidden xl:pb-4",
           sectionSizeClass
         )}
       >

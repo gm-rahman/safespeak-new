@@ -12,10 +12,20 @@ import {
   IconChevronRight,
   IconClock,
   IconLoader2,
+  IconMail,
   IconPencil,
+  IconPhoneCall,
   IconPlus,
 } from "@tabler/icons-react";
 
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import { SourceBackedQaPanel } from "@/components/dashboard/source-backed-qa-panel";
+import { useConsentGate } from "@/hooks/use-consent-gate";
+import {
+  consentRequirements,
+  type ConsentFlag,
+  type ConsentRequirement,
+} from "@/lib/consent";
 import {
   getReportDestinations,
   getReport,
@@ -184,9 +194,76 @@ const buildStatusHistoryEntries = (
 const stringifyPreviewPayload = (payload: Record<string, unknown>): string =>
   JSON.stringify(payload, null, 2);
 
+const knownConsentFlags = new Set<ConsentFlag>([
+  "store_local",
+  "cloud_sync",
+  "share_with_agencies",
+  "use_anonymised_analytics",
+  "process_with_ai",
+  "transcribe_audio",
+  "translate_content",
+  "retain_evidence",
+  "warm_referral",
+]);
+
+const isKnownConsentFlag = (flag: string): flag is ConsentFlag =>
+  knownConsentFlags.has(flag as ConsentFlag);
+
+const formatConsentFlag = (flag: string): string => flag.replace(/_/g, " ");
+
+const formatConsentFlags = (flags: string[]): string =>
+  flags.map(formatConsentFlag).join(", ");
+
+const uniqueValues = (values: string[]): string[] => Array.from(new Set(values));
+
+const buildDestinationConsentRequirement = (
+  flags: string[],
+  destinationNames: string[]
+): ConsentRequirement => {
+  const knownFlags = uniqueValues(flags).filter(isKnownConsentFlag);
+  const requirementFlags = knownFlags.length
+    ? knownFlags
+    : consentRequirements.reportDestinationSubmit.flags;
+  const grantFlags = knownFlags.length
+    ? knownFlags.reduce<Partial<Record<ConsentFlag, boolean>>>(
+        (result, flag) => {
+          result[flag] = true;
+          return result;
+        },
+        {}
+      )
+    : consentRequirements.reportDestinationSubmit.grantFlags;
+
+  return {
+    ...consentRequirements.reportDestinationSubmit,
+    description: `SafeSpeak needs your permission before sharing prepared information with ${destinationNames.join(", ")}. Calls and emails only happen if you choose them.`,
+    flags: requirementFlags,
+    grantFlags,
+    allowLabel: "Allow sharing and continue",
+  };
+};
+
+const toTelHref = (phone: string): string => {
+  const normalized = phone.replace(/[^\d+]/g, "");
+  return normalized ? `tel:${normalized}` : `tel:${phone}`;
+};
+
+const toMailHref = (email: string, destinationName: string): string => {
+  const subject = encodeURIComponent(`SafeSpeak contact request for ${destinationName}`);
+  return `mailto:${email}?subject=${subject}`;
+};
+
 function ReportSubmissionReviewPage() {
   const router = useRouter();
   const reportDraft = useMemo(() => getReportFlowDraft(), []);
+  const {
+    pendingConsentRequirement,
+    isGrantingConsent,
+    captureConsentError,
+    clearPendingConsent,
+    grantPendingConsent,
+    setPendingConsentRequirement,
+  } = useConsentGate();
   const [timelineEntries, setTimelineEntries] = useState(
     initialTimelineEntries
   );
@@ -381,6 +458,42 @@ function ReportSubmissionReviewPage() {
     };
   }, [anonymityMode, reportDraft?.reportId, selectedDestinationIds, submissionNotes]);
 
+  const selectedSubmissionPreviews = useMemo(
+    () =>
+      submissionPreviews.filter((preview) =>
+        selectedDestinationIds.includes(preview.destination.destinationId)
+      ),
+    [selectedDestinationIds, submissionPreviews]
+  );
+
+  const selectedMissingConsentFlags = useMemo(
+    () =>
+      uniqueValues(
+        selectedSubmissionPreviews.flatMap((preview) => preview.missingConsentFlags)
+      ),
+    [selectedSubmissionPreviews]
+  );
+
+  const unknownMissingConsentFlags = useMemo(
+    () => selectedMissingConsentFlags.filter((flag) => !isKnownConsentFlag(flag)),
+    [selectedMissingConsentFlags]
+  );
+
+  const selectedDestinationNames = useMemo(
+    () =>
+      selectedDestinationIds
+        .map(
+          (destinationId) =>
+            destinations.find(
+              (destination) => destination.destinationId === destinationId
+            )?.destinationName
+        )
+        .filter((destinationName): destinationName is string =>
+          Boolean(destinationName)
+        ),
+    [destinations, selectedDestinationIds]
+  );
+
   const toggleEntry = (entryId: string) => {
     setExpandedEntryId((currentEntryId) =>
       currentEntryId === entryId ? null : entryId
@@ -435,14 +548,16 @@ function ReportSubmissionReviewPage() {
     });
   };
 
-  const handleSubmitReport = async () => {
+  const handleSubmitReport = async ({
+    skipPreviewConsentCheck = false,
+  }: { skipPreviewConsentCheck?: boolean } = {}) => {
     if (!reportDraft?.reportId) {
       router.push("/dashboard?view=reportsubmissionsuccess");
       return;
     }
 
     if (!selectedDestinationId) {
-      setLoadError("Choose a destination before submitting this report.");
+      setLoadError("Choose a service or destination before sharing information.");
       return;
     }
 
@@ -458,6 +573,26 @@ function ReportSubmissionReviewPage() {
     if (selectedDestination.missingRequiredInfo.length > 0) {
       setLoadError(
         `This destination still needs: ${selectedDestination.missingRequiredInfo.join(", ")}`
+      );
+      return;
+    }
+
+    if (!skipPreviewConsentCheck && unknownMissingConsentFlags.length > 0) {
+      setLoadError(
+        `This destination requires unsupported consent flags: ${unknownMissingConsentFlags.join(", ")}`
+      );
+      return;
+    }
+
+    if (!skipPreviewConsentCheck && selectedMissingConsentFlags.length > 0) {
+      setLoadError(null);
+      setPendingConsentRequirement(
+        buildDestinationConsentRequirement(
+          selectedMissingConsentFlags,
+          selectedDestinationNames.length
+            ? selectedDestinationNames
+            : [selectedDestination.destinationName]
+        )
       );
       return;
     }
@@ -478,10 +613,15 @@ function ReportSubmissionReviewPage() {
       });
       router.push("/dashboard?view=reportsubmissionsuccess");
     } catch (error) {
+      if (captureConsentError(error)) {
+        setLoadError(null);
+        return;
+      }
+
       setLoadError(
         error instanceof Error
           ? error.message
-          : "Report could not be updated."
+          : "Prepared information could not be shared."
       );
     } finally {
       setIsSubmitting(false);
@@ -491,6 +631,33 @@ function ReportSubmissionReviewPage() {
   const selectedDestination =
     destinations.find((destination) => destination.destinationId === selectedDestinationId) ??
     null;
+
+  const handleAllowSharingConsent = async () => {
+    try {
+      const consent = await grantPendingConsent();
+
+      if (!consent) {
+        return;
+      }
+
+      await handleSubmitReport({ skipPreviewConsentCheck: true });
+    } catch (error) {
+      if (captureConsentError(error)) {
+        return;
+      }
+
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Sharing consent could not be saved."
+      );
+    }
+  };
+
+  const handleDeclineSharingConsent = () => {
+    clearPendingConsent();
+    setLoadError("Sharing was not sent. The report remains prepared for later.");
+  };
 
   return (
     <div className="px-6 pb-12 pt-12">
@@ -536,6 +703,18 @@ function ReportSubmissionReviewPage() {
                 </span>
               </div>
             ) : null}
+            {pendingConsentRequirement ? (
+              <div className="mb-4">
+                <ConsentRequiredCard
+                  requirement={pendingConsentRequirement}
+                  isSubmitting={isGrantingConsent || isSubmitting}
+                  onAllow={() => {
+                    void handleAllowSharingConsent();
+                  }}
+                  onDecline={handleDeclineSharingConsent}
+                />
+              </div>
+            ) : null}
             <div className="mb-4 flex items-center justify-between rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
               <p className="text-[11px] font-semibold text-[#1f2a3a]">
                 Current backend status: {reportStatus}
@@ -565,25 +744,33 @@ function ReportSubmissionReviewPage() {
               </div>
             ) : null}
             <div className="mb-4 rounded-[12px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3 text-[11px] leading-[1.55] text-[#60728a]">
-              Submission routing is now destination-aware. Choose where this report should go, review the required fields, and then create a tracked submission record.
+              Choose a police, government, or support contact from the admin-managed directory. SafeSpeak will not call, email, or share anything automatically; you decide whether to contact directly or share the prepared information.
               {hasLocalOnlyTimelineContent ? (
                 <span className="mt-2 block font-semibold text-[#9a5b12]">
                   Stored locally only: some review fields are shown from this browser session and are not stored in the backend.
                 </span>
               ) : null}
             </div>
+            <SourceBackedQaPanel
+              title="Review with approved sources"
+              description="Ask a cited question before sharing. If approved sources are insufficient, SafeSpeak shows a fallback and no fake citations."
+              language={reportLanguage}
+              jurisdiction={reportJurisdiction === "NSW" ? "NSW" : "AU"}
+              defaultQuestion="What should I review before choosing a support or government contact?"
+              className="mb-4"
+            />
             <div className="mb-4 rounded-[16px] border border-[#dce5f1] bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                    Submission destination
+                    Contact option
                   </p>
                   <p className="mt-1 text-[12px] text-[#60728a]">
                     Language `{reportLanguage}` in `{reportJurisdiction}`.
                   </p>
                 </div>
                 <p className="text-[10px] text-[#8ea0b8]">
-                  {destinations.length} destination{destinations.length === 1 ? "" : "s"} available
+                  {destinations.length} option{destinations.length === 1 ? "" : "s"} available
                 </p>
               </div>
               <div className="mt-3 space-y-2">
@@ -627,6 +814,14 @@ function ReportSubmissionReviewPage() {
                             <p className="mt-1 text-[10px] text-[#6d8199]">
                               {destination.destinationType} via {destination.channel}
                             </p>
+                            {destination.contactPhone || destination.contactEmail ? (
+                              <p className="mt-1 text-[10px] text-[#6d8199]">
+                                Contact listed:{" "}
+                                {[destination.contactPhone, destination.contactEmail]
+                                  .filter(Boolean)
+                                  .join(" / ")}
+                              </p>
+                            ) : null}
                           </div>
                           <span
                             className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] ${
@@ -694,10 +889,47 @@ function ReportSubmissionReviewPage() {
                       className="h-9 rounded-[8px] border border-[#dce5f1] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none placeholder:text-[#9eb0c7]"
                     />
                   </label>
+                  {selectedDestination.contactPhone || selectedDestination.contactEmail ? (
+                    <div className="sm:col-span-2 rounded-[10px] border border-[#dce5f1] bg-white px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                            Contact directly
+                          </p>
+                          <p className="mt-1 text-[10px] leading-[1.55] text-[#60728a]">
+                            These buttons open your phone or email app only when you choose them.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedDestination.contactPhone ? (
+                            <a
+                              href={toTelHref(selectedDestination.contactPhone)}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-[#cfdceb] bg-[#f8fbff] px-3 text-[10px] font-bold text-[#244961]"
+                            >
+                              <IconPhoneCall size={12} />
+                              Call
+                            </a>
+                          ) : null}
+                          {selectedDestination.contactEmail ? (
+                            <a
+                              href={toMailHref(
+                                selectedDestination.contactEmail,
+                                selectedDestination.destinationName
+                              )}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-[#cfdceb] bg-[#f8fbff] px-3 text-[10px] font-bold text-[#244961]"
+                            >
+                              <IconMail size={12} />
+                              Email
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   {selectedDestination.requiredConsentFlags.length ? (
                     <div className="sm:col-span-2 rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[10px] leading-[1.55] text-[#60728a]">
-                      Required consent flags:{" "}
-                      {selectedDestination.requiredConsentFlags.join(", ")}
+                      Consent required before SafeSpeak shares prepared information:{" "}
+                      {formatConsentFlags(selectedDestination.requiredConsentFlags)}
                     </div>
                   ) : null}
                   <div className="sm:col-span-2 rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[10px] leading-[1.55] text-[#60728a]">
@@ -710,7 +942,7 @@ function ReportSubmissionReviewPage() {
                 <div className="mt-3 rounded-[12px] border border-[#edf2f8] bg-white p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                      Generated submission previews
+                      Prepared contact previews
                     </p>
                     <p className="text-[10px] text-[#8ea0b8]">
                       {selectedDestinationIds.length} selected
@@ -760,7 +992,7 @@ function ReportSubmissionReviewPage() {
                           ) : null}
                           {preview.missingConsentFlags.length ? (
                             <p className="mt-1 text-[10px] leading-[1.55] text-[#9a5b12]">
-                              Consent needed before send: {preview.missingConsentFlags.join(", ")}
+                              Consent needed before sharing: {formatConsentFlags(preview.missingConsentFlags)}
                             </p>
                           ) : null}
                           <pre className="mt-3 max-h-[220px] overflow-auto rounded-[8px] bg-[#101827] p-3 text-[10px] leading-[1.5] text-[#dce8f8]">
@@ -977,7 +1209,7 @@ function ReportSubmissionReviewPage() {
                 {isSubmitting ? (
                   <IconLoader2 size={14} className="mr-1 animate-spin" />
                 ) : null}
-                {isSubmitting ? "Submitting..." : "Submit to selected destination"}
+                {isSubmitting ? "Sharing..." : "Share with selected service"}
                 <IconChevronRight size={14} className="ml-1" />
               </button>
             </div>

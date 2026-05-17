@@ -4,6 +4,7 @@ import Image from "next/image";
 import {
   ChangeEvent,
   FormEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -20,8 +21,11 @@ import {
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
+import { useConsentGate } from "@/hooks/use-consent-gate";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import { consentRequirements } from "@/lib/consent";
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 import {
   type CapturedReportMetadata,
@@ -117,7 +121,7 @@ export function AssistantInteraction({
 }) {
   const { t, i18n } = useTranslation();
   const [message, setMessage] = useState("");
-  const [isRecordingActive, setIsRecordingActive] = useState(isRecording);
+  const [isRecordingActive, setIsRecordingActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [finalTranscript, setFinalTranscript] = useState("");
@@ -127,11 +131,20 @@ export function AssistantInteraction({
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [reportMetadata, setReportMetadata] =
     useState<CapturedReportMetadata | null>(null);
+  const {
+    pendingConsentRequirement,
+    isGrantingConsent,
+    captureConsentError,
+    clearPendingConsent,
+    grantPendingConsent,
+    requireConsent,
+  } = useConsentGate();
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const shouldProcessRecordingRef = useRef(false);
+  const hasHandledInitialRecordingRef = useRef(false);
   const liveRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const liveFinalTranscriptRef = useRef("");
 
@@ -149,13 +162,13 @@ export function AssistantInteraction({
   const livePreviewLanguage =
     transcriptionLanguage === "es" ? "es-ES" : "en-US";
 
-  const cleanupRecording = () => {
+  const cleanupRecording = useCallback(() => {
     recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
     recordingStreamRef.current = null;
     mediaRecorderRef.current = null;
-  };
+  }, []);
 
-  const stopLiveTranscriptPreview = () => {
+  const stopLiveTranscriptPreview = useCallback(() => {
     if (!liveRecognitionRef.current) {
       return;
     }
@@ -171,9 +184,9 @@ export function AssistantInteraction({
     }
 
     liveRecognitionRef.current = null;
-  };
+  }, []);
 
-  const startLiveTranscriptPreview = () => {
+  const startLiveTranscriptPreview = useCallback(() => {
     const recognitionCtor =
       (window as SpeechWindow).SpeechRecognition ??
       (window as SpeechWindow).webkitSpeechRecognition;
@@ -235,7 +248,7 @@ export function AssistantInteraction({
     } catch {
       liveRecognitionRef.current = null;
     }
-  };
+  }, [livePreviewLanguage, stopLiveTranscriptPreview]);
 
   useEffect(() => {
     return () => {
@@ -247,9 +260,9 @@ export function AssistantInteraction({
       stopLiveTranscriptPreview();
       cleanupRecording();
     };
-  }, []);
+  }, [cleanupRecording, stopLiveTranscriptPreview]);
 
-  const handleRecordedAudio = async (mimeType: string) => {
+  const handleRecordedAudio = useCallback(async (mimeType: string) => {
     const audioBlob = new Blob(audioChunksRef.current, {
       type: mimeType || "audio/webm",
     });
@@ -281,6 +294,11 @@ export function AssistantInteraction({
         [currentMessage.trim(), transcript].filter(Boolean).join(" ")
       );
     } catch (error) {
+      if (captureConsentError(error)) {
+        setSpeechError(null);
+        return;
+      }
+
       setSpeechError(
         error instanceof Error
           ? error.message
@@ -289,14 +307,34 @@ export function AssistantInteraction({
     } finally {
       setIsTranscribing(false);
     }
-  };
+  }, [captureConsentError, cleanupRecording, t, transcriptionLanguage]);
 
-  const startVoiceRecording = async () => {
+  const startVoiceRecording = useCallback(async () => {
     if (
       !navigator.mediaDevices?.getUserMedia ||
       typeof MediaRecorder === "undefined"
     ) {
       setSpeechError(t("dashboard.assistant.speechErrors.unsupported"));
+      return;
+    }
+
+    let canRecord = false;
+
+    try {
+      canRecord = await requireConsent(
+        consentRequirements.audioTranscription
+      );
+    } catch (error) {
+      setSpeechError(
+        error instanceof Error
+          ? error.message
+          : "Consent status could not be checked."
+      );
+      return;
+    }
+
+    if (!canRecord) {
+      setSpeechError(null);
       return;
     }
 
@@ -359,9 +397,16 @@ export function AssistantInteraction({
           : "audio-capture";
       setSpeechError(getRecordingErrorMessage(errorCode, t));
     }
-  };
+  }, [
+    cleanupRecording,
+    handleRecordedAudio,
+    requireConsent,
+    startLiveTranscriptPreview,
+    stopLiveTranscriptPreview,
+    t,
+  ]);
 
-  const stopVoiceRecording = () => {
+  const stopVoiceRecording = useCallback(() => {
     const mediaRecorder = mediaRecorderRef.current;
 
     stopLiveTranscriptPreview();
@@ -373,7 +418,7 @@ export function AssistantInteraction({
     }
 
     mediaRecorder.stop();
-  };
+  }, [cleanupRecording, stopLiveTranscriptPreview]);
 
   const toggleVoiceRecording = () => {
     if (isRecordingActive) {
@@ -383,6 +428,15 @@ export function AssistantInteraction({
 
     void startVoiceRecording();
   };
+
+  useEffect(() => {
+    if (!isRecording || hasHandledInitialRecordingRef.current) {
+      return;
+    }
+
+    hasHandledInitialRecordingRef.current = true;
+    void startVoiceRecording();
+  }, [isRecording, startVoiceRecording]);
 
   const handleMessageChange = (event: ChangeEvent<HTMLInputElement>) => {
     setMessage(event.target.value);
@@ -441,6 +495,23 @@ export function AssistantInteraction({
     void enableMetadataCapture();
   };
 
+  const handleAllowPendingConsent = async () => {
+    const requirement = pendingConsentRequirement;
+
+    try {
+      await grantPendingConsent();
+      setSpeechError(null);
+
+      if (requirement?.source === consentRequirements.audioTranscription.source) {
+        void startVoiceRecording();
+      }
+    } catch (error) {
+      setSpeechError(
+        error instanceof Error ? error.message : "Consent could not be saved."
+      );
+    }
+  };
+
   const recordingSpacingClass = showTranscriptPanel ? "mt-5 sm:mt-6" : "mt-7";
   const metadataStatusText = isMetadataCapturing
     ? t("dashboard.assistant.metadataCapturing")
@@ -463,6 +534,19 @@ export function AssistantInteraction({
         </span>
         {t("dashboard.assistant.greetingSuffix")}
       </p>
+
+      {pendingConsentRequirement ? (
+        <div className="mt-5 w-full max-w-[560px]">
+          <ConsentRequiredCard
+            requirement={pendingConsentRequirement}
+            isSubmitting={isGrantingConsent}
+            onAllow={() => {
+              void handleAllowPendingConsent();
+            }}
+            onDecline={clearPendingConsent}
+          />
+        </div>
+      ) : null}
 
       {showTranscriptPanel && (
         <div

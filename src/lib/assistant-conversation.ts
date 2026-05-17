@@ -1,6 +1,6 @@
 import { apiRequest } from "@/lib/api";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import { consentRequirements, grantConsent } from "@/lib/consent";
+import { consentRequirements, ensureConsent } from "@/lib/consent";
 import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
 
 const MAX_TIMELINE_CONVERSATION_MESSAGES = 100;
@@ -89,11 +89,7 @@ export async function sendTimelineAssistantMessage(input: {
     conversation: trimConversationForTimelineAssistant(input.conversation),
   };
   const headers = await getAssistantAuthHeaders();
-  await grantConsent(
-    { process_with_ai: true },
-    consentRequirements.aiAssistant.source,
-    headers
-  );
+  await ensureConsent(consentRequirements.aiAssistant, headers);
 
   let response;
 

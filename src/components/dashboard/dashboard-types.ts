@@ -5,6 +5,7 @@ export type HomeView =
   | "resources"
   | "localintelligence"
   | "smartdialler"
+  | "safetyplan"
   | "microeducation"
   | "microcards"
   | "microcarddetail"

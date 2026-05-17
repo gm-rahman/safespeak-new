@@ -2,7 +2,7 @@
 
 import { apiRequest } from "@/lib/api";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
-import { consentRequirements, grantConsent } from "@/lib/consent";
+import { consentRequirements, ensureConsent } from "@/lib/consent";
 import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
 
 export type ConversationFlowSession = {
@@ -73,6 +73,7 @@ export type ConversationFlowRecommendation = {
   resourceType: string;
   ctaLabel?: string;
   phone?: string;
+  email?: string;
   websiteUrl?: string;
   priority?: number;
   jurisdiction?: string;
@@ -166,11 +167,7 @@ type DetailsEnvelope = {
 async function getConversationHeaders(): Promise<HeadersInit> {
   const headers = await getSessionAwareAuthHeaders();
 
-  await grantConsent(
-    { process_with_ai: true },
-    consentRequirements.aiAssistant.source,
-    headers,
-  );
+  await ensureConsent(consentRequirements.aiAssistant, headers);
 
   return headers;
 }

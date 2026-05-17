@@ -23,13 +23,15 @@ import {
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
-import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
+import { useConsentGate } from "@/hooks/use-consent-gate";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import {
   type AssistantConversationMessage,
   type AssistantTimeline,
   type LegalAwareness,
+  sendTimelineAssistantMessage,
 } from "@/lib/assistant-conversation";
 import {
   clearAssistantConversationDraft,
@@ -37,19 +39,20 @@ import {
   saveAssistantConversationDraft,
 } from "@/lib/assistant-draft";
 import {
-  appendConversationFlowMessage,
-  createConversationFlowSession,
-} from "@/lib/conversation-flow";
-import {
   clearAssistantTriageSource,
   saveAssistantTriageSource,
 } from "@/lib/assistant-triage";
+import {
+  appendConversationFlowMessage,
+  createConversationFlowSession,
+} from "@/lib/conversation-flow";
 import {
   type DashboardCardFlowId,
   getDashboardActionHref,
   getDashboardAssistantTopicChips,
   getDashboardCardFlow,
 } from "@/lib/dashboard-card-flows";
+import { consentRequirements } from "@/lib/consent";
 import { triggerQuickExit } from "@/lib/safety";
 import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
@@ -57,61 +60,14 @@ import { interFont } from "./dashboard-shared";
 
 const emptyTimeline: AssistantTimeline = {};
 
-const timelineFieldLabelMap: Record<string, string> = {
-  who: "Who",
-  relationship: "Relationship",
-  what: "What",
-  where: "Where",
-  when: "When",
-  how: "How",
-  frequency: "Frequency",
-  impact: "Impact",
-  threats: "Threats",
-  injuries: "Injuries",
-  witnesses: "Witnesses",
-  evidence: "Evidence",
-  actions_taken: "Actions Taken",
-  unsafe_now: "Immediate Safety",
-};
-
-function formatTimelineFieldLabel(key: string): string {
-  return (
-    timelineFieldLabelMap[key] ??
-    key
-      .split("_")
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ")
-  );
-}
-
-function sortTimelineEntries(
-  timeline: AssistantTimeline,
-  fieldOrder: string[]
-): Array<[string, string]> {
-  const filteredEntries = Object.entries(timeline).filter(
-    ([, value]) => value.trim().length > 0
-  );
-
-  return filteredEntries.sort(([leftKey], [rightKey]) => {
-    const leftIndex = fieldOrder.indexOf(leftKey);
-    const rightIndex = fieldOrder.indexOf(rightKey);
-
-    if (leftIndex === -1 && rightIndex === -1) {
-      return 0;
-    }
-
-    if (leftIndex === -1) {
-      return 1;
-    }
-
-    if (rightIndex === -1) {
-      return -1;
-    }
-
-    return leftIndex - rightIndex;
-  });
-}
+const harmfulActivityPatterns = [
+  /\b(violence|violent|abuse|assault|attacked|attack|hit|slap|punched|kick|kicked|choke|threat|threatened)\b/i,
+  /\b(harass|harassment|bullied|bullying|stalk|stalking|unsafe|scared|fear)\b/i,
+  /\b(racist|racism|discrimination|hate|hate crime|racial)\b/i,
+  /\b(scam|fraud|phishing|blackmail|extortion|stole|stolen|robbed|theft)\b/i,
+  /\b(grabbed|grab|pulled|pull)\b.{0,24}\b(hijab|hijub|headscarf)\b/i,
+  /\b(hijab|hijub|headscarf)\b.{0,24}\b(grabbed|grab|pulled|pull)\b/i,
+];
 
 function buildAssistantBubbleContent(
   assistantMessage: string,
@@ -135,6 +91,56 @@ function buildAssistantBubbleContent(
   }
 
   return `${trimmedAssistantMessage} ${trimmedNextQuestion}`;
+}
+
+function detectHarmfulActivity(input: {
+  incidentCategory?: AssistantIncidentCategory;
+  timeline: AssistantTimeline;
+  conversation: AssistantConversationMessage[];
+}): boolean {
+  if (
+    input.incidentCategory === "domestic_violence" ||
+    input.incidentCategory === "racial_abuse" ||
+    input.incidentCategory === "cyber_scam"
+  ) {
+    return true;
+  }
+
+  const combinedText = [
+    ...input.conversation.map((message) => message.content),
+    ...Object.values(input.timeline),
+  ]
+    .join(" ")
+    .trim();
+
+  if (!combinedText) {
+    return false;
+  }
+
+  return harmfulActivityPatterns.some((pattern) => pattern.test(combinedText));
+}
+
+function isTriageRequested(message: string): boolean {
+  return /\btriage\b/i.test(message);
+}
+
+function getAssistantDisplayContent(message: AssistantConversationMessage) {
+  if (message.role !== "assistant") {
+    return message.content;
+  }
+
+  const cleanedContent = [
+    /\s*This information is for general awareness(?: only)? and does not constitute legal advice\.?/gi,
+    /\s*This information is for general awareness only\.?/gi,
+    /\s*This is information only,?\s*not legal advice\.?/gi,
+    /\s*This is informational,?\s*not legal advice\.?/gi,
+    /\s*It does not constitute legal advice\.?/gi,
+  ].reduce((content, pattern) => content.replace(pattern, ""), message.content)
+    .replace(/\s+([?.!,])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return cleanedContent || "I'm here with you.";
 }
 
 type RecordingErrorCode =
@@ -351,24 +357,6 @@ function NswLegalAwarenessPanel({
       </div>
     </section>
   );
-}
-
-function formatAssistantCitationDate(value?: string) {
-  if (!value) {
-    return "";
-  }
-
-  const parsed = new Date(value);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return parsed.toLocaleDateString("en-AU", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 }
 
 function hasActiveAssistantDraftForScope(input: {
@@ -666,9 +654,9 @@ function SafeSpeakAssistantConversationPage({
     incidentCategory: initialCategory,
   });
   const [input, setInput] = useState(seededPrefillMessage ?? "");
-  const [conversationSessionId, setConversationSessionId] = useState<string | null>(
-    existingDraft?.conversationSessionId ?? null
-  );
+  const [conversationSessionId, setConversationSessionId] = useState<
+    string | null
+  >(existingDraft?.conversationSessionId ?? null);
   const [timeline, setTimeline] = useState<AssistantTimeline>(
     existingDraft?.timeline ?? emptyTimeline
   );
@@ -696,10 +684,21 @@ function SafeSpeakAssistantConversationPage({
   const [isRecordingActive, setIsRecordingActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
+  const {
+    pendingConsentRequirement,
+    isGrantingConsent,
+    captureConsentError,
+    clearPendingConsent,
+    grantPendingConsent,
+    requireConsent,
+  } = useConsentGate();
   const hasSentInitialRef = useRef(false);
   const latestMessagesRef = useRef(messages);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const timelineEndRef = useRef<HTMLDivElement | null>(null);
+  const pendingAssistantRequestRef = useRef<{
+    message: string;
+    conversation: AssistantConversationMessage[];
+  } | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -709,8 +708,9 @@ function SafeSpeakAssistantConversationPage({
   const [timelineFieldOrder, setTimelineFieldOrder] = useState<string[]>(
     existingDraft?.timelineFieldOrder ?? []
   );
-  const [triagePrompt, setTriagePrompt] = useState<string | null>(null);
-  const [showTriageCta, setShowTriageCta] = useState(false);
+  const [showTriageCta, setShowTriageCta] = useState(
+    Boolean(existingDraft?.triageCtaVisible)
+  );
   const continueReportSubmissionHref =
     getContinueReportSubmissionHref(initialCategory);
   const assistantEntryHref = getAssistantEntryHref(
@@ -839,6 +839,7 @@ function SafeSpeakAssistantConversationPage({
         messages: conversationMessages,
         timeline,
         timelineFieldOrder,
+        triageCtaVisible: showTriageCta,
         incidentCategory: initialCategory,
         topic: initialTopic,
       },
@@ -854,6 +855,7 @@ function SafeSpeakAssistantConversationPage({
     conversationSessionId,
     timeline,
     timelineFieldOrder,
+    showTriageCta,
   ]);
 
   useEffect(() => {
@@ -861,7 +863,7 @@ function SafeSpeakAssistantConversationPage({
       behavior: "smooth",
       block: "end",
     });
-  }, [messages, isSending, error]);
+  }, [messages, showTriageCta, isSending, error]);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -895,20 +897,26 @@ function SafeSpeakAssistantConversationPage({
       setError(null);
 
       try {
-        const response = await sendTimelineAssistantMessage({
-          message,
-          conversation,
-          timeline,
-          incidentCategory: initialCategory,
-          jurisdiction: useNswLegalAwareness ? "NSW" : undefined,
+        let resolvedSessionId = conversationSessionId;
+
+        if (!resolvedSessionId) {
+          const session = await createConversationFlowSession({
+            selectedTopic: initialTopic ?? initialCategory,
+            jurisdiction: useNswLegalAwareness ? "NSW" : undefined,
+          });
+
+          resolvedSessionId = session.id;
+          setConversationSessionId(session.id);
+        }
+
+        const response = await appendConversationFlowMessage({
+          conversationSessionId: resolvedSessionId,
+          content: message,
+          language: transcriptionLanguage,
         });
-        const assistantContent = buildAssistantBubbleContent(
-          response.assistantMessage ?? "",
-          response.nextQuestion ?? ""
-        );
+        const nextTimeline = response.factExtraction.timeline ?? {};
 
         setTimeline((currentTimeline) => {
-          const nextTimeline = response.timeline;
           const nextKeys = Object.entries(nextTimeline)
             .filter(([, value]) => value.trim().length > 0)
             .map(([key]) => key);
@@ -935,30 +943,132 @@ function SafeSpeakAssistantConversationPage({
           ...currentMessages,
           {
             role: "assistant",
-            content: assistantContent,
+            content: response.assistantMessage.content,
             responseMeta: {
-              disclaimer: response.disclaimer,
-              citations: response.citations,
-              confidence: response.confidence,
-              reviewStatus: response.reviewStatus,
-              ragUnavailable: response.rag?.unavailable,
-              pendingHumanReview:
-                response.reviewStatus === "pending_human_review",
-              legalAwareness: response.legalAwareness,
+              disclaimer: response.responseMeta?.disclaimer,
+              citations: response.responseMeta?.citations,
+              confidence: response.responseMeta?.confidence,
+              reviewStatus: response.responseMeta?.reviewStatus,
+              ragUnavailable: response.responseMeta?.rag?.unavailable,
+              pendingHumanReview: Boolean(
+                response.triage?.humanReviewRecommended
+              ),
             },
           },
         ]);
-      } catch (requestError) {
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Assistant response failed"
-        );
+
+        if (
+          isTriageRequested(message) ||
+          response.transition.offerTriage ||
+          response.session.status === "ready_for_triage" ||
+          response.session.status === "triaged" ||
+          response.session.status === "recommendation_ready" ||
+          Boolean(response.triage?.canProceedToRecommendations)
+        ) {
+          setShowTriageCta(true);
+        }
+
+      } catch (conversationFlowError) {
+        if (captureConsentError(conversationFlowError)) {
+          pendingAssistantRequestRef.current = { message, conversation };
+          return;
+        }
+
+        try {
+          const response = await sendTimelineAssistantMessage({
+            message,
+            conversation,
+            timeline,
+            incidentCategory: initialCategory,
+            jurisdiction: useNswLegalAwareness ? "NSW" : undefined,
+          });
+          const assistantContent = buildAssistantBubbleContent(
+            response.assistantMessage ?? "",
+            response.nextQuestion ?? ""
+          );
+
+          setTimeline((currentTimeline) => {
+            const nextTimeline = response.timeline;
+            const nextKeys = Object.entries(nextTimeline)
+              .filter(([, value]) => value.trim().length > 0)
+              .map(([key]) => key);
+
+            setTimelineFieldOrder((currentOrder) => {
+              const mergedOrder = [...currentOrder];
+
+              nextKeys.forEach((key) => {
+                const hadValue =
+                  typeof currentTimeline[key] === "string" &&
+                  currentTimeline[key].trim().length > 0;
+
+                if (!hadValue && !mergedOrder.includes(key)) {
+                  mergedOrder.push(key);
+                }
+              });
+
+              return mergedOrder.filter((key) => nextKeys.includes(key));
+            });
+
+            return nextTimeline;
+          });
+          setMessages((currentMessages) => [
+            ...currentMessages,
+            {
+              role: "assistant",
+              content: assistantContent,
+              responseMeta: {
+                disclaimer: response.disclaimer,
+                citations: response.citations,
+                confidence: response.confidence,
+                reviewStatus: response.reviewStatus,
+                ragUnavailable: response.rag?.unavailable,
+                pendingHumanReview:
+                  response.reviewStatus === "pending_human_review",
+                legalAwareness: response.legalAwareness,
+              },
+            },
+          ]);
+
+          if (
+            isTriageRequested(message) ||
+            (response.readyForSubmission &&
+              detectHarmfulActivity({
+                incidentCategory: initialCategory,
+                timeline: response.timeline,
+                conversation: [
+                  ...conversation,
+                  { role: "user", content: message },
+                ],
+              }))
+          ) {
+            setShowTriageCta(true);
+          }
+
+        } catch (requestError) {
+          if (captureConsentError(requestError)) {
+            pendingAssistantRequestRef.current = { message, conversation };
+            return;
+          }
+
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Assistant response failed"
+          );
+        }
       } finally {
         setIsSending(false);
       }
     },
-    [initialCategory, timeline, useNswLegalAwareness]
+    [
+      captureConsentError,
+      conversationSessionId,
+      initialCategory,
+      initialTopic,
+      timeline,
+      transcriptionLanguage,
+      useNswLegalAwareness,
+    ]
   );
 
   useEffect(() => {
@@ -1011,6 +1121,11 @@ function SafeSpeakAssistantConversationPage({
           [currentInput.trim(), transcript].filter(Boolean).join(" ")
         );
       } catch (recordingError) {
+        if (captureConsentError(recordingError)) {
+          setSpeechError(null);
+          return;
+        }
+
         setSpeechError(
           recordingError instanceof Error
             ? recordingError.message
@@ -1021,7 +1136,7 @@ function SafeSpeakAssistantConversationPage({
         setLiveTranscript("");
       }
     },
-    [cleanupRecording, t, transcriptionLanguage]
+    [captureConsentError, cleanupRecording, t, transcriptionLanguage]
   );
 
   const startVoiceRecording = useCallback(async () => {
@@ -1030,6 +1145,26 @@ function SafeSpeakAssistantConversationPage({
       typeof MediaRecorder === "undefined"
     ) {
       setSpeechError(t("dashboard.assistant.speechErrors.unsupported"));
+      return;
+    }
+
+    let canRecord = false;
+
+    try {
+      canRecord = await requireConsent(
+        consentRequirements.audioTranscription
+      );
+    } catch (consentCheckError) {
+      setSpeechError(
+        consentCheckError instanceof Error
+          ? consentCheckError.message
+          : "Consent status could not be checked."
+      );
+      return;
+    }
+
+    if (!canRecord) {
+      setSpeechError(null);
       return;
     }
 
@@ -1095,6 +1230,7 @@ function SafeSpeakAssistantConversationPage({
   }, [
     cleanupRecording,
     handleRecordedAudio,
+    requireConsent,
     startLiveTranscriptPreview,
     stopLiveTranscriptPreview,
     t,
@@ -1123,6 +1259,42 @@ function SafeSpeakAssistantConversationPage({
     void startVoiceRecording();
   }, [isRecordingActive, startVoiceRecording, stopVoiceRecording]);
 
+  const handleAllowPendingConsent = async () => {
+    const requirement = pendingConsentRequirement;
+
+    try {
+      await grantPendingConsent();
+      setError(null);
+      setSpeechError(null);
+
+      if (requirement?.source === consentRequirements.audioTranscription.source) {
+        void startVoiceRecording();
+        return;
+      }
+
+      const pendingRequest = pendingAssistantRequestRef.current;
+      pendingAssistantRequestRef.current = null;
+
+      if (pendingRequest) {
+        void requestAssistantTurn(
+          pendingRequest.message,
+          pendingRequest.conversation
+        );
+      }
+    } catch (consentError) {
+      setError(
+        consentError instanceof Error
+          ? consentError.message
+          : "Consent could not be saved."
+      );
+    }
+  };
+
+  const handleDeclinePendingConsent = () => {
+    pendingAssistantRequestRef.current = null;
+    clearPendingConsent();
+  };
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -1142,6 +1314,9 @@ function SafeSpeakAssistantConversationPage({
 
     setInput("");
     setMessages(nextMessages);
+    if (isTriageRequested(message)) {
+      setShowTriageCta(true);
+    }
     void requestAssistantTurn(message, nextMessages);
   };
 
@@ -1149,26 +1324,19 @@ function SafeSpeakAssistantConversationPage({
     setInput(event.target.value);
   };
 
-  const timelineEntries = sortTimelineEntries(timeline, timelineFieldOrder);
-  const timelineFieldCount = timelineEntries.length;
-
-  useEffect(() => {
-    timelineEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    });
-  }, [timelineEntries, isSending, error]);
-
   return (
-    <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 xl:flex-1 xl:overflow-hidden">
-      <div className="mx-auto flex w-full max-w-[1360px] flex-col xl:h-full xl:min-h-0">
+    <div
+      data-testid="ai-conversation-page"
+      className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 xl:flex-1 xl:overflow-hidden xl:pb-0"
+    >
+      <div className="mx-auto flex w-full max-w-[1120px] flex-col xl:h-full xl:min-h-0">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           <Link
             href={assistantEntryHref}
             className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
           >
             <IconChevronLeft size={14} />
-            {t("dashboard.assistant.timelineBuilder")}
+            AI Conversation
           </Link>
           <Link
             href="/dashboard"
@@ -1179,23 +1347,29 @@ function SafeSpeakAssistantConversationPage({
           </Link>
         </div>
 
-        <div className="mt-3 grid min-h-0 grid-cols-1 gap-3 xl:flex-1 xl:grid-cols-[minmax(0,1.72fr)_minmax(340px,0.96fr)] xl:items-stretch xl:overflow-hidden">
+        <div className="mt-3 min-h-0 xl:flex-1">
           <div className="relative flex min-h-[520px] flex-col overflow-hidden rounded-[22px] border border-[#d6e7f6] bg-[linear-gradient(180deg,#dff0fb_0%,#e8f5ff_100%)] p-4 shadow-[0_18px_40px_rgba(113,161,204,0.12)] xl:h-full xl:min-h-0">
-            <div
-              className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center opacity-95"
-              aria-hidden="true"
-            >
-              <AssistantSphereAnimated
-                alt={t("dashboard.assistant.sphereAlt")}
-                particleCount={900}
-              />
-            </div>
-
-            <div className="relative z-10 min-h-0 flex-1 overflow-hidden rounded-[18px]">
-              <div className="flex h-full flex-col gap-3 overflow-y-auto overscroll-contain pr-1.5">
+            {pendingConsentRequirement ? (
+              <div className="relative z-30 mb-3 max-w-[560px]">
+                <ConsentRequiredCard
+                  requirement={pendingConsentRequirement}
+                  isSubmitting={isGrantingConsent}
+                  onAllow={() => {
+                    void handleAllowPendingConsent();
+                  }}
+                  onDecline={handleDeclinePendingConsent}
+                />
+              </div>
+            ) : null}
+            <div className="relative min-h-0 flex-1 overflow-hidden rounded-[18px]">
+              <div
+                data-testid="ai-conversation-chat"
+                className="flex h-full flex-col gap-3 overflow-y-auto overscroll-contain pr-1.5"
+              >
                 {messages.map((message, index) => (
                   <div
                     key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
+                    data-testid={`ai-conversation-message-${message.role}`}
                     className={
                       message.role === "user" ? "flex justify-end" : ""
                     }
@@ -1208,96 +1382,24 @@ function SafeSpeakAssistantConversationPage({
                             : "rounded-tl-[8px] text-[#5f6f86]"
                         }`}
                       >
-                        {message.content}
+                        {getAssistantDisplayContent(message)}
                       </div>
-
-                      {message.role === "assistant" && message.responseMeta ? (
-                        <div className="mt-2 space-y-2">
-                          {message.responseMeta.legalAwareness ? (
-                            <NswLegalAwarenessPanel
-                              legalAwareness={
-                                message.responseMeta.legalAwareness
-                              }
-                              compact
-                            />
-                          ) : null}
-
-                          <div className="rounded-[18px] border border-[#dce6f2] bg-white/95 p-3 text-[10px] leading-[1.55] text-[#65748a] shadow-[0_8px_22px_rgba(148,163,184,0.1)]">
-                            <div className="flex flex-wrap gap-1.5">
-                              {message.responseMeta.confidence ? (
-                                <span className="rounded-full bg-[#eef6ff] px-2 py-1 font-semibold text-[#3f7de0]">
-                                  Confidence: {message.responseMeta.confidence}
-                                </span>
-                              ) : null}
-                              {message.responseMeta.pendingHumanReview ? (
-                                <span className="rounded-full bg-[#fff7ed] px-2 py-1 font-semibold text-[#b45309]">
-                                  Human review recommended
-                                </span>
-                              ) : null}
-                              {message.responseMeta.ragUnavailable ? (
-                                <span className="rounded-full bg-[#fff1f2] px-2 py-1 font-semibold text-[#be123c]">
-                                  Source retrieval unavailable
-                                </span>
-                              ) : null}
-                            </div>
-
-                            {message.responseMeta.disclaimer ? (
-                              <p className="mt-2">
-                                {message.responseMeta.disclaimer}
-                              </p>
-                            ) : null}
-
-                            {message.responseMeta.citations?.length ? (
-                              <div className="mt-2 border-t border-[#edf2f7] pt-2">
-                                <p className="font-bold uppercase tracking-[0.08em] text-[#7d8ea5]">
-                                  Sources
-                                </p>
-                                <div className="mt-1.5 space-y-1.5">
-                                  {message.responseMeta.citations.map(
-                                    (citation) => (
-                                      <div
-                                        key={
-                                          citation.sourceId ??
-                                          `${citation.title}-${citation.url ?? ""}`
-                                        }
-                                      >
-                                        {citation.url ? (
-                                          <a
-                                            href={citation.url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="font-semibold text-[#2f6fca] underline-offset-2 hover:underline"
-                                          >
-                                            {citation.title}
-                                          </a>
-                                        ) : (
-                                          <span className="font-semibold text-[#344359]">
-                                            {citation.title}
-                                          </span>
-                                        )}
-                                        <p className="text-[9px] text-[#8190a3]">
-                                          {[
-                                            citation.publisher,
-                                            citation.jurisdiction,
-                                            formatAssistantCitationDate(
-                                              citation.lastUpdated
-                                            ),
-                                          ]
-                                            .filter(Boolean)
-                                            .join(" | ")}
-                                        </p>
-                                      </div>
-                                    )
-                                  )}
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                 ))}
+
+                {showTriageCta ? (
+                  <div className="flex justify-center py-2">
+                    <Link
+                      href={continueReportSubmissionHref}
+                      data-testid="ai-conversation-triage-button"
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_12px_28px_rgba(15,93,159,0.26)] transition hover:bg-[#0b528d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f5d9f]"
+                    >
+                      Continue to Triage
+                      <IconArrowRight size={14} />
+                    </Link>
+                  </div>
+                ) : null}
 
                 {isSending ? (
                   <div className="inline-flex w-fit items-center rounded-[18px] rounded-tl-[8px] bg-white px-3 py-2 shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
@@ -1349,6 +1451,7 @@ function SafeSpeakAssistantConversationPage({
                   type="text"
                   value={input}
                   onChange={handleInputChange}
+                  data-testid="ai-conversation-input"
                   placeholder={t("dashboard.assistant.typeYourResponse")}
                   className="h-11 flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-sm text-[#1f2937] outline-none transition-[background-color,box-shadow,border-color] duration-150 placeholder:text-[#95a3b8] focus:border-white/70 focus:bg-white focus:shadow-[0_8px_22px_rgba(148,163,184,0.12)] focus-visible:outline-none"
                 />
@@ -1368,6 +1471,7 @@ function SafeSpeakAssistantConversationPage({
                 </button>
                 <button
                   type="submit"
+                  data-testid="ai-conversation-send"
                   disabled={
                     isSending ||
                     isRecordingActive ||
@@ -1391,92 +1495,7 @@ function SafeSpeakAssistantConversationPage({
                 </button>
               </div>
             </form>
-          </div>
 
-          <div className="flex rounded-[22px] border border-[#e2e9f3] bg-white p-4 shadow-[0_18px_40px_rgba(148,163,184,0.14)] xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
-            <div className="flex items-start justify-between gap-3 border-b border-[#edf2f7] pb-3">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#5f6f86]">
-                  {t("dashboard.assistant.conversation.liveTimelineBuilder")}
-                </p>
-                <p className="mt-1 text-[11px] text-[#98a7ba]">
-                  {timelineFieldCount > 0
-                    ? `${timelineFieldCount} field${timelineFieldCount === 1 ? "" : "s"} captured`
-                    : "Structured details appear here as the report builds"}
-                </p>
-              </div>
-              <span className="rounded-full bg-[#eaf2ff] px-2.5 py-1 text-[10px] font-semibold text-[#3f7de0]">
-                {t("dashboard.assistant.conversation.updating")}
-              </span>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <div className="rounded-2xl bg-[#f7fafc] px-3 py-2">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#9aa8ba]">
-                  Captured
-                </p>
-                <p className="mt-1 text-sm font-bold text-[#1f2a3a]">
-                  {timelineFieldCount}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-[#f7fafc] px-3 py-2">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#9aa8ba]">
-                  Status
-                </p>
-                <p className="mt-1 text-sm font-bold text-[#3f7de0]">Live</p>
-              </div>
-            </div>
-
-            <div className="mt-4 min-h-0 space-y-2.5 xl:flex-1 xl:overflow-y-auto xl:pr-1.5">
-              {timelineEntries.length > 0 ? (
-                timelineEntries.map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="rounded-[18px] border border-[#ebeff5] bg-[#f9fbfd] p-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#8fa0b6]">
-                        {formatTimelineFieldLabel(key)}
-                      </p>
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-[#3f7de0]" />
-                    </div>
-                    <div className="mt-2 max-h-[96px] overflow-y-auto pr-1">
-                      <p className="text-[12px] font-semibold leading-[1.55] text-[#1f2a3a]">
-                        {value}
-                      </p>
-                    </div>
-                    <div className="mt-3 h-[2px] rounded-full bg-[#d8e3f5]">
-                      <div className="h-[2px] w-full rounded-full bg-[#3f7de0]" />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-[18px] border border-[#ebeff5] bg-[#f9fbfd] p-3">
-                  <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#8fa0b6]">
-                    {t("dashboard.assistant.conversation.what")}
-                  </p>
-                  <p className="mt-2 text-[12px] italic text-[#8fa0b6]">
-                    {t("dashboard.assistant.conversation.waitingForDetails")}
-                  </p>
-                </div>
-              )}
-
-              {timelineEntries.length < 2 ? (
-                <div className="rounded-[18px] border border-dashed border-[#e3e9f2] bg-[#fbfdff] p-6 text-center text-[10px] text-[#c0c9d6]">
-                  {t("dashboard.assistant.conversation.moreFields")}
-                </div>
-              ) : null}
-              <div ref={timelineEndRef} aria-hidden="true" />
-            </div>
-
-            <div className="border-t border-[#edf2f7] pt-4">
-              <Link
-                href={continueReportSubmissionHref}
-                className="inline-flex h-11 items-center rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.25)] transition hover:bg-[#0b528d]"
-              >
-                {t("dashboard.assistant.continueToReportSubmission")}
-              </Link>
-            </div>
           </div>
         </div>
       </div>

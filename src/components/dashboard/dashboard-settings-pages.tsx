@@ -2,20 +2,24 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   IconAlertCircle,
   IconChevronLeft,
   IconChevronRight,
   IconCompassFilled,
+  IconDownload,
+  IconFileText,
   IconHomeFilled,
   IconMicrophone,
   IconPhoneFilled,
+  IconRefresh,
   IconSearch,
   IconSettingsFilled,
   IconShieldCheck,
   IconShieldFilled,
+  IconTrash,
   IconUserCircle,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
@@ -36,6 +40,14 @@ import {
   getFaithProfiles,
   getLanguageOptions,
 } from "@/lib/profile-client";
+import {
+  createPrivacyRequest,
+  downloadPrivacyExport,
+  listPrivacyRequests,
+  requestDataDeletion,
+  savePrivacyExportFile,
+  type PrivacyRequestRecord,
+} from "@/lib/privacy-client";
 import {
   communityOptions,
   cultureOptions,
@@ -75,12 +87,47 @@ function SettingsQuickCard({
   );
 }
 
+function getPrivacyRequestId(request: PrivacyRequestRecord): string {
+  return request._id ?? request.id ?? "pending";
+}
+
+function formatPrivacyValue(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatPrivacyDate(value?: string): string {
+  if (!value) {
+    return "Not available";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Not available";
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function SettingsPage() {
   const { t, i18n } = useTranslation();
   const { profile, updateProfile } = useSafeSpeakProfile();
   const [consentFlags, setConsentFlags] = useState<ConsentFlags>({});
   const [consentHistoryCount, setConsentHistoryCount] = useState(0);
   const [consentError, setConsentError] = useState<string | null>(null);
+  const [privacyRequests, setPrivacyRequests] = useState<PrivacyRequestRecord[]>([]);
+  const [privacyStatus, setPrivacyStatus] = useState<string | null>(null);
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
+  const [isPrivacyLoading, setIsPrivacyLoading] = useState(true);
+  const [isExportingData, setIsExportingData] = useState(false);
+  const [isCreatingExportRequest, setIsCreatingExportRequest] = useState(false);
+  const [isRequestingDeletion, setIsRequestingDeletion] = useState(false);
   const [languageChoices, setLanguageChoices] = useState<string[]>(interpreterLanguageOptions);
   const [cultureChoices, setCultureChoices] = useState<string[]>(cultureOptions);
   const [faithChoices, setFaithChoices] = useState<string[]>(faithOptions);
@@ -171,6 +218,29 @@ export function SettingsPage() {
     };
   }, []);
 
+  const refreshPrivacyRequests = useCallback(async () => {
+    setIsPrivacyLoading(true);
+    setPrivacyError(null);
+
+    try {
+      const requests = await listPrivacyRequests();
+
+      setPrivacyRequests(requests);
+    } catch (error) {
+      setPrivacyError(
+        error instanceof Error
+          ? error.message
+          : "Privacy requests could not be loaded."
+      );
+    } finally {
+      setIsPrivacyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshPrivacyRequests();
+  }, [refreshPrivacyRequests]);
+
   const toggleConsentFlag = async (flag: ConsentFlag) => {
     try {
       const nextConsent = consentFlags[flag]
@@ -184,6 +254,86 @@ export function SettingsPage() {
           ? error.message
           : "Consent settings could not be updated."
       );
+    }
+  };
+
+  const handleDownloadPrivacyExport = async () => {
+    setIsExportingData(true);
+    setPrivacyError(null);
+    setPrivacyStatus(null);
+
+    try {
+      const exportPayload = await downloadPrivacyExport();
+
+      savePrivacyExportFile(exportPayload);
+      setPrivacyStatus("Backend data export generated.");
+      await refreshPrivacyRequests();
+    } catch (error) {
+      setPrivacyError(
+        error instanceof Error ? error.message : "Data export could not be generated."
+      );
+    } finally {
+      setIsExportingData(false);
+    }
+  };
+
+  const handleCreateExportRequest = async () => {
+    setIsCreatingExportRequest(true);
+    setPrivacyError(null);
+    setPrivacyStatus(null);
+
+    try {
+      const request = await createPrivacyRequest({
+        requestType: "data_export",
+        confirmation: true,
+        notes: "User requested an assisted backend data export from settings.",
+      });
+
+      setPrivacyStatus(
+        `Export request created. Reference ${getPrivacyRequestId(request).slice(-8)}.`
+      );
+      await refreshPrivacyRequests();
+    } catch (error) {
+      setPrivacyError(
+        error instanceof Error ? error.message : "Export request could not be created."
+      );
+    } finally {
+      setIsCreatingExportRequest(false);
+    }
+  };
+
+  const handleRequestDeletion = async () => {
+    const confirmed =
+      typeof window !== "undefined" &&
+      window.confirm(
+        "Create a backend data deletion request? Admin review may be required before records are deleted."
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsRequestingDeletion(true);
+    setPrivacyError(null);
+    setPrivacyStatus(null);
+
+    try {
+      const request = await requestDataDeletion({
+        confirmation: true,
+        notes:
+          "User requested deletion self-service from settings. Admin review may be required before final deletion.",
+      });
+
+      setPrivacyStatus(
+        `Deletion request created. Reference ${getPrivacyRequestId(request).slice(-8)}.`
+      );
+      await refreshPrivacyRequests();
+    } catch (error) {
+      setPrivacyError(
+        error instanceof Error ? error.message : "Deletion request could not be created."
+      );
+    } finally {
+      setIsRequestingDeletion(false);
     }
   };
 
@@ -535,7 +685,7 @@ export function SettingsPage() {
               },
               {
                 title: "Data export and deletion",
-                body: "A full backend self-service data export/deletion workflow is not fully implemented yet, so this remains a safe placeholder.",
+                body: "Download a backend-generated export or create a deletion request that appears in the admin privacy queue.",
               },
             ].map((item) => (
               <article
@@ -556,6 +706,142 @@ export function SettingsPage() {
                 ) : null}
               </article>
             ))}
+          </div>
+        </article>
+
+        <article className="mt-4 rounded-[22px] border border-[#dbe4f0] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+                Privacy self-service
+              </p>
+              <h2 className="mt-1 text-2xl font-extrabold text-[#1f2a3a]">
+                Data export and deletion
+              </h2>
+              <p className="mt-2 max-w-[760px] text-sm leading-[1.65] text-[#6a7d94]">
+                Backend export includes account, profile, consent, report,
+                evidence metadata, support, AI, and privacy request records
+                owned by your account or session. Evidence file binaries and
+                storage secrets are not included.
+              </p>
+              <p className="mt-2 max-w-[760px] text-xs leading-[1.6] text-[#7b8798]">
+                Local-only browser data can be cleared from this device. Server
+                records tied to your account or anonymous session need a backend
+                privacy request.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void refreshPrivacyRequests()}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[#d6e0ec] px-4 text-xs font-bold text-[#0f5d9f]"
+            >
+              <IconRefresh size={13} />
+              Refresh status
+            </button>
+          </div>
+
+          {privacyError ? (
+            <div className="mt-4 rounded-[14px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#b45353]">
+              <span className="inline-flex items-center gap-1.5">
+                <IconAlertCircle size={12} />
+                {privacyError}
+              </span>
+            </div>
+          ) : null}
+          {privacyStatus ? (
+            <div className="mt-4 rounded-[14px] border border-[#d8e4f2] bg-[#f8fbff] px-3 py-2 text-[11px] font-semibold text-[#0f5d9f]">
+              {privacyStatus}
+            </div>
+          ) : null}
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => void handleDownloadPrivacyExport()}
+              disabled={isExportingData}
+              className="rounded-[16px] border border-[#dbe4f0] bg-[#f8fbff] p-4 text-left transition hover:bg-[#f2f7fd] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#e8f1ff] text-[#0f5d9f]">
+                <IconDownload size={15} />
+              </span>
+              <span className="mt-3 block text-sm font-bold text-[#1f2a3a]">
+                {isExportingData ? "Preparing export..." : "Download backend export"}
+              </span>
+              <span className="mt-1 block text-xs leading-[1.6] text-[#6a7d94]">
+                Download your owner-scoped backend records as JSON.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCreateExportRequest()}
+              disabled={isCreatingExportRequest}
+              className="rounded-[16px] border border-[#dbe4f0] bg-[#f8fbff] p-4 text-left transition hover:bg-[#f2f7fd] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#e8f1ff] text-[#0f5d9f]">
+                <IconFileText size={15} />
+              </span>
+              <span className="mt-3 block text-sm font-bold text-[#1f2a3a]">
+                {isCreatingExportRequest ? "Creating request..." : "Request reviewed export"}
+              </span>
+              <span className="mt-1 block text-xs leading-[1.6] text-[#6a7d94]">
+                Add an assisted export request to the privacy queue.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleRequestDeletion()}
+              disabled={isRequestingDeletion}
+              className="rounded-[16px] border border-[#f3d7d7] bg-[#fff8f8] p-4 text-left transition hover:bg-[#fff3f3] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#fee2e2] text-[#b91c1c]">
+                <IconTrash size={15} />
+              </span>
+              <span className="mt-3 block text-sm font-bold text-[#7f1d1d]">
+                {isRequestingDeletion ? "Creating request..." : "Request data deletion"}
+              </span>
+              <span className="mt-1 block text-xs leading-[1.6] text-[#8f5a5a]">
+                Create a backend deletion request without deleting immediately.
+              </span>
+            </button>
+          </div>
+
+          <div className="mt-5 rounded-[16px] border border-[#e2eaf4] bg-[#fbfdff] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Request status
+              </p>
+              {isPrivacyLoading ? (
+                <span className="text-[11px] font-semibold text-[#60718a]">
+                  Loading...
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-3 space-y-2">
+              {privacyRequests.slice(0, 5).map((request) => (
+                <div
+                  key={getPrivacyRequestId(request)}
+                  className="flex flex-col gap-1 rounded-[12px] border border-[#e3ebf5] bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-[#1f2a3a]">
+                      {formatPrivacyValue(request.requestType)}
+                    </p>
+                    <p className="text-[10px] text-[#7c8da3]">
+                      Ref {getPrivacyRequestId(request).slice(-8)} | Created{" "}
+                      {formatPrivacyDate(request.createdAt)}
+                    </p>
+                  </div>
+                  <span className="inline-flex w-fit rounded-full bg-[#eef4ff] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+                    {formatPrivacyValue(request.status)}
+                  </span>
+                </div>
+              ))}
+              {!isPrivacyLoading && privacyRequests.length === 0 ? (
+                <p className="text-[12px] leading-[1.6] text-[#6a7d94]">
+                  No privacy requests yet.
+                </p>
+              ) : null}
+            </div>
           </div>
         </article>
 

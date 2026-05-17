@@ -21,10 +21,17 @@ import {
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
+import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import { SafetyPlanManager } from "@/components/dashboard/dashboard-safety-pages";
+import { useConsentGate } from "@/hooks/use-consent-gate";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import {
   getSupportRecommendations,
+  listAdvocates,
   listSupportServices,
+  requestAdvocate,
+  type AdvocateRecord,
+  type SafeContactPreference,
   type SupportServiceRecord,
 } from "@/lib/support-client";
 
@@ -258,6 +265,568 @@ function getExplorerContextCopy(
   }
 
   return null;
+}
+
+const advocateIssueOptions = [
+  "general_support",
+  "domestic_violence",
+  "racial_abuse",
+  "migrant_challenges",
+  "cyber_scam",
+];
+
+const advocateLanguageOptions = ["en", "ar", "es"];
+const advocateRegionOptions = ["AU", "national", "NSW", "VIC", "QLD"];
+
+type AdvocateRequestInput = {
+  advocateType: string;
+  language: string;
+  issueType?: string;
+  region?: string;
+  safeContactPreference: SafeContactPreference;
+  notes?: string;
+  confirmationCopy: string;
+};
+
+function formatSupportLabel(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getAdvocateDisplayName(advocate: AdvocateRecord): string {
+  return (
+    advocate.displayName ??
+    formatSupportLabel(advocate.advocateType || advocate.id)
+  );
+}
+
+function AdvocateMatchingSection({
+  initialIssueType,
+  initialRegion,
+}: {
+  initialIssueType?: string;
+  initialRegion?: string;
+}) {
+  const [advocates, setAdvocates] = useState<AdvocateRecord[]>([]);
+  const [languageFilter, setLanguageFilter] = useState("en");
+  const [issueTypeFilter, setIssueTypeFilter] = useState(initialIssueType ?? "");
+  const [regionFilter, setRegionFilter] = useState(initialRegion ?? "");
+  const [availabilityFilter, setAvailabilityFilter] = useState("");
+  const [selectedAdvocateType, setSelectedAdvocateType] = useState("");
+  const [safeContactPreference, setSafeContactPreference] =
+    useState<SafeContactPreference>("in_app");
+  const [notes, setNotes] = useState("");
+  const [confirmationAccepted, setConfirmationAccepted] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  const [pendingRequest, setPendingRequest] =
+    useState<AdvocateRequestInput | null>(null);
+  const {
+    pendingConsentRequirement,
+    isGrantingConsent,
+    captureConsentError,
+    clearPendingConsent,
+    grantPendingConsent,
+  } = useConsentGate();
+
+  useEffect(() => {
+    let isActive = true;
+
+    void listAdvocates()
+      .then((nextAdvocates) => {
+        if (!isActive) {
+          return;
+        }
+
+        setAdvocates(nextAdvocates);
+        setSelectedAdvocateType((currentType) =>
+          currentType || nextAdvocates[0]?.advocateType || ""
+        );
+        setLoadError(null);
+      })
+      .catch((error) => {
+        if (!isActive) {
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Advocates could not be loaded."
+        );
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (initialRegion) {
+      setRegionFilter(initialRegion);
+    }
+  }, [initialRegion]);
+
+  const availabilityOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          advocates
+            .map((advocate) => advocate.availability)
+            .filter((value): value is string => Boolean(value))
+        )
+      ),
+    [advocates]
+  );
+
+  const filteredAdvocates = useMemo(
+    () =>
+      advocates.filter((advocate) => {
+        const matchesLanguage =
+          !languageFilter || advocate.languages.includes(languageFilter);
+        const matchesIssue =
+          !issueTypeFilter ||
+          !advocate.issueTypes?.length ||
+          advocate.issueTypes.includes(issueTypeFilter);
+        const matchesRegion =
+          !regionFilter ||
+          !advocate.regions?.length ||
+          advocate.regions.includes(regionFilter) ||
+          advocate.regions.includes("AU") ||
+          advocate.regions.includes("national");
+        const matchesAvailability =
+          !availabilityFilter || advocate.availability === availabilityFilter;
+
+        return (
+          matchesLanguage &&
+          matchesIssue &&
+          matchesRegion &&
+          matchesAvailability
+        );
+      }),
+    [advocates, availabilityFilter, issueTypeFilter, languageFilter, regionFilter]
+  );
+
+  useEffect(() => {
+    if (
+      filteredAdvocates.length &&
+      !filteredAdvocates.some(
+        (advocate) => advocate.advocateType === selectedAdvocateType
+      )
+    ) {
+      setSelectedAdvocateType(filteredAdvocates[0].advocateType);
+    }
+  }, [filteredAdvocates, selectedAdvocateType]);
+
+  const selectedAdvocate =
+    filteredAdvocates.find(
+      (advocate) => advocate.advocateType === selectedAdvocateType
+    ) ??
+    advocates.find((advocate) => advocate.advocateType === selectedAdvocateType);
+
+  const buildAdvocateRequest = (): AdvocateRequestInput | null => {
+    const advocateType =
+      selectedAdvocate?.advocateType || selectedAdvocateType.trim();
+
+    if (!advocateType) {
+      return null;
+    }
+
+    const confirmationCopy =
+      "I understand SafeSpeak will create an advocate request only after my consent. SafeSpeak will not call, email, or contact anyone automatically.";
+    const requestNotes = [
+      notes.trim(),
+      `Safe contact preference: ${safeContactPreference.replace(/_/g, " ")}`,
+      issueTypeFilter ? `Issue type: ${formatSupportLabel(issueTypeFilter)}` : "",
+      regionFilter ? `Region: ${regionFilter}` : "",
+      "No evidence files, full report payload, or hidden profile data included.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    return {
+      advocateType,
+      language: languageFilter || "en",
+      issueType: issueTypeFilter || undefined,
+      region: regionFilter || undefined,
+      safeContactPreference,
+      notes: requestNotes,
+      confirmationCopy,
+    };
+  };
+
+  const submitAdvocateRequest = async (input: AdvocateRequestInput) => {
+    setIsSubmitting(true);
+    setLoadError(null);
+    setRequestStatus(null);
+
+    try {
+      const request = await requestAdvocate(input);
+
+      setIsPreviewOpen(false);
+      setPendingRequest(null);
+      setRequestStatus(
+        `Advocate request created. Status: ${request.status ?? "pending"}.`
+      );
+    } catch (error) {
+      if (captureConsentError(error)) {
+        setPendingRequest(input);
+        return;
+      }
+
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Advocate request could not be created."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRequestAdvocate = () => {
+    const input = buildAdvocateRequest();
+
+    if (!input) {
+      setLoadError("Choose an advocate option before requesting support.");
+      return;
+    }
+
+    if (!confirmationAccepted) {
+      setLoadError("Confirm the request copy before continuing.");
+      return;
+    }
+
+    setLoadError(null);
+
+    if (!isPreviewOpen) {
+      setPendingRequest(input);
+      setIsPreviewOpen(true);
+      return;
+    }
+
+    void submitAdvocateRequest(input);
+  };
+
+  const handleAllowConsent = async () => {
+    try {
+      await grantPendingConsent();
+
+      if (pendingRequest) {
+        void submitAdvocateRequest(pendingRequest);
+      }
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Consent could not be saved."
+      );
+    }
+  };
+
+  const previewRequest = pendingRequest ?? buildAdvocateRequest();
+
+  return (
+    <section className="mt-5 rounded-[22px] border border-[#dce5f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+            Advocate matching
+          </p>
+          <h2 className="mt-1 text-xl font-bold text-[#1f2a3a]">
+            Request help from an authorized support person
+          </h2>
+          <p className="mt-1 max-w-[740px] text-xs leading-[1.65] text-[#60728a]">
+            Filter available advocate options, preview exactly what will be
+            shared, then choose whether to create a request. SafeSpeak does not
+            contact anyone automatically.
+          </p>
+        </div>
+        <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+          {filteredAdvocates.length} match
+          {filteredAdvocates.length === 1 ? "" : "es"}
+        </span>
+      </div>
+
+      {pendingConsentRequirement ? (
+        <div className="mt-4">
+          <ConsentRequiredCard
+            requirement={pendingConsentRequirement}
+            isSubmitting={isGrantingConsent || isSubmitting}
+            onAllow={() => {
+              void handleAllowConsent();
+            }}
+            onDecline={() => {
+              clearPendingConsent();
+              setRequestStatus(
+                "Consent declined. Service discovery remains available and no advocate request was created."
+              );
+            }}
+          />
+        </div>
+      ) : null}
+
+      {loadError ? (
+        <div className="mt-4 rounded-[14px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#b45353]">
+          <span className="inline-flex items-center gap-1.5">
+            <IconAlertCircle size={12} />
+            {loadError}
+          </span>
+        </div>
+      ) : null}
+      {requestStatus ? (
+        <div className="mt-4 rounded-[14px] border border-[#d8e4f2] bg-[#f8fbff] px-3 py-2 text-[11px] font-semibold text-[#0f5d9f]">
+          {requestStatus}
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+            Language
+          </span>
+          <select
+            value={languageFilter}
+            onChange={(event) => setLanguageFilter(event.target.value)}
+            className="h-10 rounded-[10px] border border-[#d7e1ee] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none"
+          >
+            {advocateLanguageOptions.map((language) => (
+              <option key={language} value={language}>
+                {language.toUpperCase()}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+            Issue type
+          </span>
+          <select
+            value={issueTypeFilter}
+            onChange={(event) => setIssueTypeFilter(event.target.value)}
+            className="h-10 rounded-[10px] border border-[#d7e1ee] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none"
+          >
+            <option value="">Any issue</option>
+            {advocateIssueOptions.map((issueType) => (
+              <option key={issueType} value={issueType}>
+                {formatSupportLabel(issueType)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+            Region
+          </span>
+          <select
+            value={regionFilter}
+            onChange={(event) => setRegionFilter(event.target.value)}
+            className="h-10 rounded-[10px] border border-[#d7e1ee] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none"
+          >
+            <option value="">Any region</option>
+            {advocateRegionOptions.map((region) => (
+              <option key={region} value={region}>
+                {region}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+            Availability
+          </span>
+          <select
+            value={availabilityFilter}
+            onChange={(event) => setAvailabilityFilter(event.target.value)}
+            className="h-10 rounded-[10px] border border-[#d7e1ee] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none"
+          >
+            <option value="">Any availability</option>
+            {availabilityOptions.map((availability) => (
+              <option key={availability} value={availability}>
+                {formatSupportLabel(availability)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {isLoading ? (
+        <div className="mt-4 inline-flex items-center gap-2 text-[11px] text-[#60728a]">
+          <IconLoader2 size={14} className="animate-spin" />
+          Loading advocate options...
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+        <div className="space-y-2">
+          {filteredAdvocates.map((advocate) => {
+            const isSelected = advocate.advocateType === selectedAdvocateType;
+
+            return (
+              <button
+                key={advocate.id}
+                type="button"
+                onClick={() => setSelectedAdvocateType(advocate.advocateType)}
+                className={`w-full rounded-[16px] border px-4 py-3 text-left transition ${
+                  isSelected
+                    ? "border-[#0f5d9f] bg-[#f7fbff]"
+                    : "border-[#e3ebf5] bg-[#fbfdff]"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-[#1f2a3a]">
+                      {getAdvocateDisplayName(advocate)}
+                    </p>
+                    <p className="mt-1 text-[10px] text-[#60728a]">
+                      Languages: {advocate.languages.join(", ")} |{" "}
+                      {formatSupportLabel(advocate.availability ?? "request_based")}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[#e6f7ef] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[#0f766e]">
+                    Information only
+                  </span>
+                </div>
+                {advocate.issueTypes?.length ? (
+                  <p className="mt-2 text-[10px] leading-[1.55] text-[#60728a]">
+                    Matches: {advocate.issueTypes.map(formatSupportLabel).join(", ")}
+                  </p>
+                ) : null}
+              </button>
+            );
+          })}
+          {!isLoading && filteredAdvocates.length === 0 ? (
+            <div className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] p-4 text-[11px] text-[#60728a]">
+              No advocate options match those filters. Service discovery remains
+              available above.
+            </div>
+          ) : null}
+        </div>
+
+        <div className="rounded-[16px] border border-[#e3ebf5] bg-[#f8fbff] p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+            Advocate request form
+          </p>
+          <div className="mt-3 grid gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-semibold text-[#7f90a6]">
+                Safe contact preference
+              </span>
+              <select
+                value={safeContactPreference}
+                onChange={(event) =>
+                  setSafeContactPreference(event.target.value as SafeContactPreference)
+                }
+                className="h-10 rounded-[10px] border border-[#d7e1ee] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none"
+              >
+                <option value="in_app">In-app follow-up</option>
+                <option value="email">Email</option>
+                <option value="phone">Phone</option>
+                <option value="no_direct_contact">No direct contact yet</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-semibold text-[#7f90a6]">
+                Notes for the advocate
+              </span>
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                rows={4}
+                placeholder="Share only what feels safe and necessary."
+                className="resize-none rounded-[10px] border border-[#d7e1ee] bg-white px-3 py-2 text-[12px] leading-[1.55] text-[#1f2a3a] outline-none"
+              />
+            </label>
+            <label className="flex items-start gap-2 text-[11px] leading-[1.55] text-[#60728a]">
+              <input
+                type="checkbox"
+                checked={confirmationAccepted}
+                onChange={(event) =>
+                  setConfirmationAccepted(event.target.checked)
+                }
+                className="mt-0.5 h-4 w-4 rounded border-[#cbd8e8]"
+              />
+              <span>
+                I understand SafeSpeak will create an advocate request only
+                after my consent and will not call, email, or contact anyone
+                automatically.
+              </span>
+            </label>
+          </div>
+
+          {isPreviewOpen && previewRequest ? (
+            <div className="mt-4 rounded-[14px] border border-[#d8e4f2] bg-white px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Shared fields preview
+              </p>
+              <div className="mt-2 space-y-1 text-[11px] leading-[1.55] text-[#60728a]">
+                <p>
+                  <span className="font-bold text-[#1f2a3a]">Advocate type:</span>{" "}
+                  {formatSupportLabel(previewRequest.advocateType)}
+                </p>
+                <p>
+                  <span className="font-bold text-[#1f2a3a]">Language:</span>{" "}
+                  {previewRequest.language.toUpperCase()}
+                </p>
+                <p>
+                  <span className="font-bold text-[#1f2a3a]">Safe contact:</span>{" "}
+                  {formatSupportLabel(previewRequest.safeContactPreference)}
+                </p>
+                {previewRequest.issueType ? (
+                  <p>
+                    <span className="font-bold text-[#1f2a3a]">Issue type:</span>{" "}
+                    {formatSupportLabel(previewRequest.issueType)}
+                  </p>
+                ) : null}
+                {previewRequest.region ? (
+                  <p>
+                    <span className="font-bold text-[#1f2a3a]">Region:</span>{" "}
+                    {previewRequest.region}
+                  </p>
+                ) : null}
+                {previewRequest.notes ? (
+                  <p>
+                    <span className="font-bold text-[#1f2a3a]">Notes:</span>{" "}
+                    {previewRequest.notes}
+                  </p>
+                ) : null}
+                <p className="font-semibold text-[#9a5b12]">
+                  No evidence files, full report payload, or hidden profile data
+                  will be shared.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPreviewOpen(false)}
+                className="mt-3 text-[11px] font-bold text-[#60728a]"
+              >
+                Edit before creating request
+              </button>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={handleRequestAdvocate}
+            disabled={isSubmitting || !selectedAdvocateType}
+            className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#0f5d9f] px-5 text-xs font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.24)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSubmitting ? (
+              <IconLoader2 size={14} className="mr-1 animate-spin" />
+            ) : null}
+            {isPreviewOpen ? "Create advocate request" : "Preview request"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export function ExplorerPage({
@@ -532,6 +1101,17 @@ export function ExplorerPage({
             })}
           </div>
         ) : null}
+
+        {focus === "safety_plan" ? (
+          <div className="mt-5">
+            <SafetyPlanManager />
+          </div>
+        ) : null}
+
+        <AdvocateMatchingSection
+          initialIssueType={category}
+          initialRegion={selectedRegion || undefined}
+        />
 
         <section className="mt-5 grid gap-3 lg:grid-cols-2">
           <article className="rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">

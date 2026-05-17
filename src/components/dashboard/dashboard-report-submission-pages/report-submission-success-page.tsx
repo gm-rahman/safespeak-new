@@ -78,8 +78,8 @@ function ReportSubmissionSuccessPage() {
 
         <article className="mt-5 rounded-[16px] border border-[#dce5f1] bg-[#f7fafe] p-4 sm:p-6">
           <p className="mx-auto max-w-[520px] text-center text-[12px] leading-[18px] text-[#7789a1]">
-            Your SafeSpeak report now has a tracked submission record. The
-            current backend status and destination details are shown below.
+            Your SafeSpeak report now has a tracked sharing record. The current
+            backend status and selected contact details are shown below.
           </p>
           <div className="mt-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3 text-center">
             <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
@@ -93,7 +93,7 @@ function ReportSubmissionSuccessPage() {
               </p>
             {latestSubmission ? (
               <p className="mt-1 text-[10px] text-[#60728a]">
-                Routed to: {latestSubmission.destinationName} via{" "}
+                Selected contact: {latestSubmission.destinationName} via{" "}
                 {latestSubmission.channel}
               </p>
             ) : null}
@@ -146,7 +146,7 @@ function ReportSubmissionSuccessPage() {
                   <p className="mt-1 text-[10px] leading-[16px] text-[#7f90a6]">
                     You can use SafeSpeak support options to find legal,
                     community, interpreter, or safety planning help before any
-                    external submission.
+                    external sharing.
                   </p>
                 </section>
               </div>
@@ -244,7 +244,7 @@ function ReportSubmissionSuccessPage() {
                 className="inline-flex h-[56px] items-center justify-center gap-2 text-[11px] font-semibold text-[#ff8f00]"
               >
                 <IconShare size={13} />
-                Submission recorded
+                Sharing recorded
               </button>
             </div>
           </div>

@@ -1,8 +1,11 @@
 "use client";
 
-import { apiRequest } from "@/lib/api";
+import { ApiRequestError, apiRequest, type ApiEnvelope } from "@/lib/api";
 import { consentRequirements, ensureConsent } from "@/lib/consent";
-import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
+import {
+  clearAnonymousSession,
+  getSessionAwareAuthHeaders,
+} from "@/lib/frontend-session";
 
 export type SupportServiceRecord = {
   _id?: string;
@@ -41,6 +44,72 @@ export type SupportServiceRecord = {
   metadata?: Record<string, unknown>;
 };
 
+export type AdvocateRecord = {
+  id: string;
+  advocateType: string;
+  languages: string[];
+  issueTypes?: string[];
+  regions?: string[];
+  availability?: string;
+  informationOnly?: boolean;
+  displayName?: string;
+  description?: string;
+};
+
+export type SafeContactPreference =
+  | "phone"
+  | "email"
+  | "in_app"
+  | "no_direct_contact";
+
+export type AdvocateRequestRecord = {
+  _id?: string;
+  id?: string;
+  advocateType: string;
+  language: string;
+  issueType?: string;
+  region?: string;
+  safeContactPreference?: SafeContactPreference;
+  notes?: string;
+  confirmationCopy?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type TrustedContactInput = {
+  name?: string;
+  relationship?: string;
+  phone?: string;
+  email?: string;
+  safeToContact?: boolean;
+  notes?: string;
+};
+
+export type SafetyPlanRecord = {
+  _id?: string;
+  id?: string;
+  title: string;
+  trustedContacts: TrustedContactInput[];
+  safePlaces: string[];
+  warningSigns: string[];
+  copingStrategies: string[];
+  emergencySteps: string[];
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SafetyPlanInput = {
+  title: string;
+  trustedContacts?: TrustedContactInput[];
+  safePlaces?: string[];
+  warningSigns?: string[];
+  copingStrategies?: string[];
+  emergencySteps?: string[];
+  isActive?: boolean;
+};
+
 type SupportServicesResponse = {
   services: SupportServiceRecord[];
 };
@@ -58,20 +127,48 @@ type WarmReferralResponse = {
 };
 
 type AdvocateListResponse = {
-  advocates: Array<Record<string, unknown>>;
+  advocates: AdvocateRecord[];
 };
 
 type AdvocateRequestResponse = {
-  request: Record<string, unknown>;
+  request: AdvocateRequestRecord;
 };
 
 type SafetyPlanResponse = {
-  safetyPlan: Record<string, unknown>;
+  safetyPlan: SafetyPlanRecord;
 };
 
 type SafetyPlansResponse = {
-  safetyPlans: Array<Record<string, unknown>>;
+  safetyPlans: SafetyPlanRecord[];
 };
+
+async function supportApiRequest<TData>(
+  path: string,
+  options: Omit<Parameters<typeof apiRequest<TData>>[1], "headers"> = {}
+): Promise<ApiEnvelope<TData>> {
+  const headers = await getSessionAwareAuthHeaders();
+
+  try {
+    return await apiRequest<TData>(path, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      clearAnonymousSession();
+      const retryHeaders = await getSessionAwareAuthHeaders({
+        forceNewAnonymous: true,
+      });
+
+      return apiRequest<TData>(path, {
+        ...options,
+        headers: retryHeaders,
+      });
+    }
+
+    throw error;
+  }
+}
 
 export async function listSupportServices(query?: {
   type?: string;
@@ -81,7 +178,6 @@ export async function listSupportServices(query?: {
   eligibility?: string;
   profile?: string;
 }): Promise<SupportServiceRecord[]> {
-  const headers = await getSessionAwareAuthHeaders();
   const params = new URLSearchParams();
 
   if (query?.type) {
@@ -103,19 +199,18 @@ export async function listSupportServices(query?: {
     params.set("profile", query.profile);
   }
 
-  const response = await apiRequest<SupportServicesResponse>(
+  const response = await supportApiRequest<SupportServicesResponse>(
     `/support/services${params.size ? `?${params.toString()}` : ""}`,
-    { headers }
+    {}
   );
 
   return response.data.services;
 }
 
 export async function getSupportService(serviceId: string): Promise<SupportServiceRecord> {
-  const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<SupportServiceResponse>(`/support/services/${serviceId}`, {
-    headers,
-  });
+  const response = await supportApiRequest<SupportServiceResponse>(
+    `/support/services/${serviceId}`
+  );
 
   return response.data.service;
 }
@@ -129,12 +224,13 @@ export async function getSupportRecommendations(input: {
   profile?: string;
   language?: string;
 }): Promise<SupportServiceRecord[]> {
-  const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<SupportRecommendationsResponse>("/support/recommendations", {
-    method: "POST",
-    headers,
-    body: input,
-  });
+  const response = await supportApiRequest<SupportRecommendationsResponse>(
+    "/support/recommendations",
+    {
+      method: "POST",
+      body: input,
+    }
+  );
 
   return response.data.recommendations;
 }
@@ -158,20 +254,16 @@ export async function createWarmReferral(input: {
 }): Promise<Record<string, unknown>> {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.warmReferral, headers);
-  const response = await apiRequest<WarmReferralResponse>("/support/warm-referral", {
+  const response = await supportApiRequest<WarmReferralResponse>("/support/warm-referral", {
     method: "POST",
-    headers,
     body: input,
   });
 
   return response.data.referral;
 }
 
-export async function listAdvocates(): Promise<Array<Record<string, unknown>>> {
-  const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<AdvocateListResponse>("/support/advocates", {
-    headers,
-  });
+export async function listAdvocates(): Promise<AdvocateRecord[]> {
+  const response = await supportApiRequest<AdvocateListResponse>("/support/advocates");
 
   return response.data.advocates;
 }
@@ -179,40 +271,33 @@ export async function listAdvocates(): Promise<Array<Record<string, unknown>>> {
 export async function requestAdvocate(input: {
   advocateType: string;
   language?: string;
+  issueType?: string;
+  region?: string;
+  safeContactPreference?: SafeContactPreference;
   notes?: string;
-}): Promise<Record<string, unknown>> {
+  confirmationCopy?: string;
+}): Promise<AdvocateRequestRecord> {
   const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<AdvocateRequestResponse>("/support/advocate-request", {
+  await ensureConsent(consentRequirements.advocateRequest, headers);
+  const response = await supportApiRequest<AdvocateRequestResponse>("/support/advocate-request", {
     method: "POST",
-    headers,
     body: input,
   });
 
   return response.data.request;
 }
 
-export async function listSafetyPlans(): Promise<Array<Record<string, unknown>>> {
-  const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<SafetyPlansResponse>("/support/safety-plans", {
-    headers,
-  });
+export async function listSafetyPlans(): Promise<SafetyPlanRecord[]> {
+  const response = await supportApiRequest<SafetyPlansResponse>("/support/safety-plans");
 
   return response.data.safetyPlans;
 }
 
-export async function createSafetyPlan(input: {
-  title: string;
-  trustedContacts?: Array<Record<string, unknown>>;
-  safePlaces?: string[];
-  warningSigns?: string[];
-  copingStrategies?: string[];
-  emergencySteps?: string[];
-  isActive?: boolean;
-}): Promise<Record<string, unknown>> {
+export async function createSafetyPlan(input: SafetyPlanInput): Promise<SafetyPlanRecord> {
   const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<SafetyPlanResponse>("/support/safety-plans", {
+  await ensureConsent(consentRequirements.safetyPlanStorage, headers);
+  const response = await supportApiRequest<SafetyPlanResponse>("/support/safety-plans", {
     method: "POST",
-    headers,
     body: input,
   });
 
@@ -221,20 +306,12 @@ export async function createSafetyPlan(input: {
 
 export async function updateSafetyPlan(
   planId: string,
-  input: Partial<{
-    title: string;
-    trustedContacts: Array<Record<string, unknown>>;
-    safePlaces: string[];
-    warningSigns: string[];
-    copingStrategies: string[];
-    emergencySteps: string[];
-    isActive: boolean;
-  }>
-): Promise<Record<string, unknown>> {
+  input: Partial<SafetyPlanInput>
+): Promise<SafetyPlanRecord> {
   const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<SafetyPlanResponse>(`/support/safety-plans/${planId}`, {
+  await ensureConsent(consentRequirements.safetyPlanStorage, headers);
+  const response = await supportApiRequest<SafetyPlanResponse>(`/support/safety-plans/${planId}`, {
     method: "PATCH",
-    headers,
     body: input,
   });
 
