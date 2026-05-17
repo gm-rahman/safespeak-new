@@ -35,12 +35,13 @@ import { getAssistantTriageSource } from "@/lib/assistant-triage";
 import {
   type ConversationFlowTriage,
   buildMockConversationCategory,
+  fetchConversationFlowSupport,
   fetchConversationFlowTriage,
 } from "@/lib/conversation-flow";
 import {
-  listPublishedMicroEducation,
   type MicroEducationChip,
   type MicroEducationItem,
+  listPublishedMicroEducation,
 } from "@/lib/microeducation";
 import { EMERGENCY_NUMBER } from "@/lib/safety";
 
@@ -205,13 +206,7 @@ function getViolenceMicroCardProfile(
   ) {
     preferredChips = ["harassment", "rights", "safety", "mentalHealth"];
     label = "Racial abuse or discrimination";
-    keywords = [
-      "racial",
-      "discrimination",
-      "rights",
-      "harassment",
-      "report",
-    ];
+    keywords = ["racial", "discrimination", "rights", "harassment", "report"];
   } else if (
     searchText.includes("online") ||
     searchText.includes("cyber") ||
@@ -227,13 +222,7 @@ function getViolenceMicroCardProfile(
   ) {
     preferredChips = ["harassment", "rights", "safety", "mentalHealth"];
     label = "Bullying or harassment";
-    keywords = [
-      "bullying",
-      "harassment",
-      "workplace",
-      "document",
-      "rights",
-    ];
+    keywords = ["bullying", "harassment", "workplace", "document", "rights"];
   }
 
   return {
@@ -302,13 +291,14 @@ function scoreMicroCardForProfile(
 
 function getSuggestedMicroCards(
   cards: MicroEducationItem[],
-  profile: ViolenceMicroCardProfile | null
+  profile: ViolenceMicroCardProfile | null,
+  preferredIds: string[] = []
 ): MicroEducationItem[] {
   if (!profile) {
     return [];
   }
 
-  return cards
+  const suggestedCards = cards
     .map((card) => ({
       card,
       score: scoreMicroCardForProfile(card, profile),
@@ -323,6 +313,21 @@ function getSuggestedMicroCards(
     })
     .map((item) => item.card)
     .slice(0, 8);
+
+  if (preferredIds.length === 0) {
+    return suggestedCards;
+  }
+
+  const preferredIdSet = new Set(preferredIds);
+  const cardsById = new Map(suggestedCards.map((card) => [card.id, card]));
+  const orderedCards = preferredIds
+    .map((id) => cardsById.get(id))
+    .filter((card): card is MicroEducationItem => Boolean(card));
+  const remainingCards = suggestedCards.filter(
+    (card) => !preferredIdSet.has(card.id)
+  );
+
+  return [...orderedCards, ...remainingCards].slice(0, 8);
 }
 
 function SectionTitle({
@@ -538,7 +543,9 @@ function SuggestedMicroCard({
           {card.summary}
         </span>
         <span className="mt-auto flex items-center justify-between gap-3 pt-6">
-          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${currentTone.label}`}>
+          <span
+            className={`inline-flex items-center gap-1.5 text-xs font-semibold ${currentTone.label}`}
+          >
             <IconClock size={13} />
             {card.readTimeLabel || "4 min read"}
           </span>
@@ -744,6 +751,8 @@ function ReportSubmissionSupportPage() {
   const [triage, setTriage] = useState<ConversationFlowTriage | null>(null);
   const [loading, setLoading] = useState(true);
   const [microCards, setMicroCards] = useState<MicroEducationItem[]>([]);
+  const [supportSuggestedMicroCardIds, setSupportSuggestedMicroCardIds] =
+    useState<string[]>([]);
   const [isLoadingMicroCards, setIsLoadingMicroCards] = useState(true);
   const [microCardsError, setMicroCardsError] = useState<string | null>(null);
   const [activeMicroCardId, setActiveMicroCardId] = useState<string | null>(
@@ -763,6 +772,7 @@ function ReportSubmissionSupportPage() {
 
     if (!conversationSessionId) {
       setTriage(buildFallbackTriage());
+      setSupportSuggestedMicroCardIds([]);
       setLoading(false);
       return;
     }
@@ -770,16 +780,34 @@ function ReportSubmissionSupportPage() {
     setLoading(true);
 
     try {
-      const response = await fetchConversationFlowTriage(conversationSessionId);
+      const response = await fetchConversationFlowSupport(
+        conversationSessionId
+      );
 
       setTriage(response.triage);
-    } catch (fetchError) {
-      if (captureConsentError(fetchError)) {
+      setSupportSuggestedMicroCardIds(response.support.suggestedMicroCardIds);
+    } catch (supportFetchError) {
+      if (captureConsentError(supportFetchError)) {
         setTriage(null);
         return;
       }
 
-      setTriage(buildFallbackTriage());
+      try {
+        const response = await fetchConversationFlowTriage(
+          conversationSessionId
+        );
+
+        setTriage(response.triage);
+        setSupportSuggestedMicroCardIds([]);
+      } catch (fetchError) {
+        if (captureConsentError(fetchError)) {
+          setTriage(null);
+          return;
+        }
+
+        setTriage(buildFallbackTriage());
+        setSupportSuggestedMicroCardIds([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -829,8 +857,9 @@ function ReportSubmissionSupportPage() {
     try {
       await grantPendingConsent();
       await loadTriage();
-    } catch (consentError) {
+    } catch {
       setTriage(buildFallbackTriage());
+      setSupportSuggestedMicroCardIds([]);
       setLoading(false);
     }
   };
@@ -838,6 +867,7 @@ function ReportSubmissionSupportPage() {
   const handleDeclinePendingConsent = () => {
     clearPendingConsent();
     setTriage(buildFallbackTriage());
+    setSupportSuggestedMicroCardIds([]);
     setLoading(false);
   };
 
@@ -851,13 +881,18 @@ function ReportSubmissionSupportPage() {
   );
 
   const suggestedMicroCards = useMemo(
-    () => getSuggestedMicroCards(microCards, violenceMicroCardProfile),
-    [microCards, violenceMicroCardProfile]
+    () =>
+      getSuggestedMicroCards(
+        microCards,
+        violenceMicroCardProfile,
+        supportSuggestedMicroCardIds
+      ),
+    [microCards, supportSuggestedMicroCardIds, violenceMicroCardProfile]
   );
+  const shouldShowSupportOptions = !loading && !pendingConsentRequirement;
   const activeMicroCard = useMemo(
     () =>
-      suggestedMicroCards.find((card) => card.id === activeMicroCardId) ??
-      null,
+      suggestedMicroCards.find((card) => card.id === activeMicroCardId) ?? null,
     [activeMicroCardId, suggestedMicroCards]
   );
 
@@ -987,237 +1022,245 @@ function ReportSubmissionSupportPage() {
             </div>
           ) : null}
 
-          <section>
-            <SectionTitle
-              action={
-                <Link
-                  href="/dashboard?view=reportsubmissionhistory"
-                  className="shrink-0 text-xs font-semibold leading-5 text-[#9CA3AF] transition hover:text-[#64748B]"
+          {shouldShowSupportOptions ? (
+            <>
+              <section>
+                <SectionTitle
+                  action={
+                    <Link
+                      href="/dashboard?view=reportsubmissionhistory"
+                      className="shrink-0 text-xs font-semibold leading-5 text-[#9CA3AF] transition hover:text-[#64748B]"
+                    >
+                      {t("dashboard.assistant.triage.saveToHistory")}
+                    </Link>
+                  }
                 >
-                  {t("dashboard.assistant.triage.saveToHistory")}
+                  {t("dashboard.assistant.triage.recommendedSteps")}
+                </SectionTitle>
+
+                <Link
+                  href={
+                    canProceedToRecommendations
+                      ? "/dashboard?view=reportsubmissionrecommendations"
+                      : "/dashboard?view=reportsubmissiondetailedexplanations"
+                  }
+                  className="mt-5 flex items-center justify-between gap-5 rounded-[24px] bg-white p-4 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.08)] transition hover:-translate-y-0.5 sm:rounded-[32px] sm:p-6"
+                >
+                  <span className="flex min-w-0 items-center gap-4 sm:gap-6">
+                    <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#F97316] sm:h-16 sm:w-16">
+                      <IconFirstAidKit size={24} stroke={2.3} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-lg font-extrabold leading-7 text-[#111827] sm:text-xl">
+                        {t("dashboard.assistant.triage.primaryStepTitle")}
+                      </span>
+                      <span className="mt-1 block text-sm leading-5 text-[#6B7280] sm:text-base sm:leading-6">
+                        {t("dashboard.assistant.triage.primaryStepBody")}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F9FAFB] text-[#9CA3AF]">
+                    <IconArrowRight size={18} />
+                  </span>
                 </Link>
-              }
-            >
-              {t("dashboard.assistant.triage.recommendedSteps")}
-            </SectionTitle>
 
-            <Link
-              href={
-                canProceedToRecommendations
-                  ? "/dashboard?view=reportsubmissionrecommendations"
-                  : "/dashboard?view=reportsubmissiondetailedexplanations"
-              }
-              className="mt-5 flex items-center justify-between gap-5 rounded-[24px] bg-white p-4 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.08)] transition hover:-translate-y-0.5 sm:rounded-[32px] sm:p-6"
-            >
-              <span className="flex min-w-0 items-center gap-4 sm:gap-6">
-                <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#F97316] sm:h-16 sm:w-16">
-                  <IconFirstAidKit size={24} stroke={2.3} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-lg font-extrabold leading-7 text-[#111827] sm:text-xl">
-                    {t("dashboard.assistant.triage.primaryStepTitle")}
-                  </span>
-                  <span className="mt-1 block text-sm leading-5 text-[#6B7280] sm:text-base sm:leading-6">
-                    {t("dashboard.assistant.triage.primaryStepBody")}
-                  </span>
-                </span>
-              </span>
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F9FAFB] text-[#9CA3AF]">
-                <IconArrowRight size={18} />
-              </span>
-            </Link>
-
-            {violenceMicroCardProfile ? (
-              <div className="mt-5">
-                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#0F5D9F]">
-                      AI suggested micro-cards
-                    </p>
-                    <p className="mt-1 text-sm leading-5 text-[#64748B]">
-                      Matched to {violenceMicroCardProfile.label.toLowerCase()}{" "}
-                      and {violenceMicroCardProfile.safetyRiskLevel} safety risk.
-                    </p>
-                  </div>
-                  <Link
-                    href="/dashboard?view=microcards"
-                    className="inline-flex h-9 items-center gap-2 self-start rounded-full border border-[#D8E3F0] bg-white px-4 text-xs font-bold text-[#334155] transition hover:bg-[#F8FAFC] sm:self-auto"
-                  >
-                    View all
-                    <IconArrowRight size={14} />
-                  </Link>
+                <div className="mt-5 grid gap-4">
+                  <RecommendationRow
+                    icon={<IconShieldFilled size={18} />}
+                    iconClassName="bg-[#FEF2F2] text-[#EF4444]"
+                    title={t(
+                      "dashboard.assistant.triage.recommendations.immediateDangerTitle"
+                    )}
+                    description={t(
+                      "dashboard.assistant.triage.recommendations.immediateDangerBody"
+                    )}
+                    action={
+                      <Link
+                        href="/dashboard?view=reportsubmissionevidence"
+                        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#FF8A00] px-6 text-xs font-extrabold text-white shadow-[0_12px_22px_rgba(255,138,0,0.28)] transition hover:bg-[#F47C00] sm:w-auto"
+                      >
+                        <IconPhoneFilled size={14} />
+                        {t(
+                          "dashboard.assistant.triage.recommendations.contactPolice"
+                        )}
+                      </Link>
+                    }
+                  />
+                  <RecommendationRow
+                    icon={<IconGavel size={20} />}
+                    iconClassName="bg-[#EEF2FF] text-[#4F63F6]"
+                    title={t(
+                      "dashboard.assistant.triage.recommendations.esafetyTitle"
+                    )}
+                    description={t(
+                      "dashboard.assistant.triage.recommendations.esafetyBody"
+                    )}
+                    action={
+                      <Link
+                        href="/dashboard?view=reportsubmissionevidence"
+                        className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto"
+                      >
+                        {t(
+                          "dashboard.assistant.triage.recommendations.reportToEsafety"
+                        )}
+                        <IconArrowRight size={16} className="text-[#9CA3AF]" />
+                      </Link>
+                    }
+                  />
+                  <RecommendationRow
+                    icon={<IconHeadphones size={20} />}
+                    iconClassName="bg-[#E6FFFA] text-[#14B8A6]"
+                    title={t(
+                      "dashboard.assistant.triage.recommendations.counsellingTitle"
+                    )}
+                    description={t(
+                      "dashboard.assistant.triage.recommendations.counsellingBody"
+                    )}
+                    action={
+                      <Link
+                        href="/dashboard?view=reportsubmissionevidence"
+                        className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto"
+                      >
+                        {t(
+                          "dashboard.assistant.triage.recommendations.callLifeline"
+                        )}
+                        <IconArrowRight size={16} className="text-[#9CA3AF]" />
+                      </Link>
+                    }
+                  />
                 </div>
 
-                {isLoadingMicroCards ? (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    {Array.from({ length: 4 }).map((_, index) => (
-                      <div
-                        key={index}
-                        className="min-h-[220px] animate-pulse rounded-[28px] bg-white/80 shadow-[0_18px_34px_rgba(15,93,159,0.08)]"
-                      />
-                    ))}
-                  </div>
-                ) : suggestedMicroCards.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    {suggestedMicroCards.map((card) => (
-                      <SuggestedMicroCard
-                        key={card.id}
-                        card={card}
-                        riskLevel={violenceMicroCardProfile.safetyRiskLevel}
-                        onOpen={() => setActiveMicroCardId(card.id)}
-                      />
-                    ))}
+                {violenceMicroCardProfile ? (
+                  <div className="mt-6">
+                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#0F5D9F]">
+                          AI suggested micro-cards
+                        </p>
+                        <p className="mt-1 text-sm leading-5 text-[#64748B]">
+                          Matched to{" "}
+                          {violenceMicroCardProfile.label.toLowerCase()} and{" "}
+                          {violenceMicroCardProfile.safetyRiskLevel} safety
+                          risk.
+                        </p>
+                      </div>
+                      <Link
+                        href="/dashboard?view=microcards"
+                        className="inline-flex h-9 items-center gap-2 self-start rounded-full border border-[#D8E3F0] bg-white px-4 text-xs font-bold text-[#334155] transition hover:bg-[#F8FAFC] sm:self-auto"
+                      >
+                        View all
+                        <IconArrowRight size={14} />
+                      </Link>
+                    </div>
+
+                    {isLoadingMicroCards ? (
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {Array.from({ length: 4 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="min-h-[220px] animate-pulse rounded-[28px] bg-white/80 shadow-[0_18px_34px_rgba(15,93,159,0.08)]"
+                          />
+                        ))}
+                      </div>
+                    ) : suggestedMicroCards.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {suggestedMicroCards.map((card) => (
+                          <SuggestedMicroCard
+                            key={card.id}
+                            card={card}
+                            riskLevel={violenceMicroCardProfile.safetyRiskLevel}
+                            onOpen={() => setActiveMicroCardId(card.id)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <article className="rounded-[24px] border border-dashed border-[#D8E3F0] bg-white p-6 text-sm leading-6 text-[#64748B]">
+                        {microCardsError ??
+                          "No published micro-cards currently match this violence profile. Publish matching safety, harassment, rights, or mental health micro-cards to show them here."}
+                      </article>
+                    )}
                   </div>
                 ) : (
-                  <article className="rounded-[24px] border border-dashed border-[#D8E3F0] bg-white p-6 text-sm leading-6 text-[#64748B]">
-                    {microCardsError ??
-                      "No published micro-cards currently match this violence profile. Publish matching safety, harassment, rights, or mental health micro-cards to show them here."}
-                  </article>
-                )}
-              </div>
-            ) : (
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,309.33px))] lg:justify-center lg:gap-6">
-                <GradientActionCard
-                  href="/dashboard?view=reportsubmissiondetailedexplanations"
-                  icon={<IconUsersGroup size={22} />}
-                  backgroundIcon={<IconUsersGroup size={128} />}
-                  title={t("dashboard.assistant.triage.worriedOthersTitle")}
-                  description={t(
-                    "dashboard.assistant.triage.worriedOthersBody"
-                  )}
-                />
-                <GradientActionCard
-                  href="/dashboard?view=resources"
-                  icon={<IconBook2 size={22} />}
-                  backgroundIcon={<IconBook2 size={128} />}
-                  title={t("dashboard.assistant.triage.selfHelpTitle")}
-                  description={t("dashboard.assistant.triage.selfHelpBody")}
-                />
-                <article className="relative flex min-h-[238px] flex-col justify-between overflow-hidden rounded-[30px] border border-[#FEE2E2] bg-[#FEF2F2] p-6 sm:min-h-[270px] sm:rounded-[38px] lg:min-h-[318px] lg:rounded-[48px] lg:p-8">
-                  <span className="absolute right-6 top-6 h-3 w-3 rounded-full bg-[#EF4444]" />
-                  <div>
-                    <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#EF4444] text-white shadow-[0_10px_15px_-3px_#FECACA,0_4px_6px_-4px_#FECACA]">
-                      <IconShieldCheckFilled size={22} />
-                    </span>
-                    <h4 className="mt-6 text-xl font-extrabold leading-7 text-[#111827] sm:text-2xl sm:leading-8">
-                      {t("dashboard.assistant.triage.unsafeTitle")}
-                    </h4>
-                    <p className="mt-2 max-w-[220px] text-sm leading-5 text-[#4B5563]">
-                      {t("dashboard.assistant.triage.unsafeBody")}
-                    </p>
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,309.33px))] lg:justify-center lg:gap-6">
+                    <GradientActionCard
+                      href="/dashboard?view=reportsubmissiondetailedexplanations"
+                      icon={<IconUsersGroup size={22} />}
+                      backgroundIcon={<IconUsersGroup size={128} />}
+                      title={t("dashboard.assistant.triage.worriedOthersTitle")}
+                      description={t(
+                        "dashboard.assistant.triage.worriedOthersBody"
+                      )}
+                    />
+                    <GradientActionCard
+                      href="/dashboard?view=resources"
+                      icon={<IconBook2 size={22} />}
+                      backgroundIcon={<IconBook2 size={128} />}
+                      title={t("dashboard.assistant.triage.selfHelpTitle")}
+                      description={t("dashboard.assistant.triage.selfHelpBody")}
+                    />
+                    <article className="relative flex min-h-[238px] flex-col justify-between overflow-hidden rounded-[30px] border border-[#FEE2E2] bg-[#FEF2F2] p-6 sm:min-h-[270px] sm:rounded-[38px] lg:min-h-[318px] lg:rounded-[48px] lg:p-8">
+                      <span className="absolute right-6 top-6 h-3 w-3 rounded-full bg-[#EF4444]" />
+                      <div>
+                        <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#EF4444] text-white shadow-[0_10px_15px_-3px_#FECACA,0_4px_6px_-4px_#FECACA]">
+                          <IconShieldCheckFilled size={22} />
+                        </span>
+                        <h4 className="mt-6 text-xl font-extrabold leading-7 text-[#111827] sm:text-2xl sm:leading-8">
+                          {t("dashboard.assistant.triage.unsafeTitle")}
+                        </h4>
+                        <p className="mt-2 max-w-[220px] text-sm leading-5 text-[#4B5563]">
+                          {t("dashboard.assistant.triage.unsafeBody")}
+                        </p>
+                      </div>
+                      <div>
+                        <a
+                          href={`tel:${EMERGENCY_NUMBER}`}
+                          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#EF4444] px-4 text-sm font-extrabold text-white shadow-[0_10px_15px_-3px_#FECACA,0_4px_6px_-4px_#FECACA] transition hover:bg-[#DC2626]"
+                        >
+                          <IconPhoneCall size={16} />
+                          {t("dashboard.assistant.triage.callEmergency")}
+                        </a>
+                        <p className="mt-3 text-center text-xs leading-4 text-[#9CA3AF]">
+                          Stay on this screen
+                        </p>
+                      </div>
+                    </article>
                   </div>
-                  <div>
-                    <a
-                      href={`tel:${EMERGENCY_NUMBER}`}
-                      className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#EF4444] px-4 text-sm font-extrabold text-white shadow-[0_10px_15px_-3px_#FECACA,0_4px_6px_-4px_#FECACA] transition hover:bg-[#DC2626]"
-                    >
-                      <IconPhoneCall size={16} />
-                      {t("dashboard.assistant.triage.callEmergency")}
-                    </a>
-                    <p className="mt-3 text-center text-xs leading-4 text-[#9CA3AF]">
-                      Stay on this screen
-                    </p>
-                  </div>
-                </article>
-              </div>
-            )}
+                )}
+              </section>
 
-            <div className="mt-6 grid gap-4">
-              <RecommendationRow
-                icon={<IconShieldFilled size={18} />}
-                iconClassName="bg-[#FEF2F2] text-[#EF4444]"
-                title={t(
-                  "dashboard.assistant.triage.recommendations.immediateDangerTitle"
-                )}
-                description={t(
-                  "dashboard.assistant.triage.recommendations.immediateDangerBody"
-                )}
-                action={
-                  <Link
-                    href="/dashboard?view=reportsubmissionevidence"
-                    className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#FF8A00] px-6 text-xs font-extrabold text-white shadow-[0_12px_22px_rgba(255,138,0,0.28)] transition hover:bg-[#F47C00] sm:w-auto"
-                  >
-                    <IconPhoneFilled size={14} />
-                    {t(
-                      "dashboard.assistant.triage.recommendations.contactPolice"
+              <section>
+                <SectionTitle>
+                  {t("dashboard.assistant.triage.additionalResources")}
+                </SectionTitle>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:gap-6">
+                  <ResourceCard
+                    href="/dashboard/explorer"
+                    icon={<IconShieldCheckFilled size={20} />}
+                    title={t("dashboard.assistant.triage.resourceEsafetyTitle")}
+                    description={t(
+                      "dashboard.assistant.triage.resourceEsafetyBody"
                     )}
-                  </Link>
-                }
-              />
-              <RecommendationRow
-                icon={<IconGavel size={20} />}
-                iconClassName="bg-[#EEF2FF] text-[#4F63F6]"
-                title={t(
-                  "dashboard.assistant.triage.recommendations.esafetyTitle"
-                )}
-                description={t(
-                  "dashboard.assistant.triage.recommendations.esafetyBody"
-                )}
-                action={
-                  <Link
-                    href="/dashboard?view=reportsubmissionevidence"
-                    className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto"
-                  >
-                    {t(
-                      "dashboard.assistant.triage.recommendations.reportToEsafety"
+                  />
+                  <ResourceCard
+                    href="/dashboard/explorer"
+                    icon={<IconLifebuoy size={20} />}
+                    title={t(
+                      "dashboard.assistant.triage.resourceCounsellingTitle"
                     )}
-                    <IconArrowRight size={16} className="text-[#9CA3AF]" />
-                  </Link>
-                }
-              />
-              <RecommendationRow
-                icon={<IconHeadphones size={20} />}
-                iconClassName="bg-[#E6FFFA] text-[#14B8A6]"
-                title={t(
-                  "dashboard.assistant.triage.recommendations.counsellingTitle"
-                )}
-                description={t(
-                  "dashboard.assistant.triage.recommendations.counsellingBody"
-                )}
-                action={
-                  <Link
-                    href="/dashboard?view=reportsubmissionevidence"
-                    className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto"
-                  >
-                    {t(
-                      "dashboard.assistant.triage.recommendations.callLifeline"
+                    description={t(
+                      "dashboard.assistant.triage.resourceCounsellingBody"
                     )}
-                    <IconArrowRight size={16} className="text-[#9CA3AF]" />
-                  </Link>
-                }
-              />
-            </div>
-          </section>
+                  />
+                </div>
+              </section>
 
-          <section>
-            <SectionTitle>
-              {t("dashboard.assistant.triage.additionalResources")}
-            </SectionTitle>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:gap-6">
-              <ResourceCard
-                href="/dashboard/explorer"
-                icon={<IconShieldCheckFilled size={20} />}
-                title={t("dashboard.assistant.triage.resourceEsafetyTitle")}
-                description={t(
-                  "dashboard.assistant.triage.resourceEsafetyBody"
-                )}
-              />
-              <ResourceCard
-                href="/dashboard/explorer"
-                icon={<IconLifebuoy size={20} />}
-                title={t("dashboard.assistant.triage.resourceCounsellingTitle")}
-                description={t(
-                  "dashboard.assistant.triage.resourceCounsellingBody"
-                )}
-              />
-            </div>
-          </section>
-
-          <footer className="border-t border-[#F3F4F6] pt-8">
-            <p className="mx-auto max-w-[672px] text-center text-xs leading-5 text-[#9CA3AF]">
-              {t("dashboard.assistant.triage.footerNote")}
-            </p>
-          </footer>
+              <footer className="border-t border-[#F3F4F6] pt-8">
+                <p className="mx-auto max-w-[672px] text-center text-xs leading-5 text-[#9CA3AF]">
+                  {t("dashboard.assistant.triage.footerNote")}
+                </p>
+              </footer>
+            </>
+          ) : null}
         </main>
       </div>
 

@@ -117,6 +117,10 @@ type EvidenceResponse = {
   evidence: EvidenceRecord;
 };
 
+type EvidenceListResponse = {
+  evidence: EvidenceRecord[];
+};
+
 type EvidenceMetadataResponse = {
   metadata: EvidenceMetadata;
 };
@@ -136,7 +140,9 @@ type TranscriptResponse = {
   saved?: boolean;
 };
 
-export function resolveEvidenceId(evidence: Pick<EvidenceRecord, "id" | "_id">): string {
+export function resolveEvidenceId(
+  evidence: Pick<EvidenceRecord, "id" | "_id">
+): string {
   return evidence.id ?? evidence._id ?? "";
 }
 
@@ -171,11 +177,14 @@ export async function completeEvidenceUpload(input: {
     formData.set("metadata", JSON.stringify(input.metadata));
   }
 
-  const response = await apiRequest<EvidenceResponse>("/evidence/complete-upload", {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  const response = await apiRequest<EvidenceResponse>(
+    "/evidence/complete-upload",
+    {
+      method: "POST",
+      headers,
+      body: formData,
+    }
+  );
 
   return response.data.evidence;
 }
@@ -191,20 +200,40 @@ export async function transcribeEvidence(
 ): Promise<TranscriptResponse> {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.evidenceTranscription, headers);
-  const response = await apiRequest<TranscriptResponse>(`/evidence/${evidenceId}/transcribe`, {
-    method: "POST",
-    headers,
-    body: input,
-  });
+  const response = await apiRequest<TranscriptResponse>(
+    `/evidence/${evidenceId}/transcribe`,
+    {
+      method: "POST",
+      headers,
+      body: input,
+    }
+  );
 
   return response.data;
 }
 
 export async function getEvidence(evidenceId: string): Promise<EvidenceRecord> {
   const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<EvidenceResponse>(`/evidence/${evidenceId}`, {
-    headers,
-  });
+  const response = await apiRequest<EvidenceResponse>(
+    `/evidence/${evidenceId}`,
+    {
+      headers,
+    }
+  );
+
+  return response.data.evidence;
+}
+
+export async function listReportEvidence(
+  reportId: string
+): Promise<EvidenceRecord[]> {
+  const headers = await getSessionAwareAuthHeaders();
+  const response = await apiRequest<EvidenceListResponse>(
+    `/reports/${reportId}/evidence`,
+    {
+      headers,
+    }
+  );
 
   return response.data.evidence;
 }

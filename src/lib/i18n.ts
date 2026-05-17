@@ -547,9 +547,9 @@ const resources = {
           journeyReport: "Journey Report",
           journeyReportSubtitle:
             "Tell us what happened and include any screenshots or files.",
-          uploadScreenshotTitle: "Upload Screenshot",
+          uploadScreenshotTitle: "Upload Evidence",
           uploadScreenshotDescription:
-            "Drag & drop your screenshots here or click to browse files.",
+            "Drag & drop images, screenshots, PDFs, or Word documents here or click to browse files.",
           selectFiles: "Select Files",
           attachedEvidence: "Attached Evidence",
           addMore: "Add More",
@@ -1410,9 +1410,9 @@ const resources = {
           journeyReport: "Reporte del recorrido",
           journeyReportSubtitle:
             "Cuéntanos que paso e incluye capturas o archivos.",
-          uploadScreenshotTitle: "Subir captura",
+          uploadScreenshotTitle: "Subir evidencia",
           uploadScreenshotDescription:
-            "Arrastra y suelta tus capturas aqui o haz clic para buscarlas.",
+            "Arrastra imagenes, capturas, PDF o documentos Word aqui o haz clic para buscarlos.",
           selectFiles: "Seleccionar archivos",
           attachedEvidence: "Evidencia adjunta",
           addMore: "Agregar mas",

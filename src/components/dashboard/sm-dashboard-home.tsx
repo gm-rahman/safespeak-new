@@ -72,7 +72,7 @@ function SMDasboardHome() {
 
         <Link
           href={generalAssistantHref}
-          className="absolute left-1/2 top-[30%] z-20 h-[40%] w-[55%] -translate-x-1/2 rounded-full"
+          className="absolute left-1/2 top-[30%] z-20 h-[40%] w-[55%] -translate-x-1/2 overflow-hidden rounded-full [clip-path:circle(50%_at_50%_50%)]"
           aria-label="Talk with SafeSpeak"
         >
           <span className="absolute inset-0" />

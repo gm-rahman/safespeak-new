@@ -9,7 +9,12 @@ export type ConversationFlowSession = {
   id: string;
   selectedTopic?: string;
   detectedCategory?: string;
-  status: "active" | "ready_for_triage" | "triaged" | "recommendation_ready" | "completed";
+  status:
+    | "active"
+    | "ready_for_triage"
+    | "triaged"
+    | "recommendation_ready"
+    | "completed";
   safetyRiskLevel: "low" | "medium" | "high" | "immediate";
   jurisdiction?: string;
   location?: string;
@@ -83,6 +88,23 @@ export type ConversationFlowRecommendation = {
   active?: boolean;
 };
 
+export type ConversationFlowSupportAction = {
+  slot: "immediateDanger" | "esafety" | "counselling";
+  serviceId?: string;
+  resourceType?: string;
+  ctaLabel?: string;
+  phone?: string;
+  websiteUrl?: string;
+};
+
+export type ConversationFlowSupportBundle = {
+  suggestedMicroCardIds: string[];
+  recommendedActions: ConversationFlowSupportAction[];
+  additionalResources: ConversationFlowSupportAction[];
+  matchedSupportServices: ConversationFlowRecommendation[];
+  fallbackUsed?: boolean;
+};
+
 export type ConversationFlowDetails = {
   category: string;
   categoryLabel: string;
@@ -93,7 +115,10 @@ export type ConversationFlowDetails = {
   sections: {
     overview: { title: string; body: string };
     rights: { title: string; items: Array<{ title: string; body: string }> };
-    reportingOptions: { title: string; items: ConversationFlowRecommendation[] };
+    reportingOptions: {
+      title: string;
+      items: ConversationFlowRecommendation[];
+    };
     evidenceGuide: { title: string; items: Array<Record<string, unknown>> };
     supportServices: { title: string; items: ConversationFlowRecommendation[] };
     safetyPlanning: { title: string; items: Array<Record<string, unknown>> };
@@ -159,6 +184,12 @@ type RecommendationsEnvelope = {
   fallbackUsed?: boolean;
 };
 
+type SupportEnvelope = {
+  session: ConversationFlowSession;
+  triage: ConversationFlowTriage;
+  support: ConversationFlowSupportBundle;
+};
+
 type DetailsEnvelope = {
   session: ConversationFlowSession;
   details: ConversationFlowDetails;
@@ -178,22 +209,25 @@ export async function createConversationFlowSession(input: {
   location?: string;
 }): Promise<ConversationFlowSession> {
   const headers = await getConversationHeaders();
-  const response = await apiRequest<CreateSessionResponse>("/conversation-flow/sessions", {
-    method: "POST",
-    headers,
-    body: input,
-  });
+  const response = await apiRequest<CreateSessionResponse>(
+    "/conversation-flow/sessions",
+    {
+      method: "POST",
+      headers,
+      body: input,
+    }
+  );
 
   return response.data.session;
 }
 
 export async function getConversationFlowSession(
-  conversationSessionId: string,
+  conversationSessionId: string
 ): Promise<SessionEnvelope> {
   const headers = await getConversationHeaders();
   const response = await apiRequest<SessionEnvelope>(
     `/conversation-flow/sessions/${conversationSessionId}`,
-    { headers },
+    { headers }
   );
 
   return response.data;
@@ -214,50 +248,62 @@ export async function appendConversationFlowMessage(input: {
         content: input.content,
         language: input.language ?? "en",
       },
-    },
+    }
   );
 
   return response.data;
 }
 
 export async function fetchConversationFlowTriage(
-  conversationSessionId: string,
+  conversationSessionId: string
 ): Promise<TriageEnvelope> {
   const headers = await getConversationHeaders();
   const response = await apiRequest<TriageEnvelope>(
     `/conversation-flow/sessions/${conversationSessionId}/triage`,
-    { headers },
+    { headers }
+  );
+
+  return response.data;
+}
+
+export async function fetchConversationFlowSupport(
+  conversationSessionId: string
+): Promise<SupportEnvelope> {
+  const headers = await getConversationHeaders();
+  const response = await apiRequest<SupportEnvelope>(
+    `/conversation-flow/sessions/${conversationSessionId}/support`,
+    { headers }
   );
 
   return response.data;
 }
 
 export async function fetchConversationFlowRecommendations(
-  conversationSessionId: string,
+  conversationSessionId: string
 ): Promise<RecommendationsEnvelope> {
   const headers = await getConversationHeaders();
   const response = await apiRequest<RecommendationsEnvelope>(
     `/conversation-flow/sessions/${conversationSessionId}/recommendations`,
-    { headers },
+    { headers }
   );
 
   return response.data;
 }
 
 export async function fetchConversationFlowDetails(
-  conversationSessionId: string,
+  conversationSessionId: string
 ): Promise<DetailsEnvelope> {
   const headers = await getConversationHeaders();
   const response = await apiRequest<DetailsEnvelope>(
     `/conversation-flow/sessions/${conversationSessionId}/details`,
-    { headers },
+    { headers }
   );
 
   return response.data;
 }
 
 export function buildMockConversationCategory(
-  incidentCategory?: AssistantIncidentCategory,
+  incidentCategory?: AssistantIncidentCategory
 ): string {
   switch (incidentCategory) {
     case "domestic_violence":

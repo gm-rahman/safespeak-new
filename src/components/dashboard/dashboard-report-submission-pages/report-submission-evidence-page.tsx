@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -28,6 +29,7 @@ import {
   ConsentRequiredError,
   type ConsentRequirement,
   consentRequirements,
+  getConsentGrantFlags,
   getCurrentConsent,
   grantConsent,
 } from "@/lib/consent";
@@ -35,18 +37,26 @@ import {
   type EvidenceAuditChainEntry,
   type EvidenceHashVerification,
   type EvidenceMetadata,
+  type EvidenceRecord,
   completeEvidenceUpload,
   deleteEvidence,
   getEvidence,
   getEvidenceAuditChain,
   getEvidenceMetadata,
   getEvidenceTranscription,
+  listReportEvidence,
   requestEvidenceUploadUrl,
   resolveEvidenceId,
   transcribeEvidence,
   verifyEvidenceHash,
 } from "@/lib/evidence-client";
 import { getReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
+import {
+  type ReportCreateInput,
+  createReport,
+  getReport,
+  updateReport,
+} from "@/lib/reports-client";
 import { cn } from "@/lib/utils";
 
 type EvidenceKind = "image" | "video" | "audio" | "document";
@@ -68,6 +78,7 @@ type EvidenceItem = {
   storageProvider?: string;
   mimeType?: string;
   sizeBytes?: number;
+  previewUrl?: string;
   deletionRequestedAt?: string;
   deletedAt?: string;
   detailError?: string;
@@ -153,6 +164,56 @@ function getTranscriptText(
   result: Awaited<ReturnType<typeof getEvidenceTranscription>> | null
 ): string | undefined {
   return result?.transcription?.text ?? result?.transcript;
+}
+
+function inferEvidenceKindFromRecord(evidence: EvidenceRecord): EvidenceKind {
+  const mimeType = evidence.mimeType ?? "";
+  const type = evidence.type ?? "";
+
+  if (mimeType.startsWith("image/") || type === "image") {
+    return "image";
+  }
+
+  if (mimeType.startsWith("video/") || type === "video") {
+    return "video";
+  }
+
+  if (mimeType.startsWith("audio/") || type === "audio") {
+    return "audio";
+  }
+
+  return "document";
+}
+
+function evidenceRecordToItem(evidence: EvidenceRecord): EvidenceItem {
+  const evidenceId = resolveEvidenceId(evidence);
+  const uploadedAt =
+    evidence.createdAt ?? evidence.updatedAt ?? new Date().toISOString();
+
+  return {
+    id: evidenceId || `${evidence.fileName ?? "evidence"}-${uploadedAt}`,
+    backendEvidenceId: evidenceId,
+    name: evidence.fileName ?? "Evidence file",
+    sizeLabel: formatOptionalFileSize(evidence.size),
+    kind: inferEvidenceKindFromRecord(evidence),
+    sha256Hash: evidence.sha256Hash ?? "hash-unavailable",
+    uploadedAt,
+    backendStatus: evidence.status,
+    storageProvider: evidence.storageProvider,
+    mimeType: evidence.mimeType,
+    sizeBytes: evidence.size,
+    deletionRequestedAt: evidence.deletionRequestedAt,
+    deletedAt: evidence.deletedAt,
+    transcript: getTranscriptText(
+      evidence.transcription ? { transcription: evidence.transcription } : null
+    ),
+    transcriptionStatus: evidence.transcription ? "available" : undefined,
+    status: evidence.deletedAt
+      ? "deleted"
+      : evidence.status === "synced" || evidence.status === "local_only"
+        ? "synced"
+        : "attached",
+  };
 }
 
 function createAuditEntry(
@@ -302,10 +363,218 @@ function EvidenceCard({
   );
 }
 
+function EvidenceVaultCard({
+  item,
+  onRemove,
+  onRefresh,
+  onVerify,
+  onTranscribe,
+  isBusy,
+}: {
+  item: EvidenceItem;
+  onRemove: (item: EvidenceItem) => void;
+  onRefresh: (item: EvidenceItem) => void;
+  onVerify: (item: EvidenceItem) => void;
+  onTranscribe: (item: EvidenceItem) => void;
+  isBusy?: boolean;
+}) {
+  const isDeleted = item.status === "deleted" || Boolean(item.deletedAt);
+  const statusText = isDeleted
+    ? "Deleted"
+    : item.status === "synced"
+      ? "Uploaded"
+      : item.status === "local-only"
+        ? "Local only"
+        : item.status === "restored"
+          ? "Re-upload needed"
+          : "Attached";
+  const canUseBackendActions = Boolean(item.backendEvidenceId) && !isDeleted;
+
+  if (item.kind === "image") {
+    return (
+      <article className="group relative min-h-[232px] overflow-hidden rounded-[24px] bg-[#0f172a] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)]">
+        {item.previewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.previewUrl}
+            alt={item.name}
+            className="absolute inset-0 h-full w-full object-cover opacity-90"
+          />
+        ) : (
+          <>
+            <div className="absolute inset-0 opacity-90 [background:linear-gradient(180deg,#7fb5dd_0%,#d8edf8_37%,#263d26_38%,#0e1724_45%,#30343b_100%)]" />
+            <div className="absolute inset-x-[43%] bottom-0 top-[46%] bg-[#2b3036]" />
+            <div className="absolute bottom-0 left-[49.5%] top-[48%] w-1 bg-[#f7d552]" />
+          </>
+        )}
+        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.6)_0%,rgba(0,0,0,0)_50%,rgba(0,0,0,0)_100%)]" />
+        <button
+          type="button"
+          onClick={() => onRemove(item)}
+          disabled={isBusy}
+          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md"
+          aria-label={`Remove ${item.name}`}
+        >
+          <IconX size={14} />
+        </button>
+        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-3 text-white">
+          <span className="inline-flex min-w-0 items-center gap-2">
+            <IconPhoto size={14} className="opacity-80" />
+            <span className="truncate text-xs font-medium opacity-90">
+              {item.name}
+            </span>
+          </span>
+          <span className="shrink-0 text-xs opacity-70">{item.sizeLabel}</span>
+        </div>
+      </article>
+    );
+  }
+
+  if (item.kind === "video") {
+    return (
+      <article className="relative min-h-[232px] overflow-hidden rounded-[24px] bg-[#111827] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)]">
+        {item.previewUrl ? (
+          <video
+            src={item.previewUrl}
+            className="absolute inset-0 h-full w-full object-cover opacity-80"
+            muted
+          />
+        ) : (
+          <div className="absolute inset-0 opacity-80 blur-[1px] [background:linear-gradient(90deg,#17261b_0%,#3f5935_26%,#0f2416_50%,#65755c_72%,#1a2b1d_100%)]" />
+        )}
+        <div className="absolute inset-0 grid place-items-center">
+          <button
+            type="button"
+            onClick={() =>
+              canUseBackendActions ? onTranscribe(item) : undefined
+            }
+            disabled={!canUseBackendActions || isBusy}
+            className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/20 text-white backdrop-blur-sm"
+            aria-label={`Process ${item.name}`}
+          >
+            <IconPlayerPlayFilled size={22} />
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => onRemove(item)}
+          disabled={isBusy}
+          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md"
+          aria-label={`Remove ${item.name}`}
+        >
+          <IconX size={14} />
+        </button>
+        <div className="absolute bottom-3 left-3 max-w-[72%] truncate text-xs font-medium text-white">
+          {item.name}
+        </div>
+        <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-2 py-1 text-xs font-medium text-white">
+          {statusText}
+        </span>
+      </article>
+    );
+  }
+
+  if (item.kind === "audio") {
+    return (
+      <article className="relative flex min-h-[232px] flex-col justify-center rounded-[24px] border-2 border-dashed border-[#FDBA74] bg-white px-4 py-10 shadow-[0_1px_2px_rgba(0,0,0,0.05)] sm:px-8">
+        <button
+          type="button"
+          onClick={() => onRemove(item)}
+          disabled={isBusy}
+          className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center text-[#94A3B8]"
+          aria-label={`Remove ${item.name}`}
+        >
+          <IconX size={18} />
+        </button>
+        <div className="mx-auto w-full max-w-[276px]">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#EA580C]">
+              <IconMicrophone size={18} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-[#1E293B]">
+                {item.name}
+              </span>
+              <span className="block text-xs font-medium text-[#F97316]">
+                {isBusy ? "Processing..." : statusText}
+              </span>
+            </span>
+          </div>
+          <div className="mt-5 h-2 rounded-full bg-[#F1F5F9]">
+            <div
+              className={cn(
+                "h-2 rounded-full bg-[#FF8F00]",
+                isBusy ? "w-1/2" : "w-full"
+              )}
+            />
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-2 text-xs text-[#64748B]">
+            <span>{item.sizeLabel}</span>
+            <button
+              type="button"
+              onClick={() => onTranscribe(item)}
+              disabled={!canUseBackendActions || isBusy}
+              className="font-semibold text-[#0F5D9F] disabled:text-[#94A3B8]"
+            >
+              Transcribe
+            </button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article className="relative grid min-h-[232px] place-items-center rounded-[24px] border border-[#E2E8F0] bg-white p-6 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+      <button
+        type="button"
+        onClick={() => onRemove(item)}
+        disabled={isBusy}
+        className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center text-[#94A3B8]"
+        aria-label={`Remove ${item.name}`}
+      >
+        <IconX size={18} />
+      </button>
+      <div>
+        <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-[16px] bg-[#FFF7ED] text-[#F97316]">
+          {item.name.toLowerCase().endsWith(".pdf") ? (
+            <IconFileTypePdf size={28} />
+          ) : (
+            <IconFileText size={28} />
+          )}
+        </span>
+        <p className="mt-3 max-w-[180px] truncate text-sm font-medium text-[#1E293B]">
+          {item.name}
+        </p>
+        <p className="mt-1 text-xs text-[#94A3B8]">{item.sizeLabel}</p>
+        <div className="mt-4 flex justify-center gap-3 text-xs">
+          <button
+            type="button"
+            onClick={() => onRefresh(item)}
+            disabled={!canUseBackendActions || isBusy}
+            className="font-semibold text-[#0F5D9F] disabled:text-[#94A3B8]"
+          >
+            Details
+          </button>
+          <button
+            type="button"
+            onClick={() => onVerify(item)}
+            disabled={!canUseBackendActions || isBusy}
+            className="font-semibold text-[#0F5D9F] disabled:text-[#94A3B8]"
+          >
+            Verify
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function ReportSubmissionEvidencePage() {
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
-  const reportDraft = getReportFlowDraft();
+  const [reportDraft, setReportDraft] = useState(() => getReportFlowDraft());
   const [description, setDescription] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<EvidenceItem[]>([]);
@@ -316,6 +585,7 @@ function ReportSubmissionEvidencePage() {
   );
   const [isHashingEvidence, setIsHashingEvidence] = useState(false);
   const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
+  const [isPersistingReport, setIsPersistingReport] = useState(false);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [pendingConsentRequirement, setPendingConsentRequirement] =
     useState<ConsentRequirement | null>(null);
@@ -338,6 +608,16 @@ function ReportSubmissionEvidencePage() {
   const [verificationInputs, setVerificationInputs] = useState<
     Record<string, string>
   >({});
+
+  const mergeDraft = (
+    partialDraft: Parameters<typeof mergeReportFlowDraft>[0]
+  ) => {
+    const nextDraft = mergeReportFlowDraft(partialDraft);
+
+    setReportDraft(nextDraft);
+
+    return nextDraft;
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -432,6 +712,204 @@ function ReportSubmissionEvidencePage() {
     }
   }, [reportDraft?.summary]);
 
+  useEffect(() => {
+    const reportId = reportDraft?.reportId;
+
+    if (!reportId) {
+      return;
+    }
+
+    let isActive = true;
+
+    void (async () => {
+      try {
+        const [report, evidenceRecords] = await Promise.all([
+          getReport(reportId),
+          listReportEvidence(reportId),
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        const structuredFields = report.structuredFields ?? {};
+        const nextDescription =
+          report.originalNarrative ||
+          (typeof structuredFields.what === "string"
+            ? structuredFields.what
+            : "") ||
+          reportDraft.summary ||
+          "";
+        const nextSupportMessage =
+          typeof structuredFields.supportMessage === "string"
+            ? structuredFields.supportMessage
+            : "";
+
+        setDescription(
+          (currentDescription) => currentDescription || nextDescription
+        );
+        setSupportMessage(
+          (currentSupportMessage) => currentSupportMessage || nextSupportMessage
+        );
+
+        if (evidenceRecords.length) {
+          setAttachedFiles((currentItems) => {
+            const backendItems = evidenceRecords.map(evidenceRecordToItem);
+            const backendById = new Map(
+              backendItems
+                .filter((item) => Boolean(item.backendEvidenceId))
+                .map((item) => [item.backendEvidenceId, item])
+            );
+            const refreshedCurrentItems = currentItems.map((item) => {
+              const backendItem = item.backendEvidenceId
+                ? backendById.get(item.backendEvidenceId)
+                : undefined;
+
+              if (!backendItem) {
+                return item;
+              }
+
+              return {
+                ...backendItem,
+                id: item.id,
+                previewUrl: item.previewUrl,
+              };
+            });
+            const currentIds = new Set(
+              refreshedCurrentItems
+                .map((item) => item.backendEvidenceId)
+                .filter((item): item is string => Boolean(item))
+            );
+            const newBackendItems = backendItems.filter(
+              (item) => !currentIds.has(item.backendEvidenceId ?? "")
+            );
+
+            return [...refreshedCurrentItems, ...newBackendItems];
+          });
+          mergeDraft({
+            evidenceIds: [
+              ...new Set([
+                ...(reportDraft.evidenceIds ?? []),
+                ...evidenceRecords
+                  .map(resolveEvidenceId)
+                  .filter((item): item is string => Boolean(item)),
+              ]),
+            ],
+          });
+        }
+      } catch (error) {
+        if (isActive) {
+          setEvidenceError(
+            error instanceof Error
+              ? error.message
+              : "Saved evidence could not be loaded."
+          );
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [reportDraft?.reportId]);
+
+  const buildReportPayload = (
+    nextEvidenceItems = attachedFiles
+  ): ReportCreateInput => {
+    const activeEvidenceItems = nextEvidenceItems.filter(
+      (item) => item.status !== "deleted" && !item.deletedAt
+    );
+    const existingStructuredFields = reportDraft?.structuredFields ?? {};
+    const narrative =
+      description.trim() ||
+      reportDraft?.summary ||
+      supportMessage.trim() ||
+      "Evidence draft";
+
+    return {
+      language: "en",
+      jurisdiction: "NSW",
+      context: reportDraft?.title || "SafeSpeak incident report",
+      originalNarrative: narrative,
+      incidentType:
+        reportDraft?.incidentType ?? reportDraft?.incidentCategory ?? undefined,
+      structuredFields: {
+        ...existingStructuredFields,
+        what: narrative,
+        when: reportDraft?.date || (existingStructuredFields.when as string),
+        where:
+          reportDraft?.location || (existingStructuredFields.where as string),
+        supportMessage: supportMessage.trim() || undefined,
+        evidenceItems: activeEvidenceItems.map((item) => ({
+          evidenceId: item.backendEvidenceId,
+          name: item.name,
+          kind: item.kind,
+          mimeType: item.mimeType,
+          sizeBytes: item.sizeBytes,
+          sha256Hash:
+            item.sha256Hash === "hash-unavailable"
+              ? undefined
+              : item.sha256Hash,
+          status: item.backendStatus ?? item.status,
+          storageProvider: item.storageProvider,
+          uploadedAt: item.uploadedAt,
+        })),
+      },
+      status: "draft",
+    };
+  };
+
+  const persistReportDraftToBackend = async (
+    nextEvidenceItems = attachedFiles
+  ) => {
+    setIsPersistingReport(true);
+    setEvidenceError(null);
+
+    try {
+      const payload = buildReportPayload(nextEvidenceItems);
+      const savedReport = reportDraft?.reportId
+        ? await updateReport(reportDraft.reportId, payload)
+        : await createReport(payload);
+
+      const activeEvidenceIds = nextEvidenceItems
+        .map((item) => item.backendEvidenceId)
+        .filter((item): item is string => Boolean(item));
+
+      return mergeDraft({
+        reportId: savedReport._id,
+        title: reportDraft?.title || payload.context || "",
+        date: reportDraft?.date || "",
+        location: reportDraft?.location || "",
+        summary: payload.originalNarrative ?? "",
+        structuredFields: payload.structuredFields,
+        incidentType: savedReport.incidentType ?? reportDraft?.incidentType,
+        incidentCategory: reportDraft?.incidentCategory,
+        topic: reportDraft?.topic,
+        starterPrompt: reportDraft?.starterPrompt,
+        evidenceIds: [
+          ...new Set([
+            ...(reportDraft?.evidenceIds ?? []),
+            ...activeEvidenceIds,
+          ]),
+        ],
+      });
+    } catch (error) {
+      if (error instanceof ConsentRequiredError) {
+        setPendingConsentRequirement(error.requirement);
+        throw error;
+      }
+
+      setEvidenceError(
+        error instanceof Error
+          ? error.message
+          : "Report draft could not be saved."
+      );
+      throw error;
+    } finally {
+      setIsPersistingReport(false);
+    }
+  };
+
   const attachFiles = async (
     files: FileList | File[],
     options?: { forceCloudSync?: boolean }
@@ -451,11 +929,16 @@ function ReportSubmissionEvidencePage() {
       const allowCloudSync =
         options?.forceCloudSync || currentConsent.cloud_sync;
 
-      if (!allowCloudSync && reportDraft?.reportId && !options) {
+      if (!allowCloudSync && !options) {
         setPendingFiles(fileList);
         setPendingConsentRequirement(consentRequirements.cloudEvidence);
         return;
       }
+
+      const syncedReportDraft = allowCloudSync
+        ? await persistReportDraftToBackend()
+        : reportDraft;
+      const syncedReportId = syncedReportDraft?.reportId;
 
       const nextItems: EvidenceItem[] = await Promise.all(
         fileList.map(async (file) => {
@@ -468,17 +951,23 @@ function ReportSubmissionEvidencePage() {
             kind: inferEvidenceKind(file),
             sha256Hash: await computeSha256Hash(file),
             uploadedAt,
+            mimeType: file.type || "application/octet-stream",
+            sizeBytes: file.size,
+            previewUrl:
+              file.type.startsWith("image/") || file.type.startsWith("video/")
+                ? URL.createObjectURL(file)
+                : undefined,
             status: (allowCloudSync
               ? "synced"
               : "local-only") as EvidenceItem["status"],
           };
 
-          if (!allowCloudSync || !reportDraft?.reportId) {
+          if (!allowCloudSync || !syncedReportId) {
             return baseItem;
           }
 
           const upload = await requestEvidenceUploadUrl({
-            reportId: reportDraft.reportId,
+            reportId: syncedReportId,
             type: inferEvidenceKind(file),
             fileName: file.name,
             mimeType: file.type || "application/octet-stream",
@@ -530,16 +1019,19 @@ function ReportSubmissionEvidencePage() {
           )
         ),
       ]);
-      mergeReportFlowDraft({
+      mergeDraft({
         evidenceIds: [
           ...new Set([
-            ...(reportDraft?.evidenceIds ?? []),
+            ...(syncedReportDraft?.evidenceIds ?? []),
             ...nextItems
               .map((item) => item.backendEvidenceId)
               .filter((item): item is string => Boolean(item)),
           ]),
         ],
       });
+      if (allowCloudSync) {
+        await persistReportDraftToBackend([...attachedFiles, ...nextItems]);
+      }
       setPendingFiles([]);
       setPendingConsentRequirement(null);
     } catch (error) {
@@ -752,7 +1244,7 @@ function ReportSubmissionEvidencePage() {
     }
   };
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     if (typeof window === "undefined") {
       return;
     }
@@ -811,6 +1303,21 @@ function ReportSubmissionEvidencePage() {
       createAuditEntry("draft-saved", "Draft metadata saved locally."),
     ]);
     setRestoredDraftNotice(null);
+
+    try {
+      await persistReportDraftToBackend();
+    } catch {
+      // Local draft is already saved. Consent and API errors are surfaced by the helper.
+    }
+  };
+
+  const handleContinue = async () => {
+    try {
+      await persistReportDraftToBackend();
+      router.push("/dashboard?view=reportsubmissionreview");
+    } catch {
+      // Stay on this page so the consent card or API error can be handled.
+    }
   };
 
   const handleTranscribeEvidence = async (item: EvidenceItem) => {
@@ -907,10 +1414,17 @@ function ReportSubmissionEvidencePage() {
     window.URL.revokeObjectURL(objectUrl);
   };
 
-  const readyFileCount = Math.max(
-    3,
-    attachedFiles.filter((item) => item.status !== "deleted").length
+  const activeAttachedFiles = attachedFiles.filter(
+    (item) => item.status !== "deleted" && !item.deletedAt
   );
+  const primaryEvidenceItems = activeAttachedFiles.slice(0, 3);
+  const secondaryEvidenceItems = activeAttachedFiles.slice(3);
+  const readyFileCount = activeAttachedFiles.length;
+  const isEvidenceItemBusy = (item: EvidenceItem) =>
+    loadingEvidenceDetailId === item.id ||
+    verifyingEvidenceId === item.id ||
+    deletingEvidenceId === item.id ||
+    isTranscribingEvidenceId === item.id;
 
   return (
     <div className="px-2 pb-8 pt-2 sm:px-4 sm:pb-10 sm:pt-4">
@@ -988,98 +1502,34 @@ function ReportSubmissionEvidencePage() {
               </span>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-3">
-              <article className="group relative min-h-[232px] overflow-hidden rounded-[24px] bg-[#0f172a] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)]">
-                <div className="absolute inset-0 opacity-90 [background:linear-gradient(180deg,#7fb5dd_0%,#d8edf8_37%,#263d26_38%,#0e1724_45%,#30343b_100%)]" />
-                <div className="absolute inset-x-[43%] bottom-0 top-[46%] bg-[#2b3036]" />
-                <div className="absolute bottom-0 left-[49.5%] top-[48%] w-1 bg-[#f7d552]" />
-                <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.6)_0%,rgba(0,0,0,0)_50%,rgba(0,0,0,0)_100%)]" />
-                <button
-                  type="button"
-                  className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md"
-                  aria-label="Remove road scene"
-                >
-                  <IconX size={14} />
-                </button>
-                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-3 text-white">
-                  <span className="inline-flex min-w-0 items-center gap-2">
-                    <IconPhoto size={14} className="opacity-80" />
-                    <span className="truncate text-xs font-medium opacity-90">
-                      road_scene_01.jpg
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-xs opacity-70">2.4 MB</span>
-                </div>
-              </article>
-
-              <article className="relative min-h-[232px] overflow-hidden rounded-[24px] bg-[#111827] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)]">
-                <div className="absolute inset-0 opacity-80 blur-[1px] [background:linear-gradient(90deg,#17261b_0%,#3f5935_26%,#0f2416_50%,#65755c_72%,#1a2b1d_100%)]" />
-                <div className="absolute inset-0 grid place-items-center">
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/20 text-white backdrop-blur-sm">
-                    <IconPlayerPlayFilled size={22} />
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md"
-                  aria-label="Remove video"
-                >
-                  <IconX size={14} />
-                </button>
-                <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-2 py-1 text-xs font-medium text-white">
-                  0:45
-                </span>
-              </article>
-
-              <article className="relative grid min-h-[232px] place-items-center rounded-[24px] border border-[#E2E8F0] bg-white p-6 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                <button
-                  type="button"
-                  className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center text-[#94A3B8]"
-                  aria-label="Remove document"
-                >
-                  <IconX size={18} />
-                </button>
-                <div>
-                  <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-[16px] bg-[#FFF7ED] text-[#F97316]">
-                    <IconFileTypePdf size={28} />
-                  </span>
-                  <p className="mt-3 text-sm font-medium text-[#1E293B]">
-                    evidence_doc.pdf
-                  </p>
-                  <p className="mt-1 text-xs text-[#94A3B8]">1.2 MB</p>
-                </div>
-              </article>
-            </div>
+            {primaryEvidenceItems.length ? (
+              <div className="grid gap-6 lg:grid-cols-3">
+                {primaryEvidenceItems.map((item) => (
+                  <EvidenceVaultCard
+                    key={item.id}
+                    item={item}
+                    onRemove={handleDeleteEvidence}
+                    onRefresh={refreshEvidenceDetails}
+                    onVerify={handleVerifyEvidenceHash}
+                    onTranscribe={handleTranscribeEvidence}
+                    isBusy={isEvidenceItemBusy(item)}
+                  />
+                ))}
+              </div>
+            ) : null}
 
             <div className="grid gap-6 lg:grid-cols-2">
-              <article className="relative flex min-h-[232px] flex-col justify-center rounded-[24px] border-2 border-dashed border-[#FDBA74] bg-white px-4 py-10 shadow-[0_1px_2px_rgba(0,0,0,0.05)] sm:px-8">
-                <button
-                  type="button"
-                  className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center text-[#94A3B8]"
-                  aria-label="Cancel audio upload"
-                >
-                  <IconX size={18} />
-                </button>
-                <div className="mx-auto w-full max-w-[276px]">
-                  <div className="flex items-center gap-3">
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#EA580C]">
-                      <IconMicrophone size={18} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-[#1E293B]">
-                        audio_record_01.mp3
-                      </span>
-                      <span className="block text-xs font-medium text-[#F97316]">
-                        Uploading...
-                      </span>
-                    </span>
-                  </div>
-                  <div className="mt-5 h-2 rounded-full bg-[#F1F5F9]">
-                    <div className="h-2 w-1/2 rounded-full bg-[#FF8F00]" />
-                  </div>
-                  <p className="mt-2 text-right text-xs text-[#64748B]">50%</p>
-                </div>
-              </article>
+              {secondaryEvidenceItems.map((item) => (
+                <EvidenceVaultCard
+                  key={item.id}
+                  item={item}
+                  onRemove={handleDeleteEvidence}
+                  onRefresh={refreshEvidenceDetails}
+                  onVerify={handleVerifyEvidenceHash}
+                  onTranscribe={handleTranscribeEvidence}
+                  isBusy={isEvidenceItemBusy(item)}
+                />
+              ))}
 
               <article
                 role="button"
@@ -1134,6 +1584,10 @@ function ReportSubmissionEvidencePage() {
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  void saveDraft();
+                }}
+                disabled={isPersistingReport}
                 className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#FF8F00] text-white shadow-[0_0_15px_rgba(251,140,0,0.3)]"
                 aria-label="Send support message"
               >
@@ -1146,31 +1600,29 @@ function ReportSubmissionEvidencePage() {
             <div className="mx-auto flex max-w-[720px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="button"
-                onClick={saveDraft}
+                onClick={() => {
+                  void saveDraft();
+                }}
+                disabled={isPersistingReport}
                 className="inline-flex h-9 items-center justify-center rounded-[8px] px-4 text-sm font-medium text-[#64748B] transition hover:bg-[#F8FAFC]"
               >
-                Save as Draft
+                {isPersistingReport ? "Saving..." : "Save as Draft"}
               </button>
               {draftSavedAt ? (
                 <span className="text-center text-xs text-[#94A3B8]">
                   Draft saved at {draftSavedAt}
                 </span>
               ) : null}
-              <Link
-                href="/dashboard?view=reportsubmissionreview"
-                onClick={() =>
-                  mergeReportFlowDraft({
-                    summary: description || reportDraft?.summary || "",
-                    structuredFields: {
-                      ...(reportDraft?.structuredFields ?? {}),
-                      what: description || reportDraft?.summary || "",
-                    },
-                  })
-                }
+              <button
+                type="button"
+                onClick={() => {
+                  void handleContinue();
+                }}
+                disabled={isPersistingReport || isUploadingEvidence}
                 className="inline-flex h-12 min-w-[167px] items-center justify-center rounded-[16px] bg-[#FF8F00] px-12 text-base font-semibold text-white shadow-[0_10px_15px_-3px_rgba(249,115,22,0.3),0_4px_6px_-4px_rgba(249,115,22,0.3)]"
               >
-                Continue
-              </Link>
+                {isPersistingReport ? "Saving..." : "Continue"}
+              </button>
             </div>
           </footer>
 
@@ -1189,25 +1641,24 @@ function ReportSubmissionEvidencePage() {
                   setIsGrantingConsent(true);
 
                   try {
-                    if (requirement === consentRequirements.cloudEvidence) {
-                      await grantConsent(
-                        { cloud_sync: true },
-                        requirement.source
-                      );
+                    await grantConsent(
+                      getConsentGrantFlags(requirement),
+                      requirement.source
+                    );
+
+                    if (pendingFiles.length) {
                       await attachFiles(pendingFiles, {
                         forceCloudSync: true,
                       });
+                    } else if (pendingTranscriptionItem) {
+                      await handleTranscribeEvidence(pendingTranscriptionItem);
                     } else {
-                      await grantConsent(
-                        { transcribe_audio: true },
-                        requirement.source
-                      );
-                      if (pendingTranscriptionItem) {
-                        await handleTranscribeEvidence(
-                          pendingTranscriptionItem
-                        );
-                      }
+                      await persistReportDraftToBackend();
                     }
+
+                    setPendingFiles([]);
+                    setPendingTranscriptionItem(null);
+                    setPendingConsentRequirement(null);
                   } catch (error) {
                     setEvidenceError(
                       error instanceof Error

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -50,6 +50,53 @@ import {
 import { interFont } from "./dashboard-shared";
 
 const SCAM_SHIELD_MEDIA_ASSET_CATEGORY = "Cybersecurity";
+const SCAM_SHIELD_EVIDENCE_ACCEPT =
+  "image/*,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const SCAM_SHIELD_ALLOWED_EVIDENCE_EXTENSIONS = new Set([
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".gif",
+  ".pdf",
+  ".doc",
+  ".docx",
+]);
+const SCAM_SHIELD_ALLOWED_EVIDENCE_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+
+function getEvidenceFileKey(file: File): string {
+  return `${file.name}-${file.size}-${file.lastModified}`;
+}
+
+function getEvidenceFileExtension(fileName: string): string {
+  return fileName.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
+}
+
+function isSupportedScamShieldEvidenceFile(file: File): boolean {
+  return (
+    file.type.startsWith("image/") ||
+    SCAM_SHIELD_ALLOWED_EVIDENCE_MIME_TYPES.has(file.type) ||
+    SCAM_SHIELD_ALLOWED_EVIDENCE_EXTENSIONS.has(
+      getEvidenceFileExtension(file.name)
+    )
+  );
+}
+
+function formatEvidenceFileSize(size: number): string {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${Math.round(size / 102.4) / 10} KB`;
+  }
+
+  return `${Math.round((size / 1024 / 1024) * 10) / 10} MB`;
+}
 
 function ScamShieldIntakePage({
   initialTopic,
@@ -59,23 +106,67 @@ function ScamShieldIntakePage({
   const { t } = useTranslation();
   const router = useRouter();
   const existingState = getScamShieldFlowState();
+  const evidenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [messageContent, setMessageContent] = useState(existingState?.inputText ?? "");
   const [inputMode, setInputMode] = useState<
     "text" | "url" | "email" | "screenshot"
   >(existingState?.inputMode ?? "text");
   const [intakeError, setIntakeError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [selectedScreenshot, setSelectedScreenshot] = useState<File | null>(null);
-  const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState<string | null>(null);
+  const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState<File[]>([]);
+  const [evidencePreviewUrls, setEvidencePreviewUrls] = useState<Record<string, string>>({});
   const [pendingConsentRequirement, setPendingConsentRequirement] =
     useState<ConsentRequirement | null>(null);
   const [isGrantingConsent, setIsGrantingConsent] = useState(false);
+  const readyItemCount =
+    selectedEvidenceFiles.length + (messageContent.trim() ? 1 : 0);
+
+  const attachEvidenceFiles = (files: FileList | File[]) => {
+    const incomingFiles = Array.from(files);
+
+    if (!incomingFiles.length) {
+      return;
+    }
+
+    const supportedFiles = incomingFiles.filter(isSupportedScamShieldEvidenceFile);
+    const unsupportedFiles = incomingFiles.filter(
+      (file) => !isSupportedScamShieldEvidenceFile(file)
+    );
+
+    if (unsupportedFiles.length) {
+      setIntakeError(
+        `Unsupported file type: ${unsupportedFiles.map((file) => file.name).join(", ")}. Upload images, screenshots, PDFs, or Word documents.`
+      );
+    } else {
+      setIntakeError(null);
+    }
+
+    if (!supportedFiles.length) {
+      return;
+    }
+
+    setSelectedEvidenceFiles((currentFiles) => {
+      const existingKeys = new Set(currentFiles.map(getEvidenceFileKey));
+      const nextFiles = supportedFiles.filter(
+        (file) => !existingKeys.has(getEvidenceFileKey(file))
+      );
+
+      return [...currentFiles, ...nextFiles];
+    });
+    setInputMode("screenshot");
+  };
+
+  const removeEvidenceFile = (fileKey: string) => {
+    setSelectedEvidenceFiles((currentFiles) =>
+      currentFiles.filter((file) => getEvidenceFileKey(file) !== fileKey)
+    );
+  };
 
   const runAnalysis = async () => {
     const trimmedInput = messageContent.trim();
 
-    if (inputMode === "screenshot" && !selectedScreenshot && !trimmedInput) {
-      setIntakeError("Select a screenshot or paste the visible message text before analysis.");
+    if (inputMode === "screenshot" && !selectedEvidenceFiles.length && !trimmedInput) {
+      setIntakeError("Select evidence files or paste the visible message text before analysis.");
       return;
     }
 
@@ -96,7 +187,7 @@ function ScamShieldIntakePage({
             : inputMode === "screenshot"
               ? await analyzeScamScreenshot({
                   imageText: trimmedInput || undefined,
-                  imageFile: selectedScreenshot ?? undefined,
+                  evidenceFiles: selectedEvidenceFiles,
                 })
               : await analyzeScamText({ text: trimmedInput, language: "en" });
 
@@ -121,18 +212,19 @@ function ScamShieldIntakePage({
   };
 
   useEffect(() => {
-    if (!selectedScreenshot) {
-      setScreenshotPreviewUrl(null);
-      return;
-    }
+    const previewEntries = selectedEvidenceFiles
+      .filter((file) => file.type.startsWith("image/"))
+      .map((file) => [getEvidenceFileKey(file), URL.createObjectURL(file)] as const);
+    const nextPreviewUrls = Object.fromEntries(previewEntries);
 
-    const nextPreviewUrl = URL.createObjectURL(selectedScreenshot);
-    setScreenshotPreviewUrl(nextPreviewUrl);
+    setEvidencePreviewUrls(nextPreviewUrls);
 
     return () => {
-      URL.revokeObjectURL(nextPreviewUrl);
+      previewEntries.forEach(([, previewUrl]) => {
+        URL.revokeObjectURL(previewUrl);
+      });
     };
-  }, [selectedScreenshot]);
+  }, [selectedEvidenceFiles]);
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -172,7 +264,7 @@ function ScamShieldIntakePage({
                   ["text", "Paste text"],
                   ["url", "Check URL"],
                   ["email", "Analyze email"],
-                  ["screenshot", "Screenshot upload"],
+                  ["screenshot", "File upload"],
                 ].map(([mode, label]) => (
                   <button
                     key={mode}
@@ -195,7 +287,7 @@ function ScamShieldIntakePage({
                 className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#6f88a8]"
               >
                 {inputMode === "screenshot"
-                  ? "Visible text or OCR correction"
+                  ? "Visible text or file text correction"
                   : t("dashboard.scamShield.messageContent")}
               </label>
               <div className="relative mt-2">
@@ -210,7 +302,7 @@ function ScamShieldIntakePage({
                       : inputMode === "email"
                         ? "Paste the email body and any sender details you want checked."
                         : inputMode === "screenshot"
-                          ? "Optional: paste any visible text if the screenshot is blurry or OCR is unavailable."
+                          ? "Optional: paste visible text if OCR or document extraction misses anything."
                           : t("dashboard.scamShield.messageContentPlaceholder")
                   }
                   className="min-h-[340px] w-full resize-none rounded-[11px] border border-[#dbe4ef] bg-[#f8fbff] px-3 py-3 text-xs leading-[1.6] text-[#1f2a3a] outline-none placeholder:text-[#9aabc0]"
@@ -232,7 +324,16 @@ function ScamShieldIntakePage({
                   {intakeError}
                 </div>
               ) : null}
-              <article className="rounded-[14px] border border-[#e2eaf4] bg-white p-4 text-center">
+              <article
+                className="rounded-[14px] border border-[#e2eaf4] bg-white p-4 text-center"
+                onDragOver={(event) => {
+                  event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  attachEvidenceFiles(event.dataTransfer.files);
+                }}
+              >
                 <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#ecf4ff] text-[#0f5d9f]">
                   <IconPhoto size={20} />
                 </span>
@@ -246,31 +347,29 @@ function ScamShieldIntakePage({
                   <IconFolderFilled size={12} />
                   {t("dashboard.scamShield.selectFiles")}
                   <input
+                    ref={evidenceFileInputRef}
                     type="file"
-                    accept="image/*"
+                    multiple
+                    accept={SCAM_SHIELD_EVIDENCE_ACCEPT}
                     className="sr-only"
                     onChange={(event) => {
-                      const file = event.target.files?.[0] ?? null;
-                      setSelectedScreenshot(file);
-                      setInputMode("screenshot");
+                      if (event.target.files) {
+                        attachEvidenceFiles(event.target.files);
+                      }
+
+                      event.target.value = "";
                     }}
                   />
                 </label>
-                {selectedScreenshot ? (
+                {selectedEvidenceFiles.length ? (
                   <div className="mt-3 rounded-[10px] border border-[#dce5f1] bg-[#f8fbff] px-3 py-2 text-left">
                     <p className="truncate text-[11px] font-bold text-[#1f2a3a]">
-                      {selectedScreenshot.name}
+                      {selectedEvidenceFiles.length} evidence file
+                      {selectedEvidenceFiles.length === 1 ? "" : "s"} attached
                     </p>
                     <p className="mt-0.5 text-[9px] text-[#7f90a6]">
-                      OCR and analysis run only after you allow AI processing.
+                      Images use OCR. PDFs and Word documents are parsed for scam text.
                     </p>
-                    {screenshotPreviewUrl ? (
-                      <img
-                        src={screenshotPreviewUrl}
-                        alt="Selected screenshot preview"
-                        className="mt-2 max-h-40 w-full rounded-[8px] border border-[#dce5f1] object-contain"
-                      />
-                    ) : null}
                   </div>
                 ) : null}
               </article>
@@ -279,27 +378,51 @@ function ScamShieldIntakePage({
                 <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7f90a6]">
                   {t("dashboard.scamShield.attachedEvidence")}
                 </p>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {selectedScreenshot ? (
-                  <article className="relative rounded-[10px] border border-[#e2eaf4] bg-[#f2f5f9] p-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedScreenshot(null)}
-                      className="absolute -right-1.5 -top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#f05151] text-white"
-                    >
-                      <IconX size={9} />
-                    </button>
-                    {screenshotPreviewUrl ? (
-                      <img
-                        src={screenshotPreviewUrl}
-                        alt=""
-                        className="mx-auto h-[76px] w-full rounded-[7px] object-cover"
-                      />
-                    ) : null}
-                  </article>
-                  ) : null}
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {selectedEvidenceFiles.map((file) => {
+                    const fileKey = getEvidenceFileKey(file);
+                    const previewUrl = evidencePreviewUrls[fileKey];
+                    const extension = getEvidenceFileExtension(file.name).replace(".", "").toUpperCase();
 
-                  <article className="grid min-h-[100px] place-items-center rounded-[10px] border border-dashed border-[#c4d2e6] bg-[#f8fbff] text-center">
+                    return (
+                      <article
+                        key={fileKey}
+                        className="relative min-h-[100px] rounded-[10px] border border-[#e2eaf4] bg-[#f2f5f9] p-2"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => removeEvidenceFile(fileKey)}
+                          className="absolute -right-1.5 -top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#f05151] text-white"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <IconX size={9} />
+                        </button>
+                        {previewUrl ? (
+                          <img
+                            src={previewUrl}
+                            alt=""
+                            className="mx-auto h-[58px] w-full rounded-[7px] object-cover"
+                          />
+                        ) : (
+                          <div className="grid h-[58px] place-items-center rounded-[7px] bg-white text-[#0f5d9f]">
+                            <IconFolderFilled size={18} />
+                          </div>
+                        )}
+                        <p className="mt-1 truncate text-[9px] font-bold text-[#1f2a3a]">
+                          {file.name}
+                        </p>
+                        <p className="text-[8px] font-semibold text-[#8ea2bf]">
+                          {extension || "FILE"} - {formatEvidenceFileSize(file.size)}
+                        </p>
+                      </article>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => evidenceFileInputRef.current?.click()}
+                    className="grid min-h-[100px] place-items-center rounded-[10px] border border-dashed border-[#c4d2e6] bg-[#f8fbff] text-center"
+                  >
                     <div>
                       <span className="mx-auto inline-flex h-5 w-5 items-center justify-center text-[#8ea2bf]">
                         <IconPlus size={14} />
@@ -308,7 +431,7 @@ function ScamShieldIntakePage({
                         {t("dashboard.scamShield.addMore")}
                       </p>
                     </div>
-                  </article>
+                  </button>
                 </div>
               </article>
             </aside>
@@ -350,7 +473,9 @@ function ScamShieldIntakePage({
 
           <div className="flex flex-col gap-2 border-t border-[#e2eaf5] bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
             <p className="text-[10px] font-medium text-[#6c7f96]">
-              {t("dashboard.scamShield.readyForAnalysis")}
+              {readyItemCount
+                ? `${readyItemCount} item${readyItemCount === 1 ? "" : "s"} ready for analysis`
+                : "Add text or evidence files to start analysis"}
             </p>
             <button
               type="button"

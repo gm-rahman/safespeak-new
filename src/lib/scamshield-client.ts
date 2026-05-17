@@ -79,18 +79,26 @@ export async function analyzeScamEmail(input: {
 export async function analyzeScamScreenshot(input: {
   imageText?: string;
   imageFile?: File;
+  evidenceFiles?: File[];
   evidenceId?: string;
   reportId?: string;
   metadata?: Record<string, unknown>;
 }): Promise<ScamAnalysisRecord> {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.scamAnalysis, headers);
+  const files = input.evidenceFiles?.length
+    ? input.evidenceFiles
+    : input.imageFile
+      ? [input.imageFile]
+      : [];
   const body =
-    typeof File !== "undefined" && input.imageFile instanceof File
+    typeof File !== "undefined" && files.length > 0
       ? (() => {
           const formData = new FormData();
 
-          formData.set("image", input.imageFile as File, input.imageFile.name);
+          files.forEach((file) => {
+            formData.append("files", file, file.name);
+          });
           if (input.imageText) {
             formData.set("imageText", input.imageText);
           }
@@ -104,9 +112,11 @@ export async function analyzeScamScreenshot(input: {
             "metadata",
             JSON.stringify({
               ...input.metadata,
-              fileName: input.imageFile?.name,
-              mimeType: input.imageFile?.type,
-              size: input.imageFile?.size,
+              files: files.map((file) => ({
+                fileName: file.name,
+                mimeType: file.type,
+                size: file.size,
+              })),
             })
           );
 

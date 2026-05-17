@@ -25,6 +25,7 @@ import { ConsentRequiredCard } from "@/components/consent/consent-required-card"
 import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
 import { useConsentGate } from "@/hooks/use-consent-gate";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import { getAuthSession, getCurrentUser } from "@/lib/auth";
 import { consentRequirements } from "@/lib/consent";
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 import {
@@ -108,6 +109,16 @@ function getPreferredRecordingMimeType(): string | undefined {
   );
 }
 
+function getFirstName(fullName?: string | null): string | null {
+  const trimmedName = fullName?.trim();
+
+  if (!trimmedName) {
+    return null;
+  }
+
+  return trimmedName.split(/\s+/)[0] ?? null;
+}
+
 export function AssistantInteraction({
   isRecording = false,
   headlineClassName,
@@ -128,6 +139,9 @@ export function AssistantInteraction({
   const [liveTranscript, setLiveTranscript] = useState("");
   const [isMetadataEnabled, setIsMetadataEnabled] = useState(false);
   const [isMetadataCapturing, setIsMetadataCapturing] = useState(false);
+  const [assistantFirstName, setAssistantFirstName] = useState<string>(
+    t("dashboard.assistant.userName")
+  );
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [reportMetadata, setReportMetadata] =
     useState<CapturedReportMetadata | null>(null);
@@ -161,6 +175,33 @@ export function AssistantInteraction({
   }, [i18n.language, i18n.resolvedLanguage]);
   const livePreviewLanguage =
     transcriptionLanguage === "es" ? "es-ES" : "en-US";
+
+  useEffect(() => {
+    let isActive = true;
+    const sessionFirstName = getFirstName(getAuthSession()?.user.fullName);
+
+    if (sessionFirstName) {
+      setAssistantFirstName(sessionFirstName);
+    }
+
+    void getCurrentUser()
+      .then((user) => {
+        const apiFirstName = getFirstName(user.fullName);
+
+        if (isActive && apiFirstName) {
+          setAssistantFirstName(apiFirstName);
+        }
+      })
+      .catch(() => {
+        if (isActive && !sessionFirstName) {
+          setAssistantFirstName(t("dashboard.assistant.userName"));
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [t]);
 
   const cleanupRecording = useCallback(() => {
     recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -530,7 +571,7 @@ export function AssistantInteraction({
       <p className={headlineClassName}>
         {t("dashboard.assistant.greetingPrefix")}{" "}
         <span className="text-[#3f7de0]">
-          {t("dashboard.assistant.userName")}
+          {assistantFirstName}
         </span>
         {t("dashboard.assistant.greetingSuffix")}
       </p>

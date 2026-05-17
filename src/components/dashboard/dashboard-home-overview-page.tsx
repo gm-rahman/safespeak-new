@@ -15,8 +15,8 @@ import topMask from "@/assets/top-mask.svg?url";
 import topRight from "@/assets/top-right.svg?url";
 import { getDashboardCardEntryHref } from "@/lib/dashboard-card-flows";
 
-import { interFont, localIntelligenceMapSrc } from "./dashboard-shared";
 import AssistantSphereAnimated from "./AssistantSphereAnimated";
+import { interFont, localIntelligenceMapSrc } from "./dashboard-shared";
 import SMDasboardHome from "./sm-dashboard-home";
 
 function HomeDashboardPage() {
@@ -231,11 +231,17 @@ function HomeDashboardPage() {
               {[
                 {
                   label: "Report New Incident",
-                  href: { pathname: "/dashboard", query: { view: "reportsubmissiondetails" } },
+                  href: {
+                    pathname: "/dashboard",
+                    query: { view: "reportsubmissiondetails" },
+                  },
                 },
                 {
                   label: "Check for Scams",
-                  href: { pathname: "/dashboard", query: { view: "scamshieldintake" } },
+                  href: {
+                    pathname: "/dashboard",
+                    query: { view: "scamshieldintake" },
+                  },
                 },
                 {
                   label: "Find Support",
@@ -243,7 +249,10 @@ function HomeDashboardPage() {
                 },
                 {
                   label: "Learn Something New",
-                  href: { pathname: "/dashboard", query: { view: "resources" } },
+                  href: {
+                    pathname: "/dashboard",
+                    query: { view: "resources" },
+                  },
                 },
               ].map((action) => (
                 <Link
@@ -263,15 +272,21 @@ function HomeDashboardPage() {
             </p>
             <div className="mt-4 space-y-3">
               <div className="rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] px-4 py-3">
-                <p className="text-sm font-bold text-[#1f2a3a]">Activity summary</p>
+                <p className="text-sm font-bold text-[#1f2a3a]">
+                  Activity summary
+                </p>
                 <p className="mt-1 text-[12px] leading-[1.6] text-[#60728a]">
-                  Recent report and support activity appears here when backend data is available. No fake counts are shown.
+                  Recent report and support activity appears here when backend
+                  data is available. No fake counts are shown.
                 </p>
               </div>
               <div className="rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] px-4 py-3">
-                <p className="text-sm font-bold text-[#1f2a3a]">Recommendations</p>
+                <p className="text-sm font-bold text-[#1f2a3a]">
+                  Recommendations
+                </p>
                 <p className="mt-1 text-[12px] leading-[1.6] text-[#60728a]">
-                  Start with a safe report, browse support, or use Learn & Resources if you want information without saving anything yet.
+                  Start with a safe report, browse support, or use Learn &
+                  Resources if you want information without saving anything yet.
                 </p>
               </div>
             </div>
@@ -280,7 +295,7 @@ function HomeDashboardPage() {
 
         <Link
           href={generalAssistantHref}
-          className="absolute left-1/2 z-20 hidden -translate-x-1/2 lg:top-[clamp(176px,18vw,195px)] lg:block lg:h-[clamp(184px,19vw,236px)] lg:w-[clamp(184px,19vw,220px)] xl:top-[245px] xl:h-[248px] xl:w-[248px] 2xl:top-[279px] 2xl:h-[270px] 2xl:w-[270px]"
+          className="absolute left-1/2 z-20 hidden -translate-x-1/2 overflow-hidden rounded-full [clip-path:circle(50%_at_50%_50%)] lg:top-[clamp(176px,18vw,195px)] lg:block lg:h-[clamp(184px,19vw,236px)] lg:w-[clamp(184px,19vw,220px)] xl:top-[245px] xl:h-[248px] xl:w-[248px] 2xl:top-[279px] 2xl:h-[270px] 2xl:w-[270px]"
           aria-label="Talk with SafeSpeak"
         >
           <AssistantSphereAnimated
