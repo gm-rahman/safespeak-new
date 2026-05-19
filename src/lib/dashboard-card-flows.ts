@@ -362,6 +362,18 @@ export function getDashboardCardEntryHref(id: DashboardCardFlowId): UrlObject {
   };
 }
 
+export function getDashboardAssistantEntryHref(
+  id: DashboardCardFlowId
+): UrlObject {
+  return {
+    pathname: "/dashboard",
+    query: {
+      view: "assistant",
+      topic: id,
+    },
+  };
+}
+
 export function getDashboardActionHref(
   flowId: DashboardCardFlowId,
   actionId: DashboardFlowActionId

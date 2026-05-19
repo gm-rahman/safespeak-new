@@ -6,13 +6,18 @@ import bottomRight from "@/assets/bottomRightSM.svg?url";
 import sphereAdv from "@/assets/sphere-adv.svg?url";
 import topLeftSM from "@/assets/topLeftSM.svg?url";
 import topRightSM from "@/assets/topRightSM.svg?url";
-import { getDashboardCardEntryHref } from "@/lib/dashboard-card-flows";
+import {
+  getDashboardAssistantEntryHref,
+  getDashboardCardEntryHref,
+} from "@/lib/dashboard-card-flows";
 
 function SMDasboardHome() {
-  const domesticViolenceHref = getDashboardCardEntryHref("domestic_violence");
-  const racialAbuseHref = getDashboardCardEntryHref("racial_abuse");
-  const cyberScamHref = getDashboardCardEntryHref("cyber_scam");
-  const migrantChallengesHref = getDashboardCardEntryHref("migrant_challenges");
+  const domesticViolenceHref =
+    getDashboardAssistantEntryHref("domestic_violence");
+  const racialAbuseHref = getDashboardAssistantEntryHref("racial_abuse");
+  const cyberScamHref = getDashboardAssistantEntryHref("cyber_scam");
+  const migrantChallengesHref =
+    getDashboardAssistantEntryHref("migrant_challenges");
   const generalAssistantHref = getDashboardCardEntryHref("general_assistant");
 
   return (
@@ -47,7 +52,7 @@ function SMDasboardHome() {
         <Link
           href={cyberScamHref}
           className="relative aspect-[172/230] overflow-visible"
-          aria-label="Open Cyber Scam intake"
+          aria-label="Open Cyber Scam assistant topic"
         >
           <Image
             src={bottomLeft}

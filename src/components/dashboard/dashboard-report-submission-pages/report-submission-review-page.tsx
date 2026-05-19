@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   IconAlertCircle,
@@ -18,25 +18,17 @@ import {
   IconPlus,
 } from "@tabler/icons-react";
 
-import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { SourceBackedQaPanel } from "@/components/dashboard/source-backed-qa-panel";
-import { useConsentGate } from "@/hooks/use-consent-gate";
+import { getReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
 import {
-  consentRequirements,
-  type ConsentFlag,
-  type ConsentRequirement,
-} from "@/lib/consent";
-import {
-  getReportDestinations,
-  getReport,
   type ReportDestinationPreview,
   type ReportSubmissionPayloadPreview,
+  getReport,
+  getReportDestinations,
   getReportStatus,
   getReportTimeline,
   previewReportSubmissions,
-  submitReportToDestination,
 } from "@/lib/reports-client";
-import { getReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
 
 type TimelineEntry = {
   id: string;
@@ -97,6 +89,8 @@ const manualEntryTypes: Array<TimelineEntry["chip"]> = [
   "When",
 ];
 
+const reportSubmissionSuccessHref = "/dashboard?view=reportsubmissionsuccess";
+
 const timelineFieldConfig = [
   { key: "who", chip: "Who" },
   { key: "what", chip: "What" },
@@ -154,7 +148,8 @@ const buildStructuredTimelineEntries = (
   timelineFieldConfig.map((field) => {
     const backendValue = backendFields[field.key];
     const localValue = localFields[field.key];
-    const useLocalValue = !hasTimelineValue(backendValue) && hasTimelineValue(localValue);
+    const useLocalValue =
+      !hasTimelineValue(backendValue) && hasTimelineValue(localValue);
 
     return {
       id: field.key,
@@ -194,54 +189,10 @@ const buildStatusHistoryEntries = (
 const stringifyPreviewPayload = (payload: Record<string, unknown>): string =>
   JSON.stringify(payload, null, 2);
 
-const knownConsentFlags = new Set<ConsentFlag>([
-  "store_local",
-  "cloud_sync",
-  "share_with_agencies",
-  "use_anonymised_analytics",
-  "process_with_ai",
-  "transcribe_audio",
-  "translate_content",
-  "retain_evidence",
-  "warm_referral",
-]);
-
-const isKnownConsentFlag = (flag: string): flag is ConsentFlag =>
-  knownConsentFlags.has(flag as ConsentFlag);
-
 const formatConsentFlag = (flag: string): string => flag.replace(/_/g, " ");
 
 const formatConsentFlags = (flags: string[]): string =>
   flags.map(formatConsentFlag).join(", ");
-
-const uniqueValues = (values: string[]): string[] => Array.from(new Set(values));
-
-const buildDestinationConsentRequirement = (
-  flags: string[],
-  destinationNames: string[]
-): ConsentRequirement => {
-  const knownFlags = uniqueValues(flags).filter(isKnownConsentFlag);
-  const requirementFlags = knownFlags.length
-    ? knownFlags
-    : consentRequirements.reportDestinationSubmit.flags;
-  const grantFlags = knownFlags.length
-    ? knownFlags.reduce<Partial<Record<ConsentFlag, boolean>>>(
-        (result, flag) => {
-          result[flag] = true;
-          return result;
-        },
-        {}
-      )
-    : consentRequirements.reportDestinationSubmit.grantFlags;
-
-  return {
-    ...consentRequirements.reportDestinationSubmit,
-    description: `SafeSpeak needs your permission before sharing prepared information with ${destinationNames.join(", ")}. Calls and emails only happen if you choose them.`,
-    flags: requirementFlags,
-    grantFlags,
-    allowLabel: "Allow sharing and continue",
-  };
-};
 
 const toTelHref = (phone: string): string => {
   const normalized = phone.replace(/[^\d+]/g, "");
@@ -249,45 +200,52 @@ const toTelHref = (phone: string): string => {
 };
 
 const toMailHref = (email: string, destinationName: string): string => {
-  const subject = encodeURIComponent(`SafeSpeak contact request for ${destinationName}`);
+  const subject = encodeURIComponent(
+    `SafeSpeak contact request for ${destinationName}`
+  );
   return `mailto:${email}?subject=${subject}`;
 };
 
 function ReportSubmissionReviewPage() {
   const router = useRouter();
   const reportDraft = useMemo(() => getReportFlowDraft(), []);
-  const {
-    pendingConsentRequirement,
-    isGrantingConsent,
-    captureConsentError,
-    clearPendingConsent,
-    grantPendingConsent,
-    setPendingConsentRequirement,
-  } = useConsentGate();
   const [timelineEntries, setTimelineEntries] = useState(
     initialTimelineEntries
   );
   const [reportStatus, setReportStatus] = useState<string>("draft");
-  const [reportRef, setReportRef] = useState<string | null>(reportDraft?.reportId ?? null);
+  const [reportRef, setReportRef] = useState<string | null>(
+    reportDraft?.reportId ?? null
+  );
   const [reportLanguage, setReportLanguage] = useState("en");
   const [reportJurisdiction, setReportJurisdiction] = useState("NSW");
-  const [destinations, setDestinations] = useState<ReportDestinationPreview[]>([]);
-  const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(
-    reportDraft?.selectedDestinationId ?? null
+  const [destinations, setDestinations] = useState<ReportDestinationPreview[]>(
+    []
   );
-  const [selectedDestinationIds, setSelectedDestinationIds] = useState<string[]>(
-    reportDraft?.selectedDestinationId ? [reportDraft.selectedDestinationId] : []
+  const [selectedDestinationId, setSelectedDestinationId] = useState<
+    string | null
+  >(reportDraft?.selectedDestinationId ?? null);
+  const [selectedDestinationIds, setSelectedDestinationIds] = useState<
+    string[]
+  >(
+    reportDraft?.selectedDestinationId
+      ? [reportDraft.selectedDestinationId]
+      : []
   );
-  const [submissionPreviews, setSubmissionPreviews] = useState<ReportSubmissionPayloadPreview[]>([]);
+  const [submissionPreviews, setSubmissionPreviews] = useState<
+    ReportSubmissionPayloadPreview[]
+  >([]);
   const [anonymityMode, setAnonymityMode] = useState<
     "identified" | "anonymous" | "pseudonymous"
   >("identified");
   const [submissionNotes, setSubmissionNotes] = useState("");
-  const [statusHistoryEntries, setStatusHistoryEntries] = useState<StatusHistoryEntry[]>([]);
-  const [hasLocalOnlyTimelineContent, setHasLocalOnlyTimelineContent] = useState(false);
+  const [statusHistoryEntries, setStatusHistoryEntries] = useState<
+    StatusHistoryEntry[]
+  >([]);
+  const [hasLocalOnlyTimelineContent, setHasLocalOnlyTimelineContent] =
+    useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(reportDraft?.reportId));
-  const [isLoadingSubmissionPreviews, setIsLoadingSubmissionPreviews] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingSubmissionPreviews, setIsLoadingSubmissionPreviews] =
+    useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(
     initialTimelineEntries[0]?.id ?? null
@@ -302,11 +260,16 @@ function ReportSubmissionReviewPage() {
 
     if (!reportId) {
       if (reportDraft?.structuredFields) {
-        const localEntries = buildStructuredTimelineEntries({}, reportDraft.structuredFields);
+        const localEntries = buildStructuredTimelineEntries(
+          {},
+          reportDraft.structuredFields
+        );
 
         setTimelineEntries(localEntries);
         setExpandedEntryId(localEntries[0]?.id ?? null);
-        setHasLocalOnlyTimelineContent(localEntries.some((entry) => entry.isLocalOnly));
+        setHasLocalOnlyTimelineContent(
+          localEntries.some((entry) => entry.isLocalOnly)
+        );
         setIsLoading(false);
       }
 
@@ -317,12 +280,13 @@ function ReportSubmissionReviewPage() {
 
     void (async () => {
       try {
-        const [report, status, timeline, destinationOptions] = await Promise.all([
-          getReport(reportId),
-          getReportStatus(reportId),
-          getReportTimeline(reportId),
-          getReportDestinations(reportId),
-        ]);
+        const [report, status, timeline, destinationOptions] =
+          await Promise.all([
+            getReport(reportId),
+            getReportStatus(reportId),
+            getReportTimeline(reportId),
+            getReportDestinations(reportId),
+          ]);
 
         if (!isActive) {
           return;
@@ -334,10 +298,14 @@ function ReportSubmissionReviewPage() {
         );
 
         setTimelineEntries(backendEntries);
-        setHasLocalOnlyTimelineContent(backendEntries.some((entry) => entry.isLocalOnly));
+        setHasLocalOnlyTimelineContent(
+          backendEntries.some((entry) => entry.isLocalOnly)
+        );
         setExpandedEntryId(backendEntries[0]?.id ?? null);
         setStatusHistoryEntries(buildStatusHistoryEntries(timeline));
-        setReportStatus(status.current ?? status.status ?? report.status ?? "draft");
+        setReportStatus(
+          status.current ?? status.status ?? report.status ?? "draft"
+        );
         setReportRef(report.refNo ?? report._id);
         setReportLanguage(report.language ?? "en");
         setReportJurisdiction(report.jurisdiction ?? "NSW");
@@ -346,7 +314,8 @@ function ReportSubmissionReviewPage() {
           if (
             currentDestinationId &&
             destinationOptions.some(
-              (destination) => destination.destinationId === currentDestinationId
+              (destination) =>
+                destination.destinationId === currentDestinationId
             )
           ) {
             return currentDestinationId;
@@ -359,13 +328,16 @@ function ReportSubmissionReviewPage() {
                 destination.destinationId === reportDraft.selectedDestinationId
             )
               ? reportDraft.selectedDestinationId
-              : destinationOptions[0]?.destinationId ?? null;
+              : (destinationOptions[0]?.destinationId ?? null);
 
           return preferredDestinationId;
         });
         setSelectedDestinationIds((currentDestinationIds) => {
-          const validDestinationIds = currentDestinationIds.filter((destinationId) =>
-            destinationOptions.some((destination) => destination.destinationId === destinationId)
+          const validDestinationIds = currentDestinationIds.filter(
+            (destinationId) =>
+              destinationOptions.some(
+                (destination) => destination.destinationId === destinationId
+              )
           );
 
           if (validDestinationIds.length) {
@@ -390,11 +362,16 @@ function ReportSubmissionReviewPage() {
         }
 
         if (reportDraft?.structuredFields) {
-          const localEntries = buildStructuredTimelineEntries({}, reportDraft.structuredFields);
+          const localEntries = buildStructuredTimelineEntries(
+            {},
+            reportDraft.structuredFields
+          );
 
           setTimelineEntries(localEntries);
           setExpandedEntryId(localEntries[0]?.id ?? null);
-          setHasLocalOnlyTimelineContent(localEntries.some((entry) => entry.isLocalOnly));
+          setHasLocalOnlyTimelineContent(
+            localEntries.some((entry) => entry.isLocalOnly)
+          );
           setStatusHistoryEntries([]);
           setReportStatus("local_only");
           setDestinations([]);
@@ -415,7 +392,11 @@ function ReportSubmissionReviewPage() {
     return () => {
       isActive = false;
     };
-  }, [reportDraft?.reportId, reportDraft?.selectedDestinationId, reportDraft?.structuredFields]);
+  }, [
+    reportDraft?.reportId,
+    reportDraft?.selectedDestinationId,
+    reportDraft?.structuredFields,
+  ]);
 
   useEffect(() => {
     const reportId = reportDraft?.reportId;
@@ -456,43 +437,12 @@ function ReportSubmissionReviewPage() {
     return () => {
       isActive = false;
     };
-  }, [anonymityMode, reportDraft?.reportId, selectedDestinationIds, submissionNotes]);
-
-  const selectedSubmissionPreviews = useMemo(
-    () =>
-      submissionPreviews.filter((preview) =>
-        selectedDestinationIds.includes(preview.destination.destinationId)
-      ),
-    [selectedDestinationIds, submissionPreviews]
-  );
-
-  const selectedMissingConsentFlags = useMemo(
-    () =>
-      uniqueValues(
-        selectedSubmissionPreviews.flatMap((preview) => preview.missingConsentFlags)
-      ),
-    [selectedSubmissionPreviews]
-  );
-
-  const unknownMissingConsentFlags = useMemo(
-    () => selectedMissingConsentFlags.filter((flag) => !isKnownConsentFlag(flag)),
-    [selectedMissingConsentFlags]
-  );
-
-  const selectedDestinationNames = useMemo(
-    () =>
-      selectedDestinationIds
-        .map(
-          (destinationId) =>
-            destinations.find(
-              (destination) => destination.destinationId === destinationId
-            )?.destinationName
-        )
-        .filter((destinationName): destinationName is string =>
-          Boolean(destinationName)
-        ),
-    [destinations, selectedDestinationIds]
-  );
+  }, [
+    anonymityMode,
+    reportDraft?.reportId,
+    selectedDestinationIds,
+    submissionNotes,
+  ]);
 
   const toggleEntry = (entryId: string) => {
     setExpandedEntryId((currentEntryId) =>
@@ -534,7 +484,9 @@ function ReportSubmissionReviewPage() {
   const toggleDestinationSelection = (destinationId: string) => {
     setSelectedDestinationIds((currentDestinationIds) => {
       if (currentDestinationIds.includes(destinationId)) {
-        const nextDestinationIds = currentDestinationIds.filter((id) => id !== destinationId);
+        const nextDestinationIds = currentDestinationIds.filter(
+          (id) => id !== destinationId
+        );
 
         if (selectedDestinationId === destinationId) {
           setSelectedDestinationId(nextDestinationIds[0] ?? null);
@@ -548,115 +500,56 @@ function ReportSubmissionReviewPage() {
     });
   };
 
-  const handleSubmitReport = async ({
-    skipPreviewConsentCheck = false,
-  }: { skipPreviewConsentCheck?: boolean } = {}) => {
-    if (!reportDraft?.reportId) {
-      router.push("/dashboard?view=reportsubmissionsuccess");
-      return;
-    }
-
-    if (!selectedDestinationId) {
-      setLoadError("Choose a service or destination before sharing information.");
-      return;
-    }
-
-    const selectedDestination = destinations.find(
+  const selectedDestination =
+    destinations.find(
       (destination) => destination.destinationId === selectedDestinationId
-    );
+    ) ?? null;
 
-    if (!selectedDestination) {
-      setLoadError("The selected destination is no longer available.");
-      return;
-    }
+  const goToSubmissionSuccess = () => {
+    router.push(reportSubmissionSuccessHref);
+  };
 
-    if (selectedDestination.missingRequiredInfo.length > 0) {
-      setLoadError(
-        `This destination still needs: ${selectedDestination.missingRequiredInfo.join(", ")}`
-      );
-      return;
-    }
+  const savePreparedSubmission = (
+    destination: ReportDestinationPreview,
+    status: "submitted" | "requires_review" | "prepared_only",
+    message?: string
+  ) => {
+    mergeReportFlowDraft({
+      selectedDestinationId: destination.destinationId,
+      latestSubmissionId: undefined,
+      preparedSubmission: {
+        destinationId: destination.destinationId,
+        destinationName: destination.destinationName,
+        destinationType: destination.destinationType,
+        channel: destination.channel,
+        status,
+        missingRequiredInfo: destination.missingRequiredInfo,
+        reason: destination.reason,
+        message,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  };
 
-    if (!skipPreviewConsentCheck && unknownMissingConsentFlags.length > 0) {
-      setLoadError(
-        `This destination requires unsupported consent flags: ${unknownMissingConsentFlags.join(", ")}`
-      );
-      return;
-    }
-
-    if (!skipPreviewConsentCheck && selectedMissingConsentFlags.length > 0) {
-      setLoadError(null);
-      setPendingConsentRequirement(
-        buildDestinationConsentRequirement(
-          selectedMissingConsentFlags,
-          selectedDestinationNames.length
-            ? selectedDestinationNames
-            : [selectedDestination.destinationName]
-        )
-      );
-      return;
-    }
-
-    setIsSubmitting(true);
+  const handleShareWithSelectedService = () => {
     setLoadError(null);
 
-    try {
-      const submission = await submitReportToDestination(reportDraft.reportId, {
-        destinationId: selectedDestinationId,
-        anonymityMode,
-        notes: submissionNotes.trim() || undefined,
-        confirmConsent: true,
-      });
+    const destination = selectedDestination ?? destinations[0] ?? null;
+
+    if (destination) {
+      savePreparedSubmission(
+        destination,
+        "prepared_only",
+        "Backend sharing is not connected yet. The selected service is saved for the next step."
+      );
+    } else {
       mergeReportFlowDraft({
-        selectedDestinationId,
-        latestSubmissionId: submission._id,
+        latestSubmissionId: undefined,
+        preparedSubmission: undefined,
       });
-      router.push("/dashboard?view=reportsubmissionsuccess");
-    } catch (error) {
-      if (captureConsentError(error)) {
-        setLoadError(null);
-        return;
-      }
-
-      setLoadError(
-        error instanceof Error
-          ? error.message
-          : "Prepared information could not be shared."
-      );
-    } finally {
-      setIsSubmitting(false);
     }
-  };
 
-  const selectedDestination =
-    destinations.find((destination) => destination.destinationId === selectedDestinationId) ??
-    null;
-
-  const handleAllowSharingConsent = async () => {
-    try {
-      const consent = await grantPendingConsent();
-
-      if (!consent) {
-        return;
-      }
-
-      await handleSubmitReport({ skipPreviewConsentCheck: true });
-    } catch (error) {
-      if (captureConsentError(error)) {
-        return;
-      }
-
-      setLoadError(
-        error instanceof Error
-          ? error.message
-          : "Sharing consent could not be saved."
-      );
-    }
-  };
-
-  const handleDeclineSharingConsent = () => {
-    clearPendingConsent();
-    setLoadError("Sharing was not sent. The report remains prepared for later.");
+    goToSubmissionSuccess();
   };
 
   return (
@@ -690,7 +583,8 @@ function ReportSubmissionReviewPage() {
               Evidence Review
             </h2>
             <p className="max-w-[430px] text-center text-[12px] leading-[16px] text-[#6f7f93]">
-              If AI-assisted structuring was used, verify the timeline below before saving this prepared report for review.
+              If AI-assisted structuring was used, verify the timeline below
+              before saving this prepared report for review.
             </p>
           </header>
 
@@ -701,18 +595,6 @@ function ReportSubmissionReviewPage() {
                   <IconAlertCircle size={12} />
                   {loadError}
                 </span>
-              </div>
-            ) : null}
-            {pendingConsentRequirement ? (
-              <div className="mb-4">
-                <ConsentRequiredCard
-                  requirement={pendingConsentRequirement}
-                  isSubmitting={isGrantingConsent || isSubmitting}
-                  onAllow={() => {
-                    void handleAllowSharingConsent();
-                  }}
-                  onDecline={handleDeclineSharingConsent}
-                />
               </div>
             ) : null}
             <div className="mb-4 flex items-center justify-between rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
@@ -732,11 +614,19 @@ function ReportSubmissionReviewPage() {
                 </p>
                 <div className="mt-2 space-y-1.5">
                   {statusHistoryEntries.map((entry) => (
-                    <p key={entry.id} className="text-[11px] leading-[1.45] text-[#60728a]">
-                      <span className="font-semibold text-[#1f2a3a]">{entry.status}</span>
+                    <p
+                      key={entry.id}
+                      className="text-[11px] leading-[1.45] text-[#60728a]"
+                    >
+                      <span className="font-semibold text-[#1f2a3a]">
+                        {entry.status}
+                      </span>
                       {entry.reason ? <span> - {entry.reason}</span> : null}
                       {entry.changedAt ? (
-                        <span> - {new Date(entry.changedAt).toLocaleString()}</span>
+                        <span>
+                          {" "}
+                          - {new Date(entry.changedAt).toLocaleString()}
+                        </span>
                       ) : null}
                     </p>
                   ))}
@@ -744,10 +634,14 @@ function ReportSubmissionReviewPage() {
               </div>
             ) : null}
             <div className="mb-4 rounded-[12px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3 text-[11px] leading-[1.55] text-[#60728a]">
-              Choose a police, government, or support contact from the admin-managed directory. SafeSpeak will not call, email, or share anything automatically; you decide whether to contact directly or share the prepared information.
+              Choose a police, government, or support contact from the
+              admin-managed directory. SafeSpeak will not call, email, or share
+              anything automatically; you decide whether to contact directly or
+              share the prepared information.
               {hasLocalOnlyTimelineContent ? (
                 <span className="mt-2 block font-semibold text-[#9a5b12]">
-                  Stored locally only: some review fields are shown from this browser session and are not stored in the backend.
+                  Stored locally only: some review fields are shown from this
+                  browser session and are not stored in the backend.
                 </span>
               ) : null}
             </div>
@@ -770,7 +664,8 @@ function ReportSubmissionReviewPage() {
                   </p>
                 </div>
                 <p className="text-[10px] text-[#8ea0b8]">
-                  {destinations.length} option{destinations.length === 1 ? "" : "s"} available
+                  {destinations.length} option
+                  {destinations.length === 1 ? "" : "s"} available
                 </p>
               </div>
               <div className="mt-3 space-y-2">
@@ -778,7 +673,9 @@ function ReportSubmissionReviewPage() {
                   destinations.map((destination) => {
                     const isSelected =
                       destination.destinationId === selectedDestinationId;
-                    const isIncluded = selectedDestinationIds.includes(destination.destinationId);
+                    const isIncluded = selectedDestinationIds.includes(
+                      destination.destinationId
+                    );
                     const hasMissingInfo =
                       destination.missingRequiredInfo.length > 0;
 
@@ -786,7 +683,9 @@ function ReportSubmissionReviewPage() {
                       <button
                         key={destination.destinationId}
                         type="button"
-                        onClick={() => toggleDestinationSelection(destination.destinationId)}
+                        onClick={() =>
+                          toggleDestinationSelection(destination.destinationId)
+                        }
                         className={`w-full rounded-[12px] border px-4 py-3 text-left transition ${
                           isSelected
                             ? "border-[#0f52ba] bg-[#f7fbff]"
@@ -812,12 +711,17 @@ function ReportSubmissionReviewPage() {
                               </p>
                             </div>
                             <p className="mt-1 text-[10px] text-[#6d8199]">
-                              {destination.destinationType} via {destination.channel}
+                              {destination.destinationType} via{" "}
+                              {destination.channel}
                             </p>
-                            {destination.contactPhone || destination.contactEmail ? (
+                            {destination.contactPhone ||
+                            destination.contactEmail ? (
                               <p className="mt-1 text-[10px] text-[#6d8199]">
                                 Contact listed:{" "}
-                                {[destination.contactPhone, destination.contactEmail]
+                                {[
+                                  destination.contactPhone,
+                                  destination.contactEmail,
+                                ]
                                   .filter(Boolean)
                                   .join(" / ")}
                               </p>
@@ -839,7 +743,9 @@ function ReportSubmissionReviewPage() {
                           Why: {destination.reason}
                         </p>
                         <p className="mt-1 text-[10px] leading-[1.55] text-[#60728a]">
-                          Required: {destination.minimumRequiredInfo.join(", ") || "None listed"}
+                          Required:{" "}
+                          {destination.minimumRequiredInfo.join(", ") ||
+                            "None listed"}
                         </p>
                         {destination.expectedNextSteps.length ? (
                           <p className="mt-1 text-[10px] leading-[1.55] text-[#60728a]">
@@ -851,7 +757,8 @@ function ReportSubmissionReviewPage() {
                   })
                 ) : (
                   <div className="rounded-[12px] border border-[#f2d8b0] bg-[#fffaf2] px-3 py-2 text-[11px] text-[#9a5b12]">
-                    No active destinations match this report yet. Add or activate them in the admin dashboard.
+                    No active destinations match this report yet. Add or
+                    activate them in the admin dashboard.
                   </div>
                 )}
               </div>
@@ -884,20 +791,24 @@ function ReportSubmissionReviewPage() {
                     </span>
                     <input
                       value={submissionNotes}
-                      onChange={(event) => setSubmissionNotes(event.target.value)}
+                      onChange={(event) =>
+                        setSubmissionNotes(event.target.value)
+                      }
                       placeholder="Optional routing note"
                       className="h-9 rounded-[8px] border border-[#dce5f1] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none placeholder:text-[#9eb0c7]"
                     />
                   </label>
-                  {selectedDestination.contactPhone || selectedDestination.contactEmail ? (
-                    <div className="sm:col-span-2 rounded-[10px] border border-[#dce5f1] bg-white px-3 py-3">
+                  {selectedDestination.contactPhone ||
+                  selectedDestination.contactEmail ? (
+                    <div className="rounded-[10px] border border-[#dce5f1] bg-white px-3 py-3 sm:col-span-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
                             Contact directly
                           </p>
                           <p className="mt-1 text-[10px] leading-[1.55] text-[#60728a]">
-                            These buttons open your phone or email app only when you choose them.
+                            These buttons open your phone or email app only when
+                            you choose them.
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -927,14 +838,18 @@ function ReportSubmissionReviewPage() {
                     </div>
                   ) : null}
                   {selectedDestination.requiredConsentFlags.length ? (
-                    <div className="sm:col-span-2 rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[10px] leading-[1.55] text-[#60728a]">
-                      Consent required before SafeSpeak shares prepared information:{" "}
-                      {formatConsentFlags(selectedDestination.requiredConsentFlags)}
+                    <div className="rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[10px] leading-[1.55] text-[#60728a] sm:col-span-2">
+                      Consent required before SafeSpeak shares prepared
+                      information:{" "}
+                      {formatConsentFlags(
+                        selectedDestination.requiredConsentFlags
+                      )}
                     </div>
                   ) : null}
-                  <div className="sm:col-span-2 rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[10px] leading-[1.55] text-[#60728a]">
+                  <div className="rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[10px] leading-[1.55] text-[#60728a] sm:col-span-2">
                     Anonymity options:{" "}
-                    {selectedDestination.anonymityOptions.join(", ") || "Not specified by this destination"}
+                    {selectedDestination.anonymityOptions.join(", ") ||
+                      "Not specified by this destination"}
                   </div>
                 </div>
               ) : null}
@@ -966,7 +881,9 @@ function ReportSubmissionReviewPage() {
                                 {preview.destination.destinationName}
                               </p>
                               <p className="mt-1 text-[10px] text-[#6d8199]">
-                                Template: {preview.template.templateName ?? "Default SafeSpeak payload"}
+                                Template:{" "}
+                                {preview.template.templateName ??
+                                  "Default SafeSpeak payload"}
                               </p>
                             </div>
                             <span
@@ -987,12 +904,14 @@ function ReportSubmissionReviewPage() {
                           </div>
                           {preview.missingMappedFields.length ? (
                             <p className="mt-2 text-[10px] leading-[1.55] text-[#9a5b12]">
-                              Missing mapped fields: {preview.missingMappedFields.join(", ")}
+                              Missing mapped fields:{" "}
+                              {preview.missingMappedFields.join(", ")}
                             </p>
                           ) : null}
                           {preview.missingConsentFlags.length ? (
                             <p className="mt-1 text-[10px] leading-[1.55] text-[#9a5b12]">
-                              Consent needed before sharing: {formatConsentFlags(preview.missingConsentFlags)}
+                              Consent needed before sharing:{" "}
+                              {formatConsentFlags(preview.missingConsentFlags)}
                             </p>
                           ) : null}
                           <pre className="mt-3 max-h-[220px] overflow-auto rounded-[8px] bg-[#101827] p-3 text-[10px] leading-[1.5] text-[#dce8f8]">
@@ -1192,7 +1111,8 @@ function ReportSubmissionReviewPage() {
               )}
               {!isLoading && timelineEntries.length === 0 ? (
                 <div className="mt-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-6 text-center text-[12px] text-[#60728a]">
-                  No backend timeline entries are available yet. Add a manual entry or go back to edit the report details.
+                  No backend timeline entries are available yet. Add a manual
+                  entry or go back to edit the report details.
                 </div>
               ) : null}
             </div>
@@ -1200,16 +1120,10 @@ function ReportSubmissionReviewPage() {
             <div className="mt-5 flex justify-center">
               <button
                 type="button"
-                onClick={() => {
-                  void handleSubmitReport();
-                }}
-                disabled={isSubmitting}
+                onClick={handleShareWithSelectedService}
                 className="inline-flex h-[44px] w-full max-w-[392px] items-center justify-center rounded-[8px] bg-[#ff9800] px-8 text-[11px] font-bold text-white shadow-[0_8px_20px_rgba(255,152,0,0.34)]"
               >
-                {isSubmitting ? (
-                  <IconLoader2 size={14} className="mr-1 animate-spin" />
-                ) : null}
-                {isSubmitting ? "Sharing..." : "Share with selected service"}
+                Share with selected service
                 <IconChevronRight size={14} className="ml-1" />
               </button>
             </div>

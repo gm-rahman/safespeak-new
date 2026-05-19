@@ -24,6 +24,7 @@ export type HomeView =
   | "reportsubmissiondetails"
   | "reportsubmissionevidence"
   | "reportsubmissionreview"
+  | "reportsubmissionshare"
   | "reportsubmissionsuccess";
 
 export type NotificationView = "today" | "past";

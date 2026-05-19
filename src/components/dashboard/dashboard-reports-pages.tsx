@@ -18,6 +18,14 @@ import {
 import { useTranslation } from "react-i18next";
 
 import {
+  type ReportLifecycleAction,
+  type ReportLifecycleActionConfig,
+  getReportLifecycleActions,
+  getReportStatusLabel,
+} from "@/lib/report-lifecycle";
+import {
+  type ReportRecord,
+  type ReportSubmissionRecord,
   deleteReport,
   getReport,
   getReportStatus,
@@ -26,16 +34,8 @@ import {
   listReports,
   markReportInfoOnly,
   requestReportDelete,
-  type ReportRecord,
-  type ReportSubmissionRecord,
   withdrawReport,
 } from "@/lib/reports-client";
-import {
-  getReportLifecycleActions,
-  getReportStatusLabel,
-  type ReportLifecycleAction,
-  type ReportLifecycleActionConfig,
-} from "@/lib/report-lifecycle";
 import { cn } from "@/lib/utils";
 
 import { localIntelligenceMapSrc } from "./dashboard-shared";
@@ -76,14 +76,18 @@ function getReportNarrative(report?: ReportRecord | null): string {
 }
 
 function getReportLocation(report?: ReportRecord | null): string {
-  return String(report?.structuredFields?.where ?? "Location not captured yet.");
+  return String(
+    report?.structuredFields?.where ?? "Location not captured yet."
+  );
 }
 
 function getReportReference(report?: ReportRecord | null): string {
   return report?.refNo ?? report?._id ?? "Pending";
 }
 
-function getReportStatusTone(report?: Pick<ReportRecord, "status" | "deletionRequestedAt"> | null): {
+function getReportStatusTone(
+  report?: Pick<ReportRecord, "status" | "deletionRequestedAt"> | null
+): {
   className: string;
   dotClassName: string;
 } {
@@ -260,7 +264,11 @@ function ReportsHistoryPage() {
     return reports.filter((report) => {
       const status = report.status ?? "draft";
 
-      if (activeFilter === "draft" && status !== "draft" && status !== "local_only") {
+      if (
+        activeFilter === "draft" &&
+        status !== "draft" &&
+        status !== "local_only"
+      ) {
         return false;
       }
 
@@ -283,7 +291,9 @@ function ReportsHistoryPage() {
         report.status,
       ]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+        .some((value) =>
+          String(value).toLowerCase().includes(normalizedSearch)
+        );
     });
   }, [activeFilter, reports, searchTerm]);
 
@@ -291,7 +301,10 @@ function ReportsHistoryPage() {
     report: ReportRecord,
     action: ReportLifecycleActionConfig
   ) => {
-    if (typeof window !== "undefined" && !window.confirm(action.confirmMessage)) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(action.confirmMessage)
+    ) {
       return;
     }
 
@@ -309,19 +322,27 @@ function ReportsHistoryPage() {
       if (updatedReport) {
         setReports((currentReports) =>
           currentReports.map((currentReport) =>
-            currentReport._id === updatedReport._id ? updatedReport : currentReport
+            currentReport._id === updatedReport._id
+              ? updatedReport
+              : currentReport
           )
         );
-        setStatusMessage(`${action.label} completed for ${getReportReference(updatedReport)}.`);
+        setStatusMessage(
+          `${action.label} completed for ${getReportReference(updatedReport)}.`
+        );
       } else {
         setReports((currentReports) =>
-          currentReports.filter((currentReport) => currentReport._id !== report._id)
+          currentReports.filter(
+            (currentReport) => currentReport._id !== report._id
+          )
         );
         setStatusMessage("Report deleted from active history.");
       }
     } catch (error) {
       setLoadError(
-        error instanceof Error ? error.message : "Report action could not be completed."
+        error instanceof Error
+          ? error.message
+          : "Report action could not be completed."
       );
     } finally {
       setActiveActionKey(null);
@@ -339,7 +360,10 @@ function ReportsHistoryPage() {
             <IconChevronLeft size={14} />
             {t("dashboard.reports.yourReports")}
           </Link>
-          <Link href="/dashboard" className="text-xs font-medium text-[#7b8798]">
+          <Link
+            href="/dashboard"
+            className="text-xs font-medium text-[#7b8798]"
+          >
             {t("common.cancel")}
           </Link>
         </div>
@@ -355,6 +379,43 @@ function ReportsHistoryPage() {
             <p className="mt-1 text-xs text-[#7b8ca2]">
               Live report records, lifecycle state, and audit-safe actions.
             </p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <article className="rounded-xl border border-[#e2eaf4] bg-white p-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                {t("dashboard.reports.totalReports")}
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-[#0f5d9f]">
+                {reports.length}
+              </p>
+            </article>
+            <article className="rounded-xl border border-[#e2eaf4] bg-white p-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Submitted or received
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-[#1b8f4b]">
+                {
+                  reports.filter((report) =>
+                    ["submitted", "received", "closed"].includes(
+                      report.status ?? ""
+                    )
+                  ).length
+                }
+              </p>
+            </article>
+            <article className="rounded-xl border border-[#e2eaf4] bg-white p-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Lifecycle actions
+              </p>
+              <p className="mt-1 text-2xl font-extrabold text-[#c97b00]">
+                {
+                  reports.filter(
+                    (report) => getReportLifecycleActions(report).length > 0
+                  ).length
+                }
+              </p>
+            </article>
           </div>
 
           <div className="relative mx-auto mt-4 max-w-[760px]">
@@ -380,7 +441,9 @@ function ReportsHistoryPage() {
               <button
                 key={filter.id}
                 type="button"
-                onClick={() => setActiveFilter(filter.id as typeof activeFilter)}
+                onClick={() =>
+                  setActiveFilter(filter.id as typeof activeFilter)
+                }
                 className={cn(
                   "inline-flex rounded-full px-3 py-1 text-[10px] font-bold",
                   activeFilter === filter.id
@@ -435,7 +498,8 @@ function ReportsHistoryPage() {
                       {getReportTitle(report)}
                     </p>
                     <p className="mt-1 text-[10px] font-medium text-[#74869d]">
-                      Updated {formatReportDate(report.updatedAt ?? report.createdAt)}
+                      Updated{" "}
+                      {formatReportDate(report.updatedAt ?? report.createdAt)}
                     </p>
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -463,40 +527,6 @@ function ReportsHistoryPage() {
                 </div>
               </article>
             ))}
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <article className="rounded-xl border border-[#e2eaf4] bg-white p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                {t("dashboard.reports.totalReports")}
-              </p>
-              <p className="mt-1 text-2xl font-extrabold text-[#0f5d9f]">
-                {reports.length}
-              </p>
-            </article>
-            <article className="rounded-xl border border-[#e2eaf4] bg-white p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                Submitted or received
-              </p>
-              <p className="mt-1 text-2xl font-extrabold text-[#1b8f4b]">
-                {
-                  reports.filter((report) =>
-                    ["submitted", "received", "closed"].includes(report.status ?? "")
-                  ).length
-                }
-              </p>
-            </article>
-            <article className="rounded-xl border border-[#e2eaf4] bg-white p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                Lifecycle actions
-              </p>
-              <p className="mt-1 text-2xl font-extrabold text-[#c97b00]">
-                {
-                  reports.filter((report) => getReportLifecycleActions(report).length > 0)
-                    .length
-                }
-              </p>
-            </article>
           </div>
         </article>
       </div>
@@ -559,7 +589,10 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
     currentReport: ReportRecord,
     action: ReportLifecycleActionConfig
   ) => {
-    if (typeof window !== "undefined" && !window.confirm(action.confirmMessage)) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(action.confirmMessage)
+    ) {
       return;
     }
 
@@ -580,11 +613,15 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
       }
 
       setReport(updatedReport);
-      setStatusMessage(`${action.label} completed for ${getReportReference(updatedReport)}.`);
+      setStatusMessage(
+        `${action.label} completed for ${getReportReference(updatedReport)}.`
+      );
       void loadReportDetail();
     } catch (error) {
       setLoadError(
-        error instanceof Error ? error.message : "Report action could not be completed."
+        error instanceof Error
+          ? error.message
+          : "Report action could not be completed."
       );
     } finally {
       setActiveActionKey(null);
@@ -595,7 +632,9 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
   const reportNarrative = getReportNarrative(report);
   const reportLocation = getReportLocation(report);
   const reportCreatedAt = formatReportDate(report?.createdAt);
-  const reportUpdatedAt = formatReportDate(report?.updatedAt ?? report?.createdAt);
+  const reportUpdatedAt = formatReportDate(
+    report?.updatedAt ?? report?.createdAt
+  );
   const reportSupportKey = report?._id?.slice(-6) ?? "N/A";
 
   return (
@@ -609,7 +648,10 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
             <IconChevronLeft size={14} />
             {t("dashboard.reports.reportOverview")}
           </Link>
-          <Link href="/dashboard" className="text-xs font-medium text-[#7b8798]">
+          <Link
+            href="/dashboard"
+            className="text-xs font-medium text-[#7b8798]"
+          >
             {t("common.cancel")}
           </Link>
         </div>
@@ -689,7 +731,8 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
                       Lifecycle controls
                     </p>
                     <p className="mt-1 text-[11px] text-[#60728a]">
-                      Actions are audit logged and refresh this report after completion.
+                      Actions are audit logged and refresh this report after
+                      completion.
                     </p>
                   </div>
                 </div>
@@ -711,13 +754,17 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
                 {timeline.length ? (
                   timeline.map((entry, index) => {
                     const status =
-                      typeof entry.status === "string" ? entry.status : "status";
+                      typeof entry.status === "string"
+                        ? entry.status
+                        : "status";
                     const changedAt =
                       typeof entry.changedAt === "string"
                         ? entry.changedAt
                         : undefined;
                     const reason =
-                      typeof entry.reason === "string" ? entry.reason : undefined;
+                      typeof entry.reason === "string"
+                        ? entry.reason
+                        : undefined;
 
                     return (
                       <article
@@ -771,7 +818,8 @@ function ReportOverviewPage({ reportId }: { reportId?: string }) {
                   ))
                 ) : (
                   <p className="text-[11px] leading-5 text-[#8ea0b8]">
-                    No destination submissions have been created for this report.
+                    No destination submissions have been created for this
+                    report.
                   </p>
                 )}
               </div>

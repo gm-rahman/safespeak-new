@@ -9,6 +9,17 @@ export type ReportFlowDraft = {
   reportId?: string;
   selectedDestinationId?: string;
   latestSubmissionId?: string;
+  preparedSubmission?: {
+    destinationId: string;
+    destinationName: string;
+    destinationType?: string;
+    channel: string;
+    status: "submitted" | "requires_review" | "prepared_only";
+    missingRequiredInfo?: string[];
+    reason?: string;
+    message?: string;
+    updatedAt: string;
+  };
   title: string;
   date: string;
   location: string;
@@ -58,7 +69,10 @@ export function saveReportFlowDraft(
   } satisfies ReportFlowDraft;
 
   if (typeof window !== "undefined") {
-    window.sessionStorage.setItem(REPORT_FLOW_DRAFT_KEY, JSON.stringify(nextDraft));
+    window.sessionStorage.setItem(
+      REPORT_FLOW_DRAFT_KEY,
+      JSON.stringify(nextDraft)
+    );
   }
 
   return nextDraft;

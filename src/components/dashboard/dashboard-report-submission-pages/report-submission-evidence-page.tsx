@@ -859,6 +859,39 @@ function ReportSubmissionEvidencePage() {
     };
   };
 
+  const mergeCurrentReportDraft = (
+    nextEvidenceItems = attachedFiles,
+    savedReport?: { _id: string; incidentType?: string }
+  ) => {
+    const payload = buildReportPayload(nextEvidenceItems);
+    const activeEvidenceIds = nextEvidenceItems
+      .map((item) => item.backendEvidenceId)
+      .filter((item): item is string => Boolean(item));
+    const nextDraft: Parameters<typeof mergeReportFlowDraft>[0] = {
+      title: reportDraft?.title || payload.context || "",
+      date: reportDraft?.date || "",
+      location: reportDraft?.location || "",
+      summary: payload.originalNarrative ?? "",
+      structuredFields: payload.structuredFields,
+      incidentType:
+        savedReport?.incidentType ??
+        payload.incidentType ??
+        reportDraft?.incidentType,
+      incidentCategory: reportDraft?.incidentCategory,
+      topic: reportDraft?.topic,
+      starterPrompt: reportDraft?.starterPrompt,
+      evidenceIds: [
+        ...new Set([...(reportDraft?.evidenceIds ?? []), ...activeEvidenceIds]),
+      ],
+    };
+
+    if (savedReport?._id) {
+      nextDraft.reportId = savedReport._id;
+    }
+
+    return mergeDraft(nextDraft);
+  };
+
   const persistReportDraftToBackend = async (
     nextEvidenceItems = attachedFiles
   ) => {
@@ -871,28 +904,7 @@ function ReportSubmissionEvidencePage() {
         ? await updateReport(reportDraft.reportId, payload)
         : await createReport(payload);
 
-      const activeEvidenceIds = nextEvidenceItems
-        .map((item) => item.backendEvidenceId)
-        .filter((item): item is string => Boolean(item));
-
-      return mergeDraft({
-        reportId: savedReport._id,
-        title: reportDraft?.title || payload.context || "",
-        date: reportDraft?.date || "",
-        location: reportDraft?.location || "",
-        summary: payload.originalNarrative ?? "",
-        structuredFields: payload.structuredFields,
-        incidentType: savedReport.incidentType ?? reportDraft?.incidentType,
-        incidentCategory: reportDraft?.incidentCategory,
-        topic: reportDraft?.topic,
-        starterPrompt: reportDraft?.starterPrompt,
-        evidenceIds: [
-          ...new Set([
-            ...(reportDraft?.evidenceIds ?? []),
-            ...activeEvidenceIds,
-          ]),
-        ],
-      });
+      return mergeCurrentReportDraft(nextEvidenceItems, savedReport);
     } catch (error) {
       if (error instanceof ConsentRequiredError) {
         setPendingConsentRequirement(error.requirement);
@@ -1312,12 +1324,15 @@ function ReportSubmissionEvidencePage() {
   };
 
   const handleContinue = async () => {
+    mergeCurrentReportDraft();
+
     try {
       await persistReportDraftToBackend();
-      router.push("/dashboard?view=reportsubmissionreview");
     } catch {
-      // Stay on this page so the consent card or API error can be handled.
+      // Continuing to review should not be blocked by backend sync.
     }
+
+    router.push("/dashboard?view=reportsubmissionreview");
   };
 
   const handleTranscribeEvidence = async (item: EvidenceItem) => {

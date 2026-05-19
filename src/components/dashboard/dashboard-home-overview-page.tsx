@@ -13,7 +13,10 @@ import sphereAdv from "@/assets/sphere-adv.svg?url";
 import topLeft from "@/assets/top-left.svg?url";
 import topMask from "@/assets/top-mask.svg?url";
 import topRight from "@/assets/top-right.svg?url";
-import { getDashboardCardEntryHref } from "@/lib/dashboard-card-flows";
+import {
+  getDashboardAssistantEntryHref,
+  getDashboardCardEntryHref,
+} from "@/lib/dashboard-card-flows";
 
 import AssistantSphereAnimated from "./AssistantSphereAnimated";
 import { interFont, localIntelligenceMapSrc } from "./dashboard-shared";
@@ -21,11 +24,13 @@ import SMDasboardHome from "./sm-dashboard-home";
 
 function HomeDashboardPage() {
   const { t } = useTranslation();
-  const domesticViolenceHref = getDashboardCardEntryHref("domestic_violence");
+  const domesticViolenceHref =
+    getDashboardAssistantEntryHref("domestic_violence");
   const generalAssistantHref = getDashboardCardEntryHref("general_assistant");
-  const racialAbuseHref = getDashboardCardEntryHref("racial_abuse");
-  const cyberScamHref = getDashboardCardEntryHref("cyber_scam");
-  const migrantChallengesHref = getDashboardCardEntryHref("migrant_challenges");
+  const racialAbuseHref = getDashboardAssistantEntryHref("racial_abuse");
+  const cyberScamHref = getDashboardAssistantEntryHref("cyber_scam");
+  const migrantChallengesHref =
+    getDashboardAssistantEntryHref("migrant_challenges");
   const scamShieldHref = getDashboardCardEntryHref("scamshield");
   const resourcesHref = getDashboardCardEntryHref("resources");
   const microCardsHref = getDashboardCardEntryHref("micro_cards");
@@ -77,7 +82,7 @@ function HomeDashboardPage() {
           <Link
             href={cyberScamHref}
             className="duration-[250ms] group relative mr-2 block w-full overflow-hidden rounded-[18px] border border-[rgba(255,255,255,0.2)] transition-transform ease-out hover:scale-[1.02] lg:col-span-6 lg:aspect-[547/407] xl:rounded-[30px] xl:rounded-tr-[64px] xl:border-[0.99px]"
-            aria-label="Open Cyber Scam intake"
+            aria-label="Open Cyber Scam assistant topic"
           >
             <Image
               alt="Cyber scam"

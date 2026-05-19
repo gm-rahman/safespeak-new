@@ -1,4 +1,4 @@
-import { type Page, expect, test } from "@playwright/test";
+import { type Locator, type Page, expect, test } from "@playwright/test";
 
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3030";
 const API_ROUTE = "**/api/v1/**";
@@ -233,6 +233,21 @@ async function mockSafeSpeakApi(
   return state;
 }
 
+async function expectLocatorReceivesPointer(locator: Locator) {
+  await expect(locator).toBeEnabled();
+  const receivesPointer = await locator.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const topElement = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2
+    );
+
+    return topElement === element || element.contains(topElement);
+  });
+
+  expect(receivesPointer).toBe(true);
+}
+
 test.describe("SafeSpeak AI Conversation", () => {
   test.setTimeout(90_000);
   let apiMock: ApiMockState;
@@ -289,6 +304,7 @@ test.describe("SafeSpeak AI Conversation", () => {
     const triageButton = page.getByTestId("ai-conversation-triage-button");
 
     await expect(conversation).toBeVisible();
+    await expect(page.locator(".dashboard-safety-rail")).toBeVisible();
     await expect(
       page.getByRole("link", { name: "AI Conversation" })
     ).toBeVisible();
@@ -312,6 +328,7 @@ test.describe("SafeSpeak AI Conversation", () => {
     const firstUserMessage =
       "It happened outside my apartment lobby late last night.";
     await input.fill(firstUserMessage);
+    await expectLocatorReceivesPointer(sendButton);
     await sendButton.click();
 
     await expect(page.getByText(firstUserMessage)).toBeVisible();
@@ -330,6 +347,18 @@ test.describe("SafeSpeak AI Conversation", () => {
     await expect(
       page.getByText("Migrant Challenges", { exact: true })
     ).toHaveCount(0);
+
+    await page
+      .getByRole("button", { name: "Minimize emergency safety controls" })
+      .click();
+    await expect(page.locator(".dashboard-safety-minimized")).toBeVisible();
+
+    const minimizedRailMessage =
+      "The neighbour heard shouting from inside the residence.";
+    await input.fill(minimizedRailMessage);
+    await expectLocatorReceivesPointer(sendButton);
+    await sendButton.click();
+    await expect(page.getByText(minimizedRailMessage)).toBeVisible();
 
     for (const message of [
       "The person grabbed my scarf and shouted at me.",

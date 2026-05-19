@@ -161,6 +161,17 @@ body.assistant-conversation-lock .site-shell {
   padding-bottom: 0;
 }
 
+@media (min-width: 1024px) {
+  body.assistant-conversation-lock .assistant-conversation-dashboard-shell {
+    padding-bottom: 13.75rem;
+  }
+
+  body.assistant-conversation-lock:has(.dashboard-safety-minimized)
+    .assistant-conversation-dashboard-shell {
+    padding-bottom: 7rem;
+  }
+}
+
 body.quick-exit-active .site-shell {
   filter: blur(18px) saturate(0.35);
   opacity: 0.16;

@@ -178,6 +178,13 @@ const ReportSubmissionSuccessPage = dynamic(
     ).then((module) => module.ReportSubmissionSuccessPage),
   { loading: DashboardViewFallback }
 );
+const ReportSubmissionSharePage = dynamic(
+  () =>
+    import(
+      "./dashboard-report-submission-pages/report-submission-share-page"
+    ).then((module) => module.ReportSubmissionSharePage),
+  { loading: DashboardViewFallback }
+);
 
 export default function DashboardHomeScreen({
   homeView = "overview",
@@ -254,6 +261,8 @@ export default function DashboardHomeScreen({
       <ReportSubmissionEvidencePage />
     ) : homeView === "reportsubmissionreview" ? (
       <ReportSubmissionReviewPage />
+    ) : homeView === "reportsubmissionshare" ? (
+      <ReportSubmissionSharePage />
     ) : homeView === "reportsubmissionsuccess" ? (
       <ReportSubmissionSuccessPage />
     ) : (

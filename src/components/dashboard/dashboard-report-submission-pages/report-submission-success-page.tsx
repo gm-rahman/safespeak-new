@@ -4,52 +4,168 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  IconArrowRight,
   IconBoltFilled,
-  IconChevronDown,
+  IconBrain,
+  IconCheck,
   IconChevronLeft,
   IconClock,
   IconEye,
   IconFolderFilled,
   IconInfoCircleFilled,
+  IconLoader2,
+  IconMail,
+  IconPhone,
   IconShare,
+  IconSparkles,
 } from "@tabler/icons-react";
 
 import {
+  formatChannel,
+  formatDestinationType,
+  rankAuthorityMatches,
+} from "@/lib/report-authority-routing";
+import { getReportFlowDraft } from "@/lib/report-flow";
+import {
+  type ReportDestinationPreview,
+  type ReportSubmissionRecord,
   getReport,
+  getReportDestinations,
   getReportStatus,
   listReportSubmissions,
-  type ReportSubmissionRecord,
 } from "@/lib/reports-client";
-import { getReportFlowDraft } from "@/lib/report-flow";
 
 function ReportSubmissionSuccessPage() {
   const reportDraft = useMemo(() => getReportFlowDraft(), []);
+  const preparedSubmission = reportDraft?.preparedSubmission ?? null;
   const [reportStatus, setReportStatus] = useState<string>("prepared");
-  const [reportRef, setReportRef] = useState<string | null>(reportDraft?.reportId ?? null);
+  const [reportRef, setReportRef] = useState<string | null>(
+    reportDraft?.reportId ?? null
+  );
   const [latestSubmission, setLatestSubmission] =
     useState<ReportSubmissionRecord | null>(null);
+  const [destinationOptions, setDestinationOptions] = useState<
+    ReportDestinationPreview[]
+  >([]);
+  const [isLoadingDestinations, setIsLoadingDestinations] = useState(
+    Boolean(reportDraft?.reportId)
+  );
+  const [loadNotice, setLoadNotice] = useState<string | null>(null);
+
+  const selectedContactName =
+    latestSubmission?.destinationName ?? preparedSubmission?.destinationName;
+  const selectedContactChannel =
+    latestSubmission?.channel ?? preparedSubmission?.channel;
+  const preferredDestinationId =
+    latestSubmission?.destinationId ??
+    preparedSubmission?.destinationId ??
+    reportDraft?.selectedDestinationId;
+  const preparedStatusLabel =
+    preparedSubmission?.status === "requires_review"
+      ? "Prepared - review required"
+      : preparedSubmission?.status === "prepared_only"
+        ? "Prepared only"
+        : "Prepared";
 
   useEffect(() => {
     if (!reportDraft?.reportId) {
+      setIsLoadingDestinations(false);
       return;
     }
+
+    let isActive = true;
+    setIsLoadingDestinations(true);
+    setLoadNotice(null);
 
     void Promise.all([
       getReport(reportDraft.reportId),
       getReportStatus(reportDraft.reportId),
       listReportSubmissions(reportDraft.reportId),
+      getReportDestinations(reportDraft.reportId),
     ])
-      .then(([report, status, submissions]) => {
+      .then(([report, status, submissions, destinations]) => {
+        if (!isActive) {
+          return;
+        }
+
+        const matchedSubmission = reportDraft.latestSubmissionId
+          ? (submissions.find(
+              (submission) => submission._id === reportDraft.latestSubmissionId
+            ) ?? null)
+          : null;
+        const shouldUseFallbackSubmission =
+          !reportDraft.preparedSubmission ||
+          reportDraft.preparedSubmission.status === "submitted";
+
         setReportRef(report.refNo ?? report._id);
         setReportStatus(status.current);
+        setDestinationOptions(destinations);
         setLatestSubmission(
-          submissions.find(
-            (submission) => submission._id === reportDraft.latestSubmissionId
-          ) ?? submissions[0] ?? null
+          matchedSubmission ??
+            (shouldUseFallbackSubmission ? (submissions[0] ?? null) : null)
         );
       })
-      .catch(() => setReportStatus("prepared"));
-  }, [reportDraft?.latestSubmissionId, reportDraft?.reportId]);
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setReportStatus("prepared");
+        setLoadNotice(
+          "Admin-managed destinations could not be refreshed. Showing the saved prepared contact when available."
+        );
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoadingDestinations(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    reportDraft?.latestSubmissionId,
+    reportDraft?.preparedSubmission,
+    reportDraft?.reportId,
+  ]);
+
+  const authorityMatches = useMemo(
+    () =>
+      rankAuthorityMatches({
+        destinations: destinationOptions,
+        draft: reportDraft,
+        preferredDestinationId,
+        preparedSubmission,
+      }),
+    [
+      destinationOptions,
+      preferredDestinationId,
+      preparedSubmission,
+      reportDraft,
+    ]
+  );
+
+  const primaryMatch = authorityMatches[0] ?? null;
+  const alternativeMatches = authorityMatches.slice(1, 4);
+  const checklistItems = [
+    {
+      label: "Confirm recipient",
+      done: Boolean(primaryMatch),
+    },
+    {
+      label: "Review evidence",
+      done: Boolean(reportDraft?.evidenceIds?.length || reportDraft?.summary),
+    },
+    {
+      label: "Open secure share",
+      done: Boolean(latestSubmission),
+    },
+    {
+      label: "Send through SafeSpeak",
+      done: Boolean(latestSubmission),
+    },
+  ];
 
   return (
     <div className="px-6 pb-12 pt-12">
@@ -77,10 +193,13 @@ function ReportSubmissionSuccessPage() {
         </div>
 
         <article className="mt-5 rounded-[16px] border border-[#dce5f1] bg-[#f7fafe] p-4 sm:p-6">
-          <p className="mx-auto max-w-[520px] text-center text-[12px] leading-[18px] text-[#7789a1]">
-            Your SafeSpeak report now has a tracked sharing record. The current
-            backend status and selected contact details are shown below.
+          <p className="mx-auto max-w-[620px] text-center text-[12px] leading-[18px] text-[#7789a1]">
+            SafeSpeak prepared this report and matched it against
+            admin-managed police, legal, eSafety, and support destinations.
+            Review the recommended recipient before opening the secure sharing
+            step.
           </p>
+
           <div className="mt-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3 text-center">
             <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
               SafeSpeak reference
@@ -88,13 +207,23 @@ function ReportSubmissionSuccessPage() {
             <p className="mt-1 text-[14px] font-bold text-[#1f2a3a]">
               {reportRef ?? "Draft only"}
             </p>
+            <p className="mt-1 text-[10px] text-[#60728a]">
+              Current status: {reportStatus}
+            </p>
+            {selectedContactName && selectedContactChannel ? (
               <p className="mt-1 text-[10px] text-[#60728a]">
-                Current status: {reportStatus}
+                Selected contact: {selectedContactName} via{" "}
+                {formatChannel(selectedContactChannel)}
               </p>
-            {latestSubmission ? (
-              <p className="mt-1 text-[10px] text-[#60728a]">
-                Selected contact: {latestSubmission.destinationName} via{" "}
-                {latestSubmission.channel}
+            ) : null}
+            {!latestSubmission && preparedSubmission ? (
+              <p className="mt-1 text-[10px] font-semibold text-[#9a5b12]">
+                {preparedStatusLabel}. No external sharing was recorded yet.
+              </p>
+            ) : null}
+            {!latestSubmission && preparedSubmission?.message ? (
+              <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+                {preparedSubmission.message}
               </p>
             ) : null}
             {latestSubmission?.externalReference ? (
@@ -104,148 +233,335 @@ function ReportSubmissionSuccessPage() {
             ) : null}
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr]">
-            <article className="rounded-[12px] border border-[#e3ebf4] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-              <div className="flex items-center justify-between">
+          {loadNotice ? (
+            <div className="mt-4 rounded-[12px] border border-[#fdeccf] bg-[#fff9ef] px-4 py-3 text-[11px] leading-[16px] text-[#9a5b12]">
+              {loadNotice}
+            </div>
+          ) : null}
+
+          <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.35fr_0.9fr]">
+            <article className="rounded-[16px] border border-[#dbe7f4] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="inline-flex items-center gap-2">
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#ffe8d2] text-[#ff8f00]">
-                    <IconBoltFilled size={11} />
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e9f2ff] text-[#0f5d9f]">
+                    <IconBrain size={17} />
                   </span>
-                  <h4 className="text-[18px] font-bold text-[#ff7f1a]">
-                    Guidance
-                  </h4>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                      AI-assisted routing
+                    </p>
+                    <h4 className="text-[18px] font-bold text-[#1f2a3a]">
+                      Recommended authority match
+                    </h4>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  className="inline-flex h-5 w-5 items-center justify-center text-[#95a4b9]"
-                >
-                  <IconChevronDown
-                    size={12}
-                    stroke={1.8}
-                    className="rotate-180"
-                  />
-                </button>
+                {isLoadingDestinations ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe7f4] bg-[#f8fbff] px-3 py-1 text-[10px] font-semibold text-[#60728a]">
+                    <IconLoader2 size={12} className="animate-spin" />
+                    Checking admin records
+                  </span>
+                ) : null}
               </div>
 
-              <div className="mt-4 space-y-4">
-                <section>
-                  <h5 className="text-[12px] font-bold leading-[18px] text-[#1f2a3a]">
-                    Review before sharing
-                  </h5>
-                  <p className="mt-1 text-[10px] leading-[16px] text-[#7f90a6]">
-                    This is general information, not a confirmation that an
-                    external agency acknowledged your report. Keep details
-                    accurate and share only when it feels safe.
-                  </p>
-                </section>
+              {primaryMatch ? (
+                <div className="mt-4 rounded-[14px] border border-[#cfe0f3] bg-[#f8fbff] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+                        Primary recommendation
+                      </p>
+                      <h5 className="mt-1 text-[20px] font-bold leading-[26px] text-[#10243d]">
+                        {primaryMatch.destinationName}
+                      </h5>
+                    </div>
+                    <span className="inline-flex h-8 items-center rounded-full bg-[#0f5d9f] px-3 text-[10px] font-bold text-white">
+                      Best match: {primaryMatch.confidence}%
+                    </span>
+                  </div>
 
-                <section>
-                  <h5 className="text-[12px] font-bold leading-[18px] text-[#1f2a3a]">
-                    Support access
-                  </h5>
-                  <p className="mt-1 text-[10px] leading-[16px] text-[#7f90a6]">
-                    You can use SafeSpeak support options to find legal,
-                    community, interpreter, or safety planning help before any
-                    external sharing.
-                  </p>
-                </section>
-              </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {primaryMatch.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex rounded-full border border-[#d6e4f4] bg-white px-2.5 py-1 text-[10px] font-semibold text-[#526982]"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
 
-              <div className="mt-4 rounded-[10px] border border-[#edf2f8] bg-[#f6f8fc] p-3">
-                <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#ff8f00]">
-                  Guidance only
-                </p>
-                <p className="mt-1 text-[9px] leading-[14px] text-[#7f90a6]">
-                  These cards are explanatory guidance. They are not an agency
-                  receipt, except where an acknowledgement reference is recorded.
-                </p>
+                  <p className="mt-3 text-[12px] leading-[18px] text-[#60728a]">
+                    {primaryMatch.reason}
+                  </p>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-[12px] border border-[#e4edf7] bg-white px-3 py-2">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                        Admin channel
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-[#1f2a3a]">
+                        {formatChannel(primaryMatch.channel)}
+                      </p>
+                    </div>
+                    <div className="rounded-[12px] border border-[#e4edf7] bg-white px-3 py-2">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                        Jurisdiction
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-[#1f2a3a]">
+                        {primaryMatch.jurisdiction}
+                      </p>
+                    </div>
+                  </div>
+
+                  {primaryMatch.contactPhone || primaryMatch.contactEmail ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {primaryMatch.contactPhone ? (
+                        <a
+                          href={`tel:${primaryMatch.contactPhone.replace(/[^\d+]/g, "")}`}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#dbe7f4] bg-white px-3 text-[10px] font-semibold text-[#526982]"
+                        >
+                          <IconPhone size={12} />
+                          Call contact
+                        </a>
+                      ) : null}
+                      {primaryMatch.contactEmail ? (
+                        <a
+                          href={`mailto:${primaryMatch.contactEmail}`}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#dbe7f4] bg-white px-3 text-[10px] font-semibold text-[#526982]"
+                        >
+                          <IconMail size={12} />
+                          Email contact
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {primaryMatch.missingRequiredInfo.length ? (
+                    <p className="mt-3 rounded-[10px] border border-[#fdeccf] bg-[#fff9ef] px-3 py-2 text-[10px] font-semibold leading-[16px] text-[#9a5b12]">
+                      This recipient still needs:{" "}
+                      {primaryMatch.missingRequiredInfo.join(", ")}.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-[14px] border border-[#dbe7f4] bg-[#f8fbff] p-5 text-center">
+                  <p className="text-[13px] font-bold text-[#1f2a3a]">
+                    No authority match is available yet.
+                  </p>
+                  <p className="mx-auto mt-2 max-w-[480px] text-[11px] leading-[17px] text-[#60728a]">
+                    Create a backend report or add active destinations in the
+                    admin dashboard so SafeSpeak can recommend where this report
+                    should go.
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                    Other possible recipients
+                  </p>
+                  <Link
+                    href="/dashboard?view=reportsubmissionreview"
+                    className="text-[10px] font-semibold text-[#0f5d9f]"
+                  >
+                    Review recipients
+                  </Link>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {alternativeMatches.length ? (
+                    alternativeMatches.map((match) => (
+                      <article
+                        key={match.destinationId}
+                        className="rounded-[12px] border border-[#e2ebf5] bg-white p-3"
+                      >
+                        <p className="text-[11px] font-bold leading-[15px] text-[#1f2a3a]">
+                          {match.destinationName}
+                        </p>
+                        <p className="mt-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-[#7c8da3]">
+                          {formatDestinationType(match.destinationType)} -{" "}
+                          {match.confidence}%
+                        </p>
+                        <p className="mt-2 line-clamp-3 text-[10px] leading-[15px] text-[#60728a]">
+                          {match.reason}
+                        </p>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="rounded-[12px] border border-[#e2ebf5] bg-white p-3 text-[10px] leading-[16px] text-[#60728a] md:col-span-3">
+                      Additional admin-managed destinations will appear here
+                      when they match this incident type and jurisdiction.
+                    </div>
+                  )}
+                </div>
               </div>
             </article>
 
             <div className="space-y-4">
+              <article className="rounded-[16px] border border-[#dbe7f4] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                <div className="inline-flex items-center gap-2">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#fff0da] text-[#ff8f00]">
+                    <IconSparkles size={15} />
+                  </span>
+                  <h4 className="text-[15px] font-bold text-[#1f2a3a]">
+                    Review checklist
+                  </h4>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {checklistItems.map((item) => (
+                    <div
+                      key={item.label}
+                      className="flex items-center justify-between rounded-[10px] border border-[#edf2f8] bg-[#f9fbfe] px-3 py-2"
+                    >
+                      <span className="text-[11px] font-semibold text-[#526982]">
+                        {item.label}
+                      </span>
+                      <span
+                        className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${
+                          item.done
+                            ? "bg-[#dcfce7] text-[#16a34a]"
+                            : "bg-[#edf2f8] text-[#90a3bb]"
+                        }`}
+                      >
+                        <IconCheck size={12} />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 rounded-[10px] border border-[#edf2f8] bg-[#f6f8fc] px-3 py-2 text-[10px] leading-[15px] text-[#60728a]">
+                  Authority and department data is managed by admins. SafeSpeak
+                  does not send anything until the user confirms sharing on the
+                  next page.
+                </p>
+              </article>
+
               <article className="relative overflow-hidden rounded-[14px] bg-[#0f5d9f] p-4 text-white shadow-[0_10px_22px_rgba(15,93,159,0.28)]">
-                <span className="bg-white/18 inline-flex h-6 w-6 items-center justify-center rounded-full">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/15">
                   <IconInfoCircleFilled size={12} />
                 </span>
                 <h4 className="mt-6 text-[16px] font-bold leading-[22px]">
                   Cultural Support
                 </h4>
-                <p className="mt-2 max-w-[220px] text-[10px] leading-[15px] text-white/85">
+                <p className="mt-2 max-w-[260px] text-[10px] leading-[15px] text-white/85">
                   Consider culturally safe support and interpreter needs before
                   deciding what to share.
                 </p>
               </article>
 
               <article className="relative overflow-hidden rounded-[14px] bg-[#0f5d9f] p-4 text-white shadow-[0_10px_22px_rgba(15,93,159,0.28)]">
-                <span className="bg-white/18 inline-flex h-6 w-6 items-center justify-center rounded-full">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/15">
                   <IconEye size={12} />
                 </span>
                 <h4 className="mt-6 text-[16px] font-bold leading-[22px]">
                   What Happens Next
                 </h4>
-                <p className="mt-2 max-w-[220px] text-[10px] leading-[15px] text-white/85">
+                <p className="mt-2 max-w-[260px] text-[10px] leading-[15px] text-white/85">
                   {latestSubmission
                     ? `This report is tracked as ${latestSubmission.status} for ${latestSubmission.destinationName}.`
-                    : "Your report remains in SafeSpeak with the status shown above until a supported backend action changes it."}
+                    : preparedSubmission?.status === "requires_review"
+                      ? "Review the required details before SafeSpeak can send this to the selected contact."
+                      : primaryMatch
+                        ? "Open secure sharing to confirm the recipient, consent, and final report submission."
+                        : "Your report remains in SafeSpeak until a supported backend action changes it."}
                 </p>
-                <span className="bg-white/12 pointer-events-none absolute bottom-[-26px] right-[-18px] h-[90px] w-[90px] rounded-full" />
               </article>
             </div>
           </div>
 
-          {latestSubmission ? (
+          {latestSubmission || preparedSubmission ? (
             <div className="mt-4 rounded-[12px] border border-[#e5ebf4] bg-white px-4 py-3">
               <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                Submission record
+                {latestSubmission ? "Submission record" : "Prepared contact"}
               </p>
-              <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
-                {latestSubmission.destinationName}
-              </p>
-              <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
-                Status: {latestSubmission.status}
-                {latestSubmission.externalReference
-                  ? ` - Ref ${latestSubmission.externalReference}`
-                  : ""}
-              </p>
-              {latestSubmission.deliveryMessage ? (
-                <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
-                  Delivery note: {latestSubmission.deliveryMessage}
-                </p>
-              ) : null}
-              {latestSubmission.deliveryArtifacts?.length ? (
-                <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
-                  Delivery artifacts: {latestSubmission.deliveryArtifacts.length}
-                </p>
-              ) : null}
-              {latestSubmission.status === "requires_manual_action" ? (
-                <p className="mt-1 text-[10px] font-semibold leading-[16px] text-[#9a5b12]">
-                  Manual follow-up is required before this destination can treat the report as sent.
-                </p>
-              ) : null}
-              {latestSubmission.expectedNextSteps.length ? (
-                <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
-                  Next steps: {latestSubmission.expectedNextSteps.join(" / ")}
-                </p>
+              {latestSubmission ? (
+                <>
+                  <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
+                    {latestSubmission.destinationName}
+                  </p>
+                  <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+                    Status: {latestSubmission.status}
+                    {latestSubmission.externalReference
+                      ? ` - Ref ${latestSubmission.externalReference}`
+                      : ""}
+                  </p>
+                  {latestSubmission.deliveryMessage ? (
+                    <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+                      Delivery note: {latestSubmission.deliveryMessage}
+                    </p>
+                  ) : null}
+                  {latestSubmission.deliveryArtifacts?.length ? (
+                    <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+                      Delivery artifacts:{" "}
+                      {latestSubmission.deliveryArtifacts.length}
+                    </p>
+                  ) : null}
+                  {latestSubmission.status === "requires_manual_action" ? (
+                    <p className="mt-1 text-[10px] font-semibold leading-[16px] text-[#9a5b12]">
+                      Manual follow-up is required before this destination can
+                      treat the report as sent.
+                    </p>
+                  ) : null}
+                  {latestSubmission.expectedNextSteps.length ? (
+                    <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+                      Next steps:{" "}
+                      {latestSubmission.expectedNextSteps.join(" / ")}
+                    </p>
+                  ) : null}
+                </>
+              ) : preparedSubmission ? (
+                <>
+                  <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
+                    {preparedSubmission.destinationName}
+                  </p>
+                  <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+                    Status: {preparedStatusLabel}
+                  </p>
+                  {preparedSubmission.missingRequiredInfo?.length ? (
+                    <p className="mt-1 text-[10px] font-semibold leading-[16px] text-[#9a5b12]">
+                      Needs: {preparedSubmission.missingRequiredInfo.join(", ")}
+                    </p>
+                  ) : null}
+                  {preparedSubmission.message ? (
+                    <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+                      {preparedSubmission.message}
+                    </p>
+                  ) : null}
+                </>
               ) : null}
             </div>
           ) : null}
 
           <div className="mt-4 rounded-[12px] border border-[#e5ebf4] bg-white">
-            <div className="grid grid-cols-1 divide-y divide-[#edf2f8] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+            <div className="grid grid-cols-1 divide-y divide-[#edf2f8] lg:grid-cols-[0.75fr_1.25fr] lg:divide-x lg:divide-y-0">
               <Link
                 href="/dashboard?view=reportsubmissionhistory"
-                className="inline-flex h-[56px] items-center justify-center gap-2 text-[11px] font-semibold text-[#ff8f00]"
+                className="inline-flex min-h-[64px] items-center justify-center gap-2 px-4 text-[11px] font-semibold text-[#ff8f00]"
               >
                 <IconFolderFilled size={13} />
                 Save to History
               </Link>
-              <button
-                type="button"
-                className="inline-flex h-[56px] items-center justify-center gap-2 text-[11px] font-semibold text-[#ff8f00]"
-              >
-                <IconShare size={13} />
-                Sharing recorded
-              </button>
+              <div className="flex min-h-[64px] flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-center">
+                <Link
+                  href="/dashboard?view=reportsubmissionshare"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#ff8f00] px-5 text-[11px] font-bold text-white shadow-[0_10px_22px_rgba(255,143,0,0.28)] transition hover:bg-[#ec8200]"
+                >
+                  <IconShare size={13} />
+                  Share report securely
+                </Link>
+                <Link
+                  href="/dashboard?view=reportsubmissionreview"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#dbe7f4] bg-white px-5 text-[11px] font-bold text-[#526982] transition hover:bg-[#f8fbff]"
+                >
+                  Review recipients
+                  <IconArrowRight size={13} />
+                </Link>
+                <span className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold text-[#9a5b12]">
+                  <IconBoltFilled size={12} />
+                  {latestSubmission
+                    ? "Shared through SafeSpeak"
+                    : "Prepared - not yet shared"}
+                </span>
+              </div>
             </div>
           </div>
 
