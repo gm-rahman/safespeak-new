@@ -1,9 +1,12 @@
 "use client";
 
-import { apiRequest } from "@/lib/api";
+import { ApiRequestError, apiRequest, type ApiEnvelope } from "@/lib/api";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import { consentRequirements, ensureConsent } from "@/lib/consent";
-import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
+import {
+  clearAnonymousSession,
+  getSessionAwareAuthHeaders,
+} from "@/lib/frontend-session";
 
 export type ConversationFlowSession = {
   id: string;
@@ -203,17 +206,41 @@ async function getConversationHeaders(): Promise<HeadersInit> {
   return headers;
 }
 
+async function conversationApiRequest<TData>(
+  path: string,
+  options: Omit<Parameters<typeof apiRequest<TData>>[1], "headers"> = {}
+): Promise<ApiEnvelope<TData>> {
+  const headers = await getConversationHeaders();
+
+  try {
+    return await apiRequest<TData>(path, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      clearAnonymousSession();
+      const retryHeaders = await getConversationHeaders();
+
+      return apiRequest<TData>(path, {
+        ...options,
+        headers: retryHeaders,
+      });
+    }
+
+    throw error;
+  }
+}
+
 export async function createConversationFlowSession(input: {
   selectedTopic?: string;
   jurisdiction?: string;
   location?: string;
 }): Promise<ConversationFlowSession> {
-  const headers = await getConversationHeaders();
-  const response = await apiRequest<CreateSessionResponse>(
+  const response = await conversationApiRequest<CreateSessionResponse>(
     "/conversation-flow/sessions",
     {
       method: "POST",
-      headers,
       body: input,
     }
   );
@@ -224,10 +251,9 @@ export async function createConversationFlowSession(input: {
 export async function getConversationFlowSession(
   conversationSessionId: string
 ): Promise<SessionEnvelope> {
-  const headers = await getConversationHeaders();
-  const response = await apiRequest<SessionEnvelope>(
+  const response = await conversationApiRequest<SessionEnvelope>(
     `/conversation-flow/sessions/${conversationSessionId}`,
-    { headers }
+    {}
   );
 
   return response.data;
@@ -238,12 +264,10 @@ export async function appendConversationFlowMessage(input: {
   content: string;
   language?: string;
 }): Promise<ConversationTurnResponse> {
-  const headers = await getConversationHeaders();
-  const response = await apiRequest<ConversationTurnResponse>(
+  const response = await conversationApiRequest<ConversationTurnResponse>(
     `/conversation-flow/sessions/${input.conversationSessionId}/messages`,
     {
       method: "POST",
-      headers,
       body: {
         content: input.content,
         language: input.language ?? "en",
@@ -257,10 +281,9 @@ export async function appendConversationFlowMessage(input: {
 export async function fetchConversationFlowTriage(
   conversationSessionId: string
 ): Promise<TriageEnvelope> {
-  const headers = await getConversationHeaders();
-  const response = await apiRequest<TriageEnvelope>(
+  const response = await conversationApiRequest<TriageEnvelope>(
     `/conversation-flow/sessions/${conversationSessionId}/triage`,
-    { headers }
+    {}
   );
 
   return response.data;
@@ -269,10 +292,9 @@ export async function fetchConversationFlowTriage(
 export async function fetchConversationFlowSupport(
   conversationSessionId: string
 ): Promise<SupportEnvelope> {
-  const headers = await getConversationHeaders();
-  const response = await apiRequest<SupportEnvelope>(
+  const response = await conversationApiRequest<SupportEnvelope>(
     `/conversation-flow/sessions/${conversationSessionId}/support`,
-    { headers }
+    {}
   );
 
   return response.data;
@@ -281,10 +303,9 @@ export async function fetchConversationFlowSupport(
 export async function fetchConversationFlowRecommendations(
   conversationSessionId: string
 ): Promise<RecommendationsEnvelope> {
-  const headers = await getConversationHeaders();
-  const response = await apiRequest<RecommendationsEnvelope>(
+  const response = await conversationApiRequest<RecommendationsEnvelope>(
     `/conversation-flow/sessions/${conversationSessionId}/recommendations`,
-    { headers }
+    {}
   );
 
   return response.data;
@@ -293,10 +314,9 @@ export async function fetchConversationFlowRecommendations(
 export async function fetchConversationFlowDetails(
   conversationSessionId: string
 ): Promise<DetailsEnvelope> {
-  const headers = await getConversationHeaders();
-  const response = await apiRequest<DetailsEnvelope>(
+  const response = await conversationApiRequest<DetailsEnvelope>(
     `/conversation-flow/sessions/${conversationSessionId}/details`,
-    { headers }
+    {}
   );
 
   return response.data;

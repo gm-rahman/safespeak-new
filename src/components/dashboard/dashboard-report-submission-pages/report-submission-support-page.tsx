@@ -92,9 +92,15 @@ function buildFallbackTriage(): ConversationFlowTriage {
 
 type ViolenceMicroCardProfile = {
   label: string;
+  category: string;
   safetyRiskLevel: ConversationFlowTriage["safetyRiskLevel"];
   preferredChips: MicroEducationChip[];
   keywords: string[];
+  anchorPatterns: RegExp[];
+  bridgePatterns: RegExp[];
+  protectedPatterns: RegExp[];
+  excludedPatterns: RegExp[];
+  minimumScore: number;
 };
 
 const VIOLENCE_TERMS = [
@@ -162,12 +168,11 @@ function reorderRiskFirst(
 function getViolenceMicroCardProfile(
   triage: ConversationFlowTriage | null
 ): ViolenceMicroCardProfile | null {
-  const searchText = buildTriageSearchText(triage);
-
-  if (!triage || !VIOLENCE_TERMS.some((term) => searchText.includes(term))) {
+  if (!triage) {
     return null;
   }
 
+  const searchText = buildTriageSearchText(triage);
   let preferredChips: MicroEducationChip[] = [
     "harassment",
     "safety",
@@ -183,8 +188,176 @@ function getViolenceMicroCardProfile(
     "safety",
     "violence",
   ];
+  let anchorPatterns: RegExp[] = [
+    /\babuse\b/i,
+    /\bviolence\b/i,
+    /\bthreat/i,
+    /\bharass/i,
+  ];
+  let bridgePatterns: RegExp[] = [
+    /\bevidence\b/i,
+    /\bsupport\b/i,
+    /\bright/i,
+    /\bsafety plan/i,
+    /\bsafety planning/i,
+  ];
+  let protectedPatterns: RegExp[] = [
+    /\blegal aid\b/i,
+    /\bmental health\b/i,
+    /\bcounsell?ing\b/i,
+    /\bevidence\b/i,
+    /\bsafety plan/i,
+    /\bsafety planning/i,
+  ];
+  let excludedPatterns: RegExp[] = [];
+  let minimumScore = 18;
 
-  if (
+  if (triage.likelyCategory === "domestic_violence") {
+    preferredChips = ["safety", "mentalHealth", "harassment", "rights"];
+    label = "Domestic or family violence";
+    keywords = [
+      "domestic",
+      "family",
+      "violence",
+      "safety",
+      "mental",
+      "support",
+    ];
+    anchorPatterns = [
+      /\bdomestic\b/i,
+      /\bfamily violence\b/i,
+      /\bfamily harm\b/i,
+      /\bpartner\b/i,
+      /\bcoercive\b/i,
+      /\babuse\b/i,
+      /\bviolence\b/i,
+      /\b1800respect\b/i,
+    ];
+    bridgePatterns = [
+      /\bsafety plan/i,
+      /\bsafety planning/i,
+      /\bunsafe\b/i,
+      /\bthreat/i,
+      /\bevidence\b/i,
+      /\bsupport service\b/i,
+      /\bconfidential support\b/i,
+      /\bright/i,
+    ];
+    protectedPatterns = [
+      /\blegal aid\b/i,
+      /\bmental health\b/i,
+      /\bcounsell?ing\b/i,
+      /\bcrisis\b/i,
+      /\bevidence\b/i,
+      /\bsafety plan/i,
+      /\bsafety planning/i,
+      /\b1800respect\b/i,
+    ];
+    excludedPatterns = [
+      /\bonline\b/i,
+      /\bcyber\b/i,
+      /\bdigital footprint\b/i,
+      /\bbullying\b/i,
+      /\bdiscrimination\b/i,
+      /\bscam\b/i,
+      /\bfraud\b/i,
+      /\bworkplace\b/i,
+    ];
+    minimumScore = 20;
+  } else if (triage.likelyCategory === "racism_discrimination") {
+    preferredChips = ["harassment", "rights", "safety", "mentalHealth"];
+    label = "Racial abuse or discrimination";
+    keywords = ["racial", "discrimination", "rights", "harassment", "report"];
+    anchorPatterns = [
+      /\bracis[mt]\b/i,
+      /\bracial\b/i,
+      /\bdiscriminat/i,
+      /\bhate\b/i,
+      /\bvilification\b/i,
+      /\bhijab\b/i,
+    ];
+    excludedPatterns = [/\bdomestic\b/i, /\bscam\b/i, /\bfraud\b/i];
+  } else if (triage.likelyCategory === "online_abuse") {
+    preferredChips = ["safety", "harassment", "rights", "mentalHealth"];
+    label = "Online abuse or cyberbullying";
+    keywords = ["online", "cyber", "digital", "privacy", "abuse", "safety"];
+    anchorPatterns = [
+      /\bonline\b/i,
+      /\bcyber\b/i,
+      /\bdigital\b/i,
+      /\beSafety\b/i,
+      /\bprivacy\b/i,
+      /\bimage-based\b/i,
+      /\bdoxx/i,
+      /\baccount\b/i,
+    ];
+    excludedPatterns = [/\bdomestic\b/i, /\bworkplace\b/i, /\bscam\b/i];
+  } else if (triage.likelyCategory === "scam_fraud") {
+    preferredChips = ["safety", "rights", "mentalHealth"];
+    label = "Scam or fraud";
+    keywords = ["scam", "fraud", "online", "privacy", "bank", "safety"];
+    anchorPatterns = [
+      /\bscam\b/i,
+      /\bfraud\b/i,
+      /\bphishing\b/i,
+      /\bbank\b/i,
+      /\bpassword\b/i,
+      /\botp\b/i,
+      /\baccount\b/i,
+    ];
+    bridgePatterns = [/\bevidence\b/i, /\bsupport\b/i, /\bonline safety\b/i, /\bprivacy\b/i];
+    excludedPatterns = [/\bdomestic\b/i, /\bworkplace\b/i, /\bracial\b/i];
+  } else if (triage.likelyCategory === "workplace_bullying") {
+    preferredChips = ["harassment", "rights", "safety", "mentalHealth"];
+    label = "Workplace bullying or harassment";
+    keywords = ["bullying", "harassment", "workplace", "document", "rights"];
+    anchorPatterns = [
+      /\bworkplace\b/i,
+      /\bat work\b/i,
+      /\bboss\b/i,
+      /\bmanager\b/i,
+      /\bemployer\b/i,
+      /\bbully/i,
+      /\bharass/i,
+    ];
+    excludedPatterns = [/\bdomestic\b/i, /\bscam\b/i, /\bonline abuse\b/i];
+  } else if (triage.likelyCategory === "mental_health_distress") {
+    preferredChips = ["mentalHealth", "safety", "rights"];
+    label = "Emotional support";
+    keywords = ["mental", "stress", "support", "grounding", "safety"];
+    anchorPatterns = [
+      /\bmental health\b/i,
+      /\bstress/i,
+      /\banxiety\b/i,
+      /\blonely\b/i,
+      /\bgrounding\b/i,
+      /\bcounsell?ing\b/i,
+      /\bsupport\b/i,
+    ];
+    bridgePatterns = [/\bsafety\b/i, /\bsupport\b/i, /\bwellbeing\b/i];
+    protectedPatterns = [/\bmental health\b/i, /\bcounsell?ing\b/i, /\bcrisis\b/i];
+    excludedPatterns = [
+      /\bdomestic\b/i,
+      /\bscam\b/i,
+      /\bfraud\b/i,
+      /\bdiscrimination\b/i,
+      /\bbullying\b/i,
+    ];
+  } else if (triage.likelyCategory === "theft_property") {
+    preferredChips = ["safety", "rights", "mentalHealth"];
+    label = "Theft or property harm";
+    keywords = ["theft", "stolen", "evidence", "safety", "rights"];
+    anchorPatterns = [/\btheft\b/i, /\bstolen\b/i, /\brobbed\b/i, /\bproperty\b/i];
+    bridgePatterns = [/\bevidence\b/i, /\bpolice\b/i, /\bright/i, /\bsafety\b/i];
+  } else if (triage.likelyCategory === "harassment") {
+    preferredChips = ["harassment", "safety", "rights", "mentalHealth"];
+    label = "Harassment";
+    keywords = ["harassment", "threat", "safety", "document", "rights"];
+    anchorPatterns = [/\bharass/i, /\bthreat/i, /\bstalk/i, /\bintimidat/i];
+    bridgePatterns = [/\bevidence\b/i, /\bright/i, /\bsafety plan/i, /\bsupport\b/i];
+  } else if (!VIOLENCE_TERMS.some((term) => searchText.includes(term))) {
+    return null;
+  } else if (
     searchText.includes("domestic") ||
     searchText.includes("family violence") ||
     searchText.includes("sexual violence")
@@ -227,10 +400,204 @@ function getViolenceMicroCardProfile(
 
   return {
     label,
+    category: triage.likelyCategory,
     safetyRiskLevel: triage.safetyRiskLevel,
     preferredChips: reorderRiskFirst(preferredChips, triage.safetyRiskLevel),
     keywords,
+    anchorPatterns,
+    bridgePatterns,
+    protectedPatterns,
+    excludedPatterns,
+    minimumScore,
   };
+}
+
+type TriagePresentation = {
+  title: string;
+  body: string;
+  assessmentNote: string;
+  primaryStepTitle: string;
+  primaryStepBody: string;
+  immediateDangerBody: string;
+  secondTitle: string;
+  secondBody: string;
+  secondActionLabel: string;
+  secondActionHref: Route;
+  thirdTitle: string;
+  thirdBody: string;
+  thirdActionLabel: string;
+  thirdActionHref: Route;
+};
+
+function buildTriagePresentation(
+  triage: ConversationFlowTriage | null,
+  isLoading: boolean
+): TriagePresentation {
+  if (isLoading) {
+    return {
+      title: "Reviewing your situation",
+      body: "Reviewing your inputs and preparing support options.",
+      assessmentNote: "This is not a formal finding. You choose what to do next.",
+      primaryStepTitle: "Review your options",
+      primaryStepBody:
+        "You can choose support, reporting, safety planning, or evidence steps.",
+      immediateDangerBody:
+        "If you or someone else is in immediate danger, call 000 now.",
+      secondTitle: "Support options",
+      secondBody:
+        "You can explore services that may fit what you shared, at your pace.",
+      secondActionLabel: "Review options",
+      secondActionHref: "/dashboard?view=reportsubmissionrecommendations",
+      thirdTitle: "Emotional support",
+      thirdBody:
+        "You can talk with a support service if this feels overwhelming.",
+      thirdActionLabel: "Find support",
+      thirdActionHref: "/dashboard/explorer",
+    };
+  }
+
+  const category = triage?.likelyCategory ?? "general_support";
+  const label =
+    triage?.likelyCategoryLabel ??
+    (category === "general_support" ? "General support" : toLabel(category));
+  const riskText =
+    triage?.safetyRiskLevel === "immediate" ||
+    triage?.safetyRiskLevel === "high"
+      ? " There may be safety concerns, so immediate safety comes first."
+      : "";
+  const base = {
+    title: `${label} Support`,
+    body: `From what you shared, this may fit a ${label.toLowerCase()} pathway.${riskText} You can explore support, reporting, evidence, and safety options without pressure.`,
+    assessmentNote: "This is not a formal finding. You choose what to do next.",
+    primaryStepTitle: "Review your options",
+    primaryStepBody:
+      "Choose what feels safest: support services, reporting options, evidence, or safety planning.",
+    immediateDangerBody:
+      "If you or someone else is in immediate danger, call 000 now. You can stop using SafeSpeak at any time.",
+    secondTitle: "Reporting options",
+    secondBody:
+      "You can review possible reporting pathways and decide what feels safe.",
+    secondActionLabel: "Review reporting",
+    secondActionHref: "/dashboard?view=reportsubmissionrecommendations" as Route,
+    thirdTitle: "Emotional support",
+    thirdBody:
+      "You can speak with a support service if this feels stressful, upsetting, or unsafe.",
+    thirdActionLabel: "Find support",
+    thirdActionHref: "/dashboard/explorer" as Route,
+  };
+
+  if (category === "domestic_violence") {
+    return {
+      ...base,
+      title: "Domestic or Family Violence Support",
+      body:
+        "From what you shared, this may involve domestic or family violence. You can explore safety planning, support services, evidence steps, and reporting options at your pace.",
+      secondTitle: "Domestic violence support",
+      secondBody:
+        "You can contact a confidential support service such as 1800RESPECT to talk through safety and options.",
+      secondActionLabel: "Get support",
+      secondActionHref: "/dashboard/explorer",
+      thirdTitle: "Safety planning",
+      thirdBody:
+        "You can think about where you can go, who you can contact, and what evidence or belongings you may need to keep safe.",
+      thirdActionLabel: "Plan safely",
+      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
+    };
+  }
+
+  if (category === "workplace_bullying") {
+    return {
+      ...base,
+      title: "Workplace Bullying Support",
+      body:
+        "From what you shared, this may involve bullying or pressure at work. You can review support, workplace options, and safe evidence steps.",
+      secondTitle: "Workplace options",
+      secondBody:
+        "You can review workplace, HR, union, regulator, or legal information pathways without making a report yet.",
+      secondActionLabel: "Review options",
+      thirdTitle: "Record what happened",
+      thirdBody:
+        "If it feels safe, keep dates, messages, witnesses, rosters, and notes about what happened.",
+      thirdActionLabel: "Evidence steps",
+      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
+    };
+  }
+
+  if (category === "racism_discrimination") {
+    return {
+      ...base,
+      title: "Racism or Discrimination Support",
+      body:
+        "From what you shared, this may involve racism or discrimination. You can look at support, reporting options, rights information, and evidence steps.",
+      secondTitle: "Rights and reporting options",
+      secondBody:
+        "You can review options such as anti-discrimination bodies, police, community support, or legal information.",
+      secondActionLabel: "Review options",
+      thirdTitle: "Document safely",
+      thirdBody:
+        "If it feels safe, keep screenshots, dates, locations, names, and notes in a private place.",
+      thirdActionLabel: "Evidence steps",
+      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
+    };
+  }
+
+  if (category === "online_abuse") {
+    return {
+      ...base,
+      title: "Online Abuse Support",
+      body:
+        "From what you shared, this may involve online abuse. You can explore content removal, reporting, digital safety, and emotional support options.",
+      secondTitle: "eSafety Commissioner",
+      secondBody:
+        "You can consider eSafety options for online abuse, cyberbullying, or image-based abuse.",
+      secondActionLabel: "Report to eSafety",
+      thirdTitle: "Digital safety",
+      thirdBody:
+        "You can review privacy, account security, screenshots, and device safety steps.",
+      thirdActionLabel: "Safety steps",
+      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
+    };
+  }
+
+  if (category === "scam_fraud") {
+    return {
+      ...base,
+      title: "Scam or Fraud Support",
+      body:
+        "From what you shared, this may involve a scam or fraud. You can review account safety, evidence, and reporting options.",
+      secondTitle: "Scam and cyber reporting",
+      secondBody:
+        "You can consider Scamwatch, ReportCyber, your bank, or police depending on what happened.",
+      secondActionLabel: "Review options",
+      thirdTitle: "Protect accounts",
+      thirdBody:
+        "You can change passwords, contact your bank, keep screenshots, and avoid sending more money or codes.",
+      thirdActionLabel: "Safety steps",
+      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
+    };
+  }
+
+  if (category === "mental_health_distress") {
+    return {
+      ...base,
+      title: "Emotional Support",
+      body:
+        "From what you shared, you may need emotional support. You can take this slowly and choose support options that feel manageable.",
+      assessmentNote: "This is not a clinical diagnosis.",
+      primaryStepTitle: "I'm feeling stressed",
+      primaryStepBody: "Grounding, support, and next-step options.",
+      secondTitle: "Immediate danger",
+      secondBody:
+        "If you may hurt yourself or someone else, or you are in immediate danger, call 000 now.",
+      secondActionLabel: "Contact Police (000)",
+      thirdTitle: "Counselling support",
+      thirdBody:
+        "You can speak confidentially with a crisis counsellor or mental health support service.",
+      thirdActionLabel: "Call Lifeline",
+    };
+  }
+
+  return base;
 }
 
 function getMicroCardSearchText(card: MicroEducationItem): string {
@@ -249,10 +616,47 @@ function getMicroCardSearchText(card: MicroEducationItem): string {
     .toLowerCase();
 }
 
+function hasAnyPattern(text: string, patterns: RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function isPlaceholderMicroCard(card: MicroEducationItem): boolean {
+  const text = getMicroCardSearchText(card);
+
+  return /\b(test|testing|sample|dummy|placeholder|lorem|new educational content|new description|create educational content)\b/i.test(
+    text
+  );
+}
+
+function isMicroCardEligibleForProfile(
+  card: MicroEducationItem,
+  profile: ViolenceMicroCardProfile
+): boolean {
+  if (isPlaceholderMicroCard(card)) {
+    return false;
+  }
+
+  const searchText = getMicroCardSearchText(card);
+  const hasAnchor = hasAnyPattern(searchText, profile.anchorPatterns);
+  const hasBridge = hasAnyPattern(searchText, profile.bridgePatterns);
+  const hasProtectedTopic = hasAnyPattern(searchText, profile.protectedPatterns);
+  const hasExcludedTopic = hasAnyPattern(searchText, profile.excludedPatterns);
+
+  if (hasExcludedTopic && !hasAnchor && !hasProtectedTopic) {
+    return false;
+  }
+
+  return hasAnchor || hasBridge || hasProtectedTopic;
+}
+
 function scoreMicroCardForProfile(
   card: MicroEducationItem,
   profile: ViolenceMicroCardProfile
 ): number {
+  if (!isMicroCardEligibleForProfile(card, profile)) {
+    return 0;
+  }
+
   const searchText = getMicroCardSearchText(card);
   let score = 0;
 
@@ -267,6 +671,24 @@ function scoreMicroCardForProfile(
   profile.keywords.forEach((keyword) => {
     if (searchText.includes(keyword)) {
       score += 8;
+    }
+  });
+
+  profile.anchorPatterns.forEach((pattern) => {
+    if (pattern.test(searchText)) {
+      score += 18;
+    }
+  });
+
+  profile.bridgePatterns.forEach((pattern) => {
+    if (pattern.test(searchText)) {
+      score += 8;
+    }
+  });
+
+  profile.protectedPatterns.forEach((pattern) => {
+    if (pattern.test(searchText)) {
+      score += 10;
     }
   });
 
@@ -303,7 +725,7 @@ function getSuggestedMicroCards(
       card,
       score: scoreMicroCardForProfile(card, profile),
     }))
-    .filter((item) => item.score > 0)
+    .filter((item) => item.score >= profile.minimumScore)
     .sort((left, right) => {
       if (right.score !== left.score) {
         return right.score - left.score;
@@ -889,6 +1311,10 @@ function ReportSubmissionSupportPage() {
       ),
     [microCards, supportSuggestedMicroCardIds, violenceMicroCardProfile]
   );
+  const triagePresentation = useMemo(
+    () => buildTriagePresentation(triage, loading),
+    [loading, triage]
+  );
   const shouldShowSupportOptions = !loading && !pendingConsentRequirement;
   const activeMicroCard = useMemo(
     () =>
@@ -990,16 +1416,14 @@ function ReportSubmissionSupportPage() {
                   {t("dashboard.assistant.triage.incidentClassification")}
                 </p>
                 <h2 className="mt-3 max-w-[420px] text-[34px] font-extrabold leading-[0.98] text-[#004E92] sm:text-5xl sm:leading-none">
-                  {t("dashboard.assistant.triage.supportType")}
+                  {triagePresentation.title}
                 </h2>
                 <span className="mt-8 h-1 w-16 rounded-full bg-[#F3F4F6]" />
                 <p className="mt-8 max-w-[640px] text-sm leading-6 text-[#4B5563] sm:text-lg sm:leading-[1.6]">
-                  {loading
-                    ? "Reviewing your inputs and preparing support options."
-                    : t("dashboard.assistant.triage.assessmentBody")}
+                  {triagePresentation.body}
                 </p>
                 <p className="mt-4 text-xs italic leading-5 text-[#9CA3AF] sm:text-sm">
-                  {t("dashboard.assistant.triage.assessmentNote")}
+                  {triagePresentation.assessmentNote}
                 </p>
               </div>
             </article>
@@ -1050,12 +1474,12 @@ function ReportSubmissionSupportPage() {
                     <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#F97316] sm:h-16 sm:w-16">
                       <IconFirstAidKit size={24} stroke={2.3} />
                     </span>
-                    <span className="min-w-0">
+                      <span className="min-w-0">
                       <span className="block truncate text-lg font-extrabold leading-7 text-[#111827] sm:text-xl">
-                        {t("dashboard.assistant.triage.primaryStepTitle")}
+                        {triagePresentation.primaryStepTitle}
                       </span>
                       <span className="mt-1 block text-sm leading-5 text-[#6B7280] sm:text-base sm:leading-6">
-                        {t("dashboard.assistant.triage.primaryStepBody")}
+                        {triagePresentation.primaryStepBody}
                       </span>
                     </span>
                   </span>
@@ -1071,9 +1495,7 @@ function ReportSubmissionSupportPage() {
                     title={t(
                       "dashboard.assistant.triage.recommendations.immediateDangerTitle"
                     )}
-                    description={t(
-                      "dashboard.assistant.triage.recommendations.immediateDangerBody"
-                    )}
+                    description={triagePresentation.immediateDangerBody}
                     action={
                       <Link
                         href="/dashboard?view=reportsubmissionevidence"
@@ -1089,20 +1511,14 @@ function ReportSubmissionSupportPage() {
                   <RecommendationRow
                     icon={<IconGavel size={20} />}
                     iconClassName="bg-[#EEF2FF] text-[#4F63F6]"
-                    title={t(
-                      "dashboard.assistant.triage.recommendations.esafetyTitle"
-                    )}
-                    description={t(
-                      "dashboard.assistant.triage.recommendations.esafetyBody"
-                    )}
+                    title={triagePresentation.secondTitle}
+                    description={triagePresentation.secondBody}
                     action={
                       <Link
-                        href="/dashboard?view=reportsubmissionevidence"
+                        href={triagePresentation.secondActionHref}
                         className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto"
                       >
-                        {t(
-                          "dashboard.assistant.triage.recommendations.reportToEsafety"
-                        )}
+                        {triagePresentation.secondActionLabel}
                         <IconArrowRight size={16} className="text-[#9CA3AF]" />
                       </Link>
                     }
@@ -1110,20 +1526,14 @@ function ReportSubmissionSupportPage() {
                   <RecommendationRow
                     icon={<IconHeadphones size={20} />}
                     iconClassName="bg-[#E6FFFA] text-[#14B8A6]"
-                    title={t(
-                      "dashboard.assistant.triage.recommendations.counsellingTitle"
-                    )}
-                    description={t(
-                      "dashboard.assistant.triage.recommendations.counsellingBody"
-                    )}
+                    title={triagePresentation.thirdTitle}
+                    description={triagePresentation.thirdBody}
                     action={
                       <Link
-                        href="/dashboard?view=reportsubmissionevidence"
+                        href={triagePresentation.thirdActionHref}
                         className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto"
                       >
-                        {t(
-                          "dashboard.assistant.triage.recommendations.callLifeline"
-                        )}
+                        {triagePresentation.thirdActionLabel}
                         <IconArrowRight size={16} className="text-[#9CA3AF]" />
                       </Link>
                     }

@@ -18,6 +18,18 @@ export type ScopeTaxonomyCatalog = {
   cultures: ScopeTaxonomyRecord[];
 };
 
+export type PublicCulturalProfileGuidance = {
+  key: string;
+  name: string;
+  communityType: "cultural" | "faith" | "community";
+  languages: string[];
+  faithPathway?: string;
+  responseGuidance: string;
+  referralPreferences: string[];
+  contentGuidance: string[];
+  updatedAt?: string;
+};
+
 type ScopeBootstrapResponse = {
   bootstrap: {
     scopeVersion: string;
@@ -26,6 +38,7 @@ type ScopeBootstrapResponse = {
     culturalProfiles: string[];
     faithProfiles: string[];
     communityProfiles: string[];
+    culturalProfileGuidance?: PublicCulturalProfileGuidance[];
     consentFlags: string[];
     incidentTypes: string[];
     supportNeeds: string[];
@@ -54,4 +67,12 @@ export async function getScopeTaxonomyCatalog(): Promise<ScopeTaxonomyCatalog | 
   const bootstrap = await getScopeBootstrap();
 
   return bootstrap.taxonomies ?? null;
+}
+
+export async function getPublicCulturalProfileGuidance(): Promise<PublicCulturalProfileGuidance[]> {
+  const response = await apiRequest<{ culturalProfiles: PublicCulturalProfileGuidance[] }>(
+    "/scope/cultural-profiles"
+  );
+
+  return response.data.culturalProfiles;
 }

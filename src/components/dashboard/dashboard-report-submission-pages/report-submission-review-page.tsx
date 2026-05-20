@@ -562,7 +562,7 @@ function ReportSubmissionReviewPage() {
           >
             <IconChevronLeft size={18} stroke={2} />
             <span
-              className="inline-block h-7 w-[143px] text-[18px] font-bold leading-[28px] tracking-[0]"
+              className="inline-block h-7 whitespace-nowrap text-[18px] font-bold leading-[28px] tracking-[0]"
               style={{ fontFamily: "Inter, sans-serif" }}
             >
               Timeline Builder

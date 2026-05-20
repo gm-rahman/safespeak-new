@@ -1,33 +1,7 @@
-export type SafeSpeakCultureOption =
-  | "Migrant family"
-  | "International student"
-  | "Refugee or asylum seeker"
-  | "First Nations"
-  | "Local community member";
-
-export type SafeSpeakFaithOption =
-  | "Muslim"
-  | "Christian"
-  | "Hindu"
-  | "Buddhist"
-  | "Secular"
-  | "Prefer not to say";
-
-export type SafeSpeakCommunityOption =
-  | "South Asian"
-  | "Middle Eastern"
-  | "African diaspora"
-  | "East Asian"
-  | "Pacific community"
-  | "Multicultural";
-
-export type SafeSpeakInterpreterLanguage =
-  | "English"
-  | "Spanish"
-  | "Arabic"
-  | "Mandarin"
-  | "Hindi"
-  | "Urdu";
+export type SafeSpeakCultureOption = string;
+export type SafeSpeakFaithOption = string;
+export type SafeSpeakCommunityOption = string;
+export type SafeSpeakInterpreterLanguage = string;
 
 export interface SafeSpeakProfile {
   culturalProfile: SafeSpeakCultureOption;
@@ -95,23 +69,21 @@ export const defaultSafeSpeakProfile: SafeSpeakProfile = {
 };
 
 function isCultureOption(value: string): value is SafeSpeakCultureOption {
-  return cultureOptions.includes(value as SafeSpeakCultureOption);
+  return value.trim().length > 0;
 }
 
 function isFaithOption(value: string): value is SafeSpeakFaithOption {
-  return faithOptions.includes(value as SafeSpeakFaithOption);
+  return value.trim().length > 0;
 }
 
 function isCommunityOption(value: string): value is SafeSpeakCommunityOption {
-  return communityOptions.includes(value as SafeSpeakCommunityOption);
+  return value.trim().length > 0;
 }
 
 function isInterpreterLanguage(
   value: string
 ): value is SafeSpeakInterpreterLanguage {
-  return interpreterLanguageOptions.includes(
-    value as SafeSpeakInterpreterLanguage
-  );
+  return value.trim().length > 0;
 }
 
 export function normalizeSafeSpeakProfile(
