@@ -26,6 +26,7 @@ import sendIcon from "@/assets/sendIcon.svg?url";
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
 import { useConsentGate } from "@/hooks/use-consent-gate";
+import { ApiRequestError } from "@/lib/api";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import {
   type AssistantConversationMessage,
@@ -216,8 +217,27 @@ function getRecordingErrorMessage(
 function getPreferredRecordingMimeType(): string | undefined {
   const supportedTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 
+  if (typeof MediaRecorder.isTypeSupported !== "function") {
+    return undefined;
+  }
+
   return supportedTypes.find((mimeType) =>
     MediaRecorder.isTypeSupported(mimeType)
+  );
+}
+
+function isNoSpeechTranscriptionError(error: unknown): boolean {
+  if (!(error instanceof ApiRequestError)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+
+  return (
+    error.status === 422 ||
+    message.includes("no speech") ||
+    message.includes("empty") ||
+    message.includes("too short")
   );
 }
 
@@ -897,6 +917,7 @@ function SafeSpeakAssistantConversationPage({
         setIsSpeaking(false);
 
         if (captureConsentError(playbackError)) {
+          revealPendingSpeechResponse();
           setSpeechPlaybackError(null);
           return;
         }
@@ -905,9 +926,9 @@ function SafeSpeakAssistantConversationPage({
           playbackError instanceof DOMException &&
           playbackError.name === "NotAllowedError";
 
-        if (!autoplayBlocked) {
-          revealPendingSpeechResponse();
+        revealPendingSpeechResponse();
 
+        if (!autoplayBlocked) {
           if (voiceSessionActiveRef.current) {
             scheduleNextVoiceTurn();
           }
@@ -1437,6 +1458,12 @@ function SafeSpeakAssistantConversationPage({
           return;
         }
 
+        if (isNoSpeechTranscriptionError(recordingError)) {
+          setSpeechError(getRecordingErrorMessage("no-speech", t));
+          scheduleNextVoiceTurn();
+          return;
+        }
+
         voiceSessionActiveRef.current = false;
         setIsVoiceSessionActive(false);
         setSpeechError(
@@ -1709,6 +1736,12 @@ function SafeSpeakAssistantConversationPage({
 
   const handleDeclinePendingConsent = () => {
     pendingAssistantRequestRef.current = null;
+    revealPendingSpeechResponse();
+    voiceSessionActiveRef.current = false;
+    setIsVoiceSessionActive(false);
+    shouldContinueAfterPlaybackRef.current = false;
+    clearAutoStopRecordingTimer();
+    clearRestartListeningTimer();
     clearPendingConsent();
   };
 
