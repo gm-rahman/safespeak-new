@@ -9,6 +9,14 @@ export type VoiceTranscriptionResult = {
   saved: boolean;
 };
 
+export type AssistantVoiceSynthesisResult = {
+  audioBase64: string;
+  mimeType: string;
+  model: string;
+  voice: string;
+  temporary: boolean;
+};
+
 async function getTranscriptionAuthHeaders(): Promise<HeadersInit> {
   return getSessionAwareAuthHeaders();
 }
@@ -51,4 +59,40 @@ export async function transcribeAssistantVoice(
   );
 
   return response.data;
+}
+
+export async function synthesizeAssistantVoice(
+  text: string,
+  language?: string
+): Promise<AssistantVoiceSynthesisResult> {
+  const headers = await getTranscriptionAuthHeaders();
+
+  await ensureConsent(consentRequirements.aiAssistant, headers);
+
+  const response = await apiRequest<AssistantVoiceSynthesisResult>(
+    "/ai/synthesize-speech",
+    {
+      method: "POST",
+      headers,
+      body: {
+        text,
+        language,
+      },
+    }
+  );
+
+  return response.data;
+}
+
+export function createAssistantVoiceAudioUrl(
+  result: AssistantVoiceSynthesisResult
+): string {
+  const binary = window.atob(result.audioBase64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return URL.createObjectURL(new Blob([bytes], { type: result.mimeType }));
 }

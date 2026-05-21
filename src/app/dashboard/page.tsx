@@ -1,17 +1,18 @@
 import DashboardHomeScreen from "@/components/dashboard/dashboard-home-screen";
 import type { HomeView } from "@/components/dashboard/dashboard-types";
 import {
-  isAssistantIncidentCategory,
   type AssistantIncidentCategory,
+  isAssistantIncidentCategory,
 } from "@/lib/assistant-categories";
 import {
-  isDashboardCardFlowId,
   type DashboardCardFlowId,
+  isDashboardCardFlowId,
 } from "@/lib/dashboard-card-flows";
 
 type DashboardPageSearchParams = {
   view?: string | string[];
   recording?: string | string[];
+  voice?: string | string[];
   message?: string | string[];
   prefillMessage?: string | string[];
   reportId?: string | string[];
@@ -29,6 +30,7 @@ export default async function DashboardPage({
   const resolved = (await searchParams) ?? {};
   const rawView = resolved.view;
   const rawRecording = resolved.recording;
+  const rawVoice = resolved.voice;
   const rawMessage = resolved.message;
   const rawPrefillMessage = resolved.prefillMessage;
   const rawReportId = resolved.reportId;
@@ -38,17 +40,23 @@ export default async function DashboardPage({
   const recording = Array.isArray(rawRecording)
     ? rawRecording[0]
     : rawRecording;
+  const voice = Array.isArray(rawVoice) ? rawVoice[0] : rawVoice;
   const message = Array.isArray(rawMessage) ? rawMessage[0] : rawMessage;
   const prefillMessage = Array.isArray(rawPrefillMessage)
     ? rawPrefillMessage[0]
     : rawPrefillMessage;
   const reportId = Array.isArray(rawReportId) ? rawReportId[0] : rawReportId;
-  const categoryValue = Array.isArray(rawCategory) ? rawCategory[0] : rawCategory;
+  const categoryValue = Array.isArray(rawCategory)
+    ? rawCategory[0]
+    : rawCategory;
   const topicValue = Array.isArray(rawTopic) ? rawTopic[0] : rawTopic;
   const assistantRecording = recording === "1";
+  const assistantVoiceMode = voice === "1";
   const assistantCategory: AssistantIncidentCategory | undefined =
     isAssistantIncidentCategory(categoryValue) ? categoryValue : undefined;
-  const assistantTopic: DashboardCardFlowId | undefined = isDashboardCardFlowId(topicValue)
+  const assistantTopic: DashboardCardFlowId | undefined = isDashboardCardFlowId(
+    topicValue
+  )
     ? topicValue
     : undefined;
   let homeView: HomeView = "overview";
@@ -107,6 +115,7 @@ export default async function DashboardPage({
     <DashboardHomeScreen
       homeView={homeView}
       assistantRecording={assistantRecording}
+      assistantVoiceMode={assistantVoiceMode}
       assistantMessage={message}
       assistantPrefillMessage={prefillMessage}
       reportId={reportId}

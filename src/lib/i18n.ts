@@ -359,6 +359,13 @@ const resources = {
           realTimeTranscript: "Real-Time Transcript",
           listening: "Listening...",
           transcribing: "Transcribing...",
+          generatingVoice: "Generating voice response...",
+          speaking: "Speaking response...",
+          tapToPlayResponse: "Tap to play response.",
+          voicePlaybackFailed:
+            "Voice playback failed. You can continue by reading the response.",
+          stopVoicePlayback: "Stop voice",
+          replayVoiceResponse: "Replay",
           typeYourResponse: "Type your response...",
           toggleMicrophone: "Toggle microphone",
           stopRecording: "Stop Recording",
@@ -387,8 +394,7 @@ const resources = {
             unsupported: "Speech recognition is not supported in this browser.",
           },
           conversation: {
-            botPromptWho:
-              "I'm helping you structure your report.",
+            botPromptWho: "I'm helping you structure your report.",
             botQuestionWho: "Who was involved in this incident?",
             defaultUserReply:
               "It was a manager from the logistics department and two witnesses.",
@@ -1219,6 +1225,13 @@ const resources = {
           realTimeTranscript: "Transcripcion en tiempo real",
           listening: "Escuchando...",
           transcribing: "Transcribiendo...",
+          generatingVoice: "Generando respuesta de voz...",
+          speaking: "Reproduciendo respuesta...",
+          tapToPlayResponse: "Toca para reproducir la respuesta.",
+          voicePlaybackFailed:
+            "Fallo la reproduccion de voz. Puedes continuar leyendo la respuesta.",
+          stopVoicePlayback: "Detener voz",
+          replayVoiceResponse: "Repetir",
           typeYourResponse: "Escribe tu respuesta...",
           toggleMicrophone: "Alternar microfono",
           stopRecording: "Detener grabacion",
@@ -1246,8 +1259,7 @@ const resources = {
               "El reconocimiento de voz no es compatible en este navegador.",
           },
           conversation: {
-            botPromptWho:
-              "Te ayudo a estructurar tu reporte.",
+            botPromptWho: "Te ayudo a estructurar tu reporte.",
             botQuestionWho: "Quien estuvo involucrado en este incidente?",
             defaultUserReply:
               "Fue un gerente del departamento de logistica y dos testigos.",

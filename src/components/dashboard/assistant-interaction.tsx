@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   ChangeEvent,
   FormEvent,
@@ -131,12 +132,12 @@ export function AssistantInteraction({
   initialTopic?: DashboardCardFlowId;
 }) {
   const { t, i18n } = useTranslation();
+  const router = useRouter();
   const [message, setMessage] = useState("");
   const [isRecordingActive, setIsRecordingActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [finalTranscript, setFinalTranscript] = useState("");
-  const [liveTranscript, setLiveTranscript] = useState("");
+  const [, setLiveTranscript] = useState("");
   const [isMetadataEnabled, setIsMetadataEnabled] = useState(false);
   const [isMetadataCapturing, setIsMetadataCapturing] = useState(false);
   const [assistantFirstName, setAssistantFirstName] = useState<string>(
@@ -159,15 +160,12 @@ export function AssistantInteraction({
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const shouldProcessRecordingRef = useRef(false);
   const hasHandledInitialRecordingRef = useRef(false);
+  const autoStopRecordingTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const liveRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const liveFinalTranscriptRef = useRef("");
 
-  const transcriptText = useMemo(
-    () => (finalTranscript || liveTranscript).trim(),
-    [finalTranscript, liveTranscript]
-  );
-  const showTranscriptPanel =
-    isRecordingActive || isTranscribing || Boolean(speechError);
   const transcriptionLanguage = useMemo(() => {
     return i18n.resolvedLanguage === "es" || i18n.language === "es"
       ? "es"
@@ -175,6 +173,34 @@ export function AssistantInteraction({
   }, [i18n.language, i18n.resolvedLanguage]);
   const livePreviewLanguage =
     transcriptionLanguage === "es" ? "es-ES" : "en-US";
+
+  const continueToConversation = useCallback(
+    (transcript: string) => {
+      const params = new URLSearchParams({
+        view: "assistantconversation",
+        voice: "1",
+      });
+
+      if (transcript.trim()) {
+        params.set("message", transcript.trim());
+      }
+
+      if (initialCategory) {
+        params.set("category", initialCategory);
+      }
+
+      if (initialTopic) {
+        params.set("topic", initialTopic);
+      }
+
+      if (reportMetadata) {
+        params.set("metadataCapture", "1");
+      }
+
+      router.push(`/dashboard?${params.toString()}`);
+    },
+    [initialCategory, initialTopic, reportMetadata, router]
+  );
 
   useEffect(() => {
     let isActive = true;
@@ -203,11 +229,19 @@ export function AssistantInteraction({
     };
   }, [t]);
 
+  const clearAutoStopRecordingTimer = useCallback(() => {
+    if (autoStopRecordingTimerRef.current) {
+      clearTimeout(autoStopRecordingTimerRef.current);
+      autoStopRecordingTimerRef.current = null;
+    }
+  }, []);
+
   const cleanupRecording = useCallback(() => {
+    clearAutoStopRecordingTimer();
     recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
     recordingStreamRef.current = null;
     mediaRecorderRef.current = null;
-  }, []);
+  }, [clearAutoStopRecordingTimer]);
 
   const stopLiveTranscriptPreview = useCallback(() => {
     if (!liveRecognitionRef.current) {
@@ -227,13 +261,13 @@ export function AssistantInteraction({
     liveRecognitionRef.current = null;
   }, []);
 
-  const startLiveTranscriptPreview = useCallback(() => {
+  const startLiveTranscriptPreview = useCallback((): boolean => {
     const recognitionCtor =
       (window as SpeechWindow).SpeechRecognition ??
       (window as SpeechWindow).webkitSpeechRecognition;
 
     if (!recognitionCtor) {
-      return;
+      return false;
     }
 
     stopLiveTranscriptPreview();
@@ -276,20 +310,49 @@ export function AssistantInteraction({
       setLiveTranscript(
         [liveFinalTranscriptRef.current, interimChunk].filter(Boolean).join(" ")
       );
+
+      if (finalChunk || interimChunk) {
+        clearAutoStopRecordingTimer();
+        autoStopRecordingTimerRef.current = setTimeout(
+          () => {
+            const mediaRecorder = mediaRecorderRef.current;
+
+            if (mediaRecorder?.state === "recording") {
+              stopLiveTranscriptPreview();
+              mediaRecorder.stop();
+            }
+          },
+          finalChunk ? 900 : 1800
+        );
+      }
     };
 
     recognition.onerror = () => {
       liveRecognitionRef.current = null;
+      clearAutoStopRecordingTimer();
+      autoStopRecordingTimerRef.current = setTimeout(() => {
+        const mediaRecorder = mediaRecorderRef.current;
+
+        if (mediaRecorder?.state === "recording") {
+          mediaRecorder.stop();
+        }
+      }, 2500);
     };
 
     liveRecognitionRef.current = recognition;
 
     try {
       recognition.start();
+      return true;
     } catch {
       liveRecognitionRef.current = null;
+      return false;
     }
-  }, [livePreviewLanguage, stopLiveTranscriptPreview]);
+  }, [
+    clearAutoStopRecordingTimer,
+    livePreviewLanguage,
+    stopLiveTranscriptPreview,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -298,57 +361,74 @@ export function AssistantInteraction({
         mediaRecorderRef.current.stop();
       }
 
+      clearAutoStopRecordingTimer();
       stopLiveTranscriptPreview();
       cleanupRecording();
     };
-  }, [cleanupRecording, stopLiveTranscriptPreview]);
+  }, [
+    cleanupRecording,
+    clearAutoStopRecordingTimer,
+    stopLiveTranscriptPreview,
+  ]);
 
-  const handleRecordedAudio = useCallback(async (mimeType: string) => {
-    const audioBlob = new Blob(audioChunksRef.current, {
-      type: mimeType || "audio/webm",
-    });
+  const handleRecordedAudio = useCallback(
+    async (mimeType: string) => {
+      const audioBlob = new Blob(audioChunksRef.current, {
+        type: mimeType || "audio/webm",
+      });
 
-    shouldProcessRecordingRef.current = false;
-    audioChunksRef.current = [];
-    cleanupRecording();
+      shouldProcessRecordingRef.current = false;
+      audioChunksRef.current = [];
+      cleanupRecording();
 
-    if (!audioBlob.size) {
-      setIsTranscribing(false);
-      setSpeechError(getRecordingErrorMessage("no-speech", t));
-      return;
-    }
-
-    try {
-      const transcription = await transcribeAssistantVoice(
-        audioBlob,
-        transcriptionLanguage
-      );
-      const transcript = transcription.transcript.trim();
-
-      if (!transcript) {
+      if (!audioBlob.size) {
+        setIsTranscribing(false);
         setSpeechError(getRecordingErrorMessage("no-speech", t));
         return;
       }
 
-      setFinalTranscript(transcript);
-      setMessage((currentMessage) =>
-        [currentMessage.trim(), transcript].filter(Boolean).join(" ")
-      );
-    } catch (error) {
-      if (captureConsentError(error)) {
-        setSpeechError(null);
-        return;
-      }
+      try {
+        const transcription = await transcribeAssistantVoice(
+          audioBlob,
+          transcriptionLanguage
+        );
+        const transcript = transcription.transcript.trim();
 
-      setSpeechError(
-        error instanceof Error
-          ? error.message
-          : getRecordingErrorMessage("network", t)
-      );
-    } finally {
-      setIsTranscribing(false);
-    }
-  }, [captureConsentError, cleanupRecording, t, transcriptionLanguage]);
+        if (!transcript) {
+          setSpeechError(getRecordingErrorMessage("no-speech", t));
+          return;
+        }
+
+        setMessage((currentMessage) =>
+          [currentMessage.trim(), transcript].filter(Boolean).join(" ")
+        );
+        continueToConversation(
+          [message.trim(), transcript].filter(Boolean).join(" ")
+        );
+      } catch (error) {
+        if (captureConsentError(error)) {
+          setSpeechError(null);
+          return;
+        }
+
+        setSpeechError(
+          error instanceof Error
+            ? error.message
+            : getRecordingErrorMessage("network", t)
+        );
+      } finally {
+        setIsTranscribing(false);
+      }
+    },
+    [
+      captureConsentError,
+      cleanupRecording,
+      continueToConversation,
+      message,
+      t,
+      transcriptionLanguage,
+    ]
+  );
 
   const startVoiceRecording = useCallback(async () => {
     if (
@@ -362,9 +442,7 @@ export function AssistantInteraction({
     let canRecord = false;
 
     try {
-      canRecord = await requireConsent(
-        consentRequirements.audioTranscription
-      );
+      canRecord = await requireConsent(consentRequirements.audioTranscription);
     } catch (error) {
       setSpeechError(
         error instanceof Error
@@ -380,7 +458,6 @@ export function AssistantInteraction({
     }
 
     setSpeechError(null);
-    setFinalTranscript("");
     setLiveTranscript("");
     setIsTranscribing(false);
     audioChunksRef.current = [];
@@ -427,7 +504,19 @@ export function AssistantInteraction({
       };
 
       mediaRecorder.start();
-      startLiveTranscriptPreview();
+      const hasLiveEndpointing = startLiveTranscriptPreview();
+
+      if (!hasLiveEndpointing) {
+        clearAutoStopRecordingTimer();
+        autoStopRecordingTimerRef.current = setTimeout(() => {
+          const activeRecorder = mediaRecorderRef.current;
+
+          if (activeRecorder?.state === "recording") {
+            activeRecorder.stop();
+          }
+        }, 8000);
+      }
+
       setIsRecordingActive(true);
     } catch (error) {
       stopLiveTranscriptPreview();
@@ -440,6 +529,7 @@ export function AssistantInteraction({
     }
   }, [
     cleanupRecording,
+    clearAutoStopRecordingTimer,
     handleRecordedAudio,
     requireConsent,
     startLiveTranscriptPreview,
@@ -448,6 +538,7 @@ export function AssistantInteraction({
   ]);
 
   const stopVoiceRecording = useCallback(() => {
+    clearAutoStopRecordingTimer();
     const mediaRecorder = mediaRecorderRef.current;
 
     stopLiveTranscriptPreview();
@@ -459,7 +550,11 @@ export function AssistantInteraction({
     }
 
     mediaRecorder.stop();
-  }, [cleanupRecording, stopLiveTranscriptPreview]);
+  }, [
+    cleanupRecording,
+    clearAutoStopRecordingTimer,
+    stopLiveTranscriptPreview,
+  ]);
 
   const toggleVoiceRecording = () => {
     if (isRecordingActive) {
@@ -543,7 +638,9 @@ export function AssistantInteraction({
       await grantPendingConsent();
       setSpeechError(null);
 
-      if (requirement?.source === consentRequirements.audioTranscription.source) {
+      if (
+        requirement?.source === consentRequirements.audioTranscription.source
+      ) {
         void startVoiceRecording();
       }
     } catch (error) {
@@ -553,7 +650,7 @@ export function AssistantInteraction({
     }
   };
 
-  const recordingSpacingClass = showTranscriptPanel ? "mt-5 sm:mt-6" : "mt-7";
+  const recordingSpacingClass = "mt-7";
   const metadataStatusText = isMetadataCapturing
     ? t("dashboard.assistant.metadataCapturing")
     : metadataError
@@ -570,9 +667,7 @@ export function AssistantInteraction({
 
       <p className={headlineClassName}>
         {t("dashboard.assistant.greetingPrefix")}{" "}
-        <span className="text-[#3f7de0]">
-          {assistantFirstName}
-        </span>
+        <span className="text-[#3f7de0]">{assistantFirstName}</span>
         {t("dashboard.assistant.greetingSuffix")}
       </p>
 
@@ -589,28 +684,15 @@ export function AssistantInteraction({
         </div>
       ) : null}
 
-      {showTranscriptPanel && (
-        <div
-          className={`${recordingSpacingClass} w-full max-w-[430px] rounded-[14px] border border-[#e0e7f2] bg-white px-4 py-4 text-center shadow-[0_8px_18px_rgba(15,23,42,0.04)] sm:px-5 sm:py-5`}
-        >
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#253f6f]">
-            {t("dashboard.assistant.realTimeTranscript")}
-          </p>
-          {speechError ? (
-            <p className="mt-1 max-h-[74px] overflow-y-auto text-[11px] leading-[1.45] text-[#c24141]">
-              {speechError}
-            </p>
-          ) : isTranscribing ? (
-            <p className="mt-1 max-h-[74px] overflow-y-auto text-[11px] leading-[1.45] text-[#60728a]">
-              {t("dashboard.assistant.transcribing")}
-            </p>
-          ) : (
-            <p className="mt-1 max-h-[74px] overflow-y-auto text-[11px] leading-[1.45] text-[#60728a]">
-              {transcriptText || t("dashboard.assistant.listening")}
-            </p>
-          )}
-        </div>
-      )}
+      <span className="sr-only" aria-live="polite">
+        {speechError
+          ? speechError
+          : isTranscribing
+            ? t("dashboard.assistant.transcribing")
+            : isRecordingActive
+              ? t("dashboard.assistant.listening")
+              : ""}
+      </span>
 
       <div
         className={`${recordingSpacingClass} mb-[188px] w-full max-w-[1120px] sm:mb-[198px] lg:mb-[188px]`}
@@ -678,6 +760,14 @@ export function AssistantInteraction({
               </button>
             )}
           </div>
+          {speechError ? (
+            <p
+              className="px-4 pt-2 text-[11px] leading-[1.45] text-[#c24141]"
+              aria-live="polite"
+            >
+              {speechError}
+            </p>
+          ) : null}
         </form>
 
         {!isRecordingActive && (

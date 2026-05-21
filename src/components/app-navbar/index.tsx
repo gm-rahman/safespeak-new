@@ -25,10 +25,6 @@ export default function AppNavbar() {
       href: "/",
     },
     {
-      label: "Guestbook",
-      href: "/guestbook",
-    },
-    {
       label: "Profile",
       href: "/profile",
     },
@@ -43,7 +39,7 @@ export default function AppNavbar() {
         />
         <NavbarBrand>
           <IconPackage />
-          <p className="font-bold text-inherit">Next.js Starter</p>
+          <p className="font-bold text-inherit">SafeSpeak</p>
         </NavbarBrand>
       </NavbarContent>
 

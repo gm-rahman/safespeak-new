@@ -124,71 +124,72 @@ const ReportOverviewPage = dynamic(
 );
 const ReportSubmissionSupportPage = dynamic(
   () =>
-    import(
-      "./dashboard-report-submission-pages/report-submission-support-page"
-    ).then((module) => module.ReportSubmissionSupportPage),
+    import("./dashboard-report-submission-pages/report-submission-support-page").then(
+      (module) => module.ReportSubmissionSupportPage
+    ),
   { loading: DashboardViewFallback }
 );
 const ReportSubmissionRecommendationsPage = dynamic(
   () =>
-    import(
-      "./dashboard-report-submission-pages/report-submission-recommendations-page"
-    ).then((module) => module.ReportSubmissionRecommendationsPage),
+    import("./dashboard-report-submission-pages/report-submission-recommendations-page").then(
+      (module) => module.ReportSubmissionRecommendationsPage
+    ),
   { loading: DashboardViewFallback }
 );
 const ReportSubmissionHistoryPage = dynamic(
   () =>
-    import(
-      "./dashboard-report-submission-pages/report-submission-history-page"
-    ).then((module) => module.ReportSubmissionHistoryPage),
+    import("./dashboard-report-submission-pages/report-submission-history-page").then(
+      (module) => module.ReportSubmissionHistoryPage
+    ),
   { loading: DashboardViewFallback }
 );
 const ReportSubmissionDetailedExplanationsPage = dynamic(
   () =>
-    import(
-      "./dashboard-report-submission-pages/report-submission-detailed-explanations-page"
-    ).then((module) => module.ReportSubmissionDetailedExplanationsPage),
+    import("./dashboard-report-submission-pages/report-submission-detailed-explanations-page").then(
+      (module) => module.ReportSubmissionDetailedExplanationsPage
+    ),
   { loading: DashboardViewFallback }
 );
 const ReportSubmissionDetailsPage = dynamic(
   () =>
-    import(
-      "./dashboard-report-submission-pages/report-submission-details-page"
-    ).then((module) => module.ReportSubmissionDetailsPage),
+    import("./dashboard-report-submission-pages/report-submission-details-page").then(
+      (module) => module.ReportSubmissionDetailsPage
+    ),
   { loading: DashboardViewFallback }
 );
 const ReportSubmissionEvidencePage = dynamic(
   () =>
-    import(
-      "./dashboard-report-submission-pages/report-submission-evidence-page"
-    ).then((module) => module.ReportSubmissionEvidencePage),
+    import("./dashboard-report-submission-pages/report-submission-evidence-page").then(
+      (module) => module.ReportSubmissionEvidencePage
+    ),
   { loading: DashboardViewFallback }
 );
 const ReportSubmissionReviewPage = dynamic(
   () =>
-    import(
-      "./dashboard-report-submission-pages/report-submission-review-page"
-    ).then((module) => module.ReportSubmissionReviewPage),
+    import("./dashboard-report-submission-pages/report-submission-review-page").then(
+      (module) => module.ReportSubmissionReviewPage
+    ),
   { loading: DashboardViewFallback }
 );
 const ReportSubmissionSuccessPage = dynamic(
   () =>
-    import(
-      "./dashboard-report-submission-pages/report-submission-success-page"
-    ).then((module) => module.ReportSubmissionSuccessPage),
+    import("./dashboard-report-submission-pages/report-submission-success-page").then(
+      (module) => module.ReportSubmissionSuccessPage
+    ),
   { loading: DashboardViewFallback }
 );
 const ReportSubmissionSharePage = dynamic(
   () =>
-    import(
-      "./dashboard-report-submission-pages/report-submission-share-page"
-    ).then((module) => module.ReportSubmissionSharePage),
+    import("./dashboard-report-submission-pages/report-submission-share-page").then(
+      (module) => module.ReportSubmissionSharePage
+    ),
   { loading: DashboardViewFallback }
 );
 
 export default function DashboardHomeScreen({
   homeView = "overview",
   assistantRecording = false,
+  assistantVoiceMode = false,
   assistantMessage,
   assistantPrefillMessage,
   reportId,
@@ -197,6 +198,7 @@ export default function DashboardHomeScreen({
 }: {
   homeView?: HomeView;
   assistantRecording?: boolean;
+  assistantVoiceMode?: boolean;
   assistantMessage?: string;
   assistantPrefillMessage?: string;
   reportId?: string;
@@ -224,6 +226,7 @@ export default function DashboardHomeScreen({
         initialPrefillMessage={assistantPrefillMessage}
         initialCategory={assistantCategory}
         initialTopic={assistantTopic}
+        startVoiceMode={assistantVoiceMode}
       />
     ) : homeView === "assistant" ? (
       <SafeSpeakAssistantPage

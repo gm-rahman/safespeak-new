@@ -42,6 +42,7 @@ import {
   clearAssistantTriageSource,
   saveAssistantTriageSource,
 } from "@/lib/assistant-triage";
+import { consentRequirements } from "@/lib/consent";
 import {
   appendConversationFlowMessage,
   createConversationFlowSession,
@@ -52,9 +53,12 @@ import {
   getDashboardAssistantTopicChips,
   getDashboardCardFlow,
 } from "@/lib/dashboard-card-flows";
-import { consentRequirements } from "@/lib/consent";
 import { triggerQuickExit } from "@/lib/safety";
-import { transcribeAssistantVoice } from "@/lib/voice-transcription";
+import {
+  createAssistantVoiceAudioUrl,
+  synthesizeAssistantVoice,
+  transcribeAssistantVoice,
+} from "@/lib/voice-transcription";
 
 import { interFont } from "./dashboard-shared";
 
@@ -135,7 +139,8 @@ function getAssistantDisplayContent(message: AssistantConversationMessage) {
     /\s*This is information only,?\s*not legal advice\.?/gi,
     /\s*This is informational,?\s*not legal advice\.?/gi,
     /\s*It does not constitute legal advice\.?/gi,
-  ].reduce((content, pattern) => content.replace(pattern, ""), message.content)
+  ]
+    .reduce((content, pattern) => content.replace(pattern, ""), message.content)
     .replace(/\s+([?.!,])/g, "$1")
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -618,11 +623,13 @@ function SafeSpeakAssistantConversationPage({
   initialPrefillMessage,
   initialCategory,
   initialTopic,
+  startVoiceMode = false,
 }: {
   initialMessage?: string;
   initialPrefillMessage?: string;
   initialCategory?: AssistantIncidentCategory;
   initialTopic?: DashboardCardFlowId;
+  startVoiceMode?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   type ConversationUiMessage = AssistantConversationMessage & {
@@ -649,10 +656,34 @@ function SafeSpeakAssistantConversationPage({
   };
   const seededMessage = initialMessage?.trim();
   const seededPrefillMessage = initialPrefillMessage?.trim();
+  const starterAssistantPrompts = [
+    t("dashboard.assistant.conversation.botPromptWho"),
+    "I'm helping you structure your report.",
+    "Te ayudo a estructurar tu reporte.",
+  ];
   const existingDraft = getAssistantConversationDraft({
     topic: initialTopic,
     incidentCategory: initialCategory,
   });
+  const initialDraftMessages = existingDraft?.messages.filter(
+    (message, index) =>
+      !(
+        index === 0 &&
+        message.role === "assistant" &&
+        starterAssistantPrompts.includes(message.content.trim())
+      )
+  );
+  const initialConversationMessages =
+    initialDraftMessages && initialDraftMessages.length > 0
+      ? initialDraftMessages
+      : ([
+          seededMessage
+            ? {
+                role: "user" as const,
+                content: seededMessage,
+              }
+            : null,
+        ].filter(Boolean) as AssistantConversationMessage[]);
   const [input, setInput] = useState(seededPrefillMessage ?? "");
   const [conversationSessionId, setConversationSessionId] = useState<
     string | null
@@ -661,28 +692,23 @@ function SafeSpeakAssistantConversationPage({
     existingDraft?.timeline ?? emptyTimeline
   );
   const [messages, setMessages] = useState<ConversationUiMessage[]>(
-    () =>
-      existingDraft?.messages ??
-      ([
-        {
-          role: "assistant",
-          content: t("dashboard.assistant.conversation.botPromptWho"),
-        },
-        seededMessage
-          ? {
-              role: "user" as const,
-              content: seededMessage,
-            }
-          : null,
-      ].filter(Boolean) as AssistantConversationMessage[])
+    () => initialConversationMessages
   );
   const [isSending, setIsSending] = useState(
     Boolean(seededMessage) && !existingDraft
   );
   const [error, setError] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
+  const [isVoiceSessionActive, setIsVoiceSessionActive] =
+    useState(startVoiceMode);
   const [isRecordingActive, setIsRecordingActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechPlaybackError, setSpeechPlaybackError] = useState<string | null>(
+    null
+  );
+  const [replayVoiceText, setReplayVoiceText] = useState<string | null>(null);
   const [liveTranscript, setLiveTranscript] = useState("");
   const {
     pendingConsentRequirement,
@@ -693,18 +719,33 @@ function SafeSpeakAssistantConversationPage({
     requireConsent,
   } = useConsentGate();
   const hasSentInitialRef = useRef(false);
+  const hasStartedInitialVoiceModeRef = useRef(false);
   const latestMessagesRef = useRef(messages);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const pendingAssistantRequestRef = useRef<{
     message: string;
     conversation: AssistantConversationMessage[];
+    speakResponse?: boolean;
+    continueVoiceSession?: boolean;
   } | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const shouldProcessRecordingRef = useRef(false);
+  const voiceSessionActiveRef = useRef(startVoiceMode);
+  const shouldContinueAfterPlaybackRef = useRef(false);
+  const autoStopRecordingTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const restartListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const startVoiceRecordingRef = useRef<() => void>(() => {});
   const liveRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const liveFinalTranscriptRef = useRef("");
+  const speechAudioRef = useRef<HTMLAudioElement | null>(null);
+  const speechAudioUrlRef = useRef<string | null>(null);
+  const pendingSpeechRevealRef = useRef<(() => void) | null>(null);
   const [timelineFieldOrder, setTimelineFieldOrder] = useState<string[]>(
     existingDraft?.timelineFieldOrder ?? []
   );
@@ -733,11 +774,165 @@ function SafeSpeakAssistantConversationPage({
     latestMessagesRef.current = messages;
   }, [messages]);
 
+  const clearAutoStopRecordingTimer = useCallback(() => {
+    if (autoStopRecordingTimerRef.current) {
+      clearTimeout(autoStopRecordingTimerRef.current);
+      autoStopRecordingTimerRef.current = null;
+    }
+  }, []);
+
+  const clearRestartListeningTimer = useCallback(() => {
+    if (restartListeningTimerRef.current) {
+      clearTimeout(restartListeningTimerRef.current);
+      restartListeningTimerRef.current = null;
+    }
+  }, []);
+
   const cleanupRecording = useCallback(() => {
+    clearAutoStopRecordingTimer();
     recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
     recordingStreamRef.current = null;
     mediaRecorderRef.current = null;
+  }, [clearAutoStopRecordingTimer]);
+
+  const cleanupSpeechAudio = useCallback(() => {
+    speechAudioRef.current?.pause();
+    speechAudioRef.current = null;
+
+    if (speechAudioUrlRef.current) {
+      URL.revokeObjectURL(speechAudioUrlRef.current);
+      speechAudioUrlRef.current = null;
+    }
   }, []);
+
+  const revealPendingSpeechResponse = useCallback(() => {
+    const reveal = pendingSpeechRevealRef.current;
+    pendingSpeechRevealRef.current = null;
+    reveal?.();
+  }, []);
+
+  const stopAssistantSpeech = useCallback(() => {
+    cleanupSpeechAudio();
+    revealPendingSpeechResponse();
+    setIsSpeaking(false);
+    setIsGeneratingSpeech(false);
+  }, [cleanupSpeechAudio, revealPendingSpeechResponse]);
+
+  const scheduleNextVoiceTurn = useCallback(() => {
+    clearRestartListeningTimer();
+
+    if (!voiceSessionActiveRef.current) {
+      return;
+    }
+
+    restartListeningTimerRef.current = setTimeout(() => {
+      if (!voiceSessionActiveRef.current) {
+        return;
+      }
+
+      startVoiceRecordingRef.current();
+    }, 350);
+  }, [clearRestartListeningTimer]);
+
+  const playAssistantSpeech = useCallback(
+    async (
+      text: string,
+      options: {
+        continueVoiceSession?: boolean;
+        revealAfterPlayback?: () => void;
+      } = {}
+    ) => {
+      const speechText = text.trim();
+
+      if (!speechText) {
+        options.revealAfterPlayback?.();
+        return;
+      }
+
+      cleanupSpeechAudio();
+      if (options.revealAfterPlayback) {
+        pendingSpeechRevealRef.current = options.revealAfterPlayback;
+      }
+      shouldContinueAfterPlaybackRef.current = Boolean(
+        options.continueVoiceSession
+      );
+      setReplayVoiceText(speechText);
+      setSpeechPlaybackError(null);
+      setIsGeneratingSpeech(true);
+      setIsSpeaking(false);
+
+      try {
+        const voice = await synthesizeAssistantVoice(
+          speechText,
+          transcriptionLanguage
+        );
+        const audioUrl = createAssistantVoiceAudioUrl(voice);
+        const audio = new Audio(audioUrl);
+
+        speechAudioUrlRef.current = audioUrl;
+        speechAudioRef.current = audio;
+
+        audio.onended = () => {
+          setIsSpeaking(false);
+          revealPendingSpeechResponse();
+          if (shouldContinueAfterPlaybackRef.current) {
+            shouldContinueAfterPlaybackRef.current = false;
+            scheduleNextVoiceTurn();
+          }
+        };
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          setSpeechPlaybackError(t("dashboard.assistant.voicePlaybackFailed"));
+          revealPendingSpeechResponse();
+          if (shouldContinueAfterPlaybackRef.current) {
+            shouldContinueAfterPlaybackRef.current = false;
+            scheduleNextVoiceTurn();
+          }
+        };
+
+        setIsGeneratingSpeech(false);
+        setIsSpeaking(true);
+        await audio.play();
+      } catch (playbackError) {
+        setIsSpeaking(false);
+
+        if (captureConsentError(playbackError)) {
+          setSpeechPlaybackError(null);
+          return;
+        }
+
+        const autoplayBlocked =
+          playbackError instanceof DOMException &&
+          playbackError.name === "NotAllowedError";
+
+        if (!autoplayBlocked) {
+          revealPendingSpeechResponse();
+
+          if (voiceSessionActiveRef.current) {
+            scheduleNextVoiceTurn();
+          }
+        }
+
+        setSpeechPlaybackError(
+          autoplayBlocked
+            ? t("dashboard.assistant.tapToPlayResponse")
+            : playbackError instanceof Error
+              ? playbackError.message
+              : t("dashboard.assistant.voicePlaybackFailed")
+        );
+      } finally {
+        setIsGeneratingSpeech(false);
+      }
+    },
+    [
+      captureConsentError,
+      cleanupSpeechAudio,
+      revealPendingSpeechResponse,
+      scheduleNextVoiceTurn,
+      t,
+      transcriptionLanguage,
+    ]
+  );
 
   const stopLiveTranscriptPreview = useCallback(() => {
     if (!liveRecognitionRef.current) {
@@ -757,13 +952,13 @@ function SafeSpeakAssistantConversationPage({
     liveRecognitionRef.current = null;
   }, []);
 
-  const startLiveTranscriptPreview = useCallback(() => {
+  const startLiveTranscriptPreview = useCallback((): boolean => {
     const recognitionCtor =
       (window as SpeechWindow).SpeechRecognition ??
       (window as SpeechWindow).webkitSpeechRecognition;
 
     if (!recognitionCtor) {
-      return;
+      return false;
     }
 
     stopLiveTranscriptPreview();
@@ -806,20 +1001,57 @@ function SafeSpeakAssistantConversationPage({
       setLiveTranscript(
         [liveFinalTranscriptRef.current, interimChunk].filter(Boolean).join(" ")
       );
+
+      if (voiceSessionActiveRef.current && (finalChunk || interimChunk)) {
+        clearAutoStopRecordingTimer();
+        autoStopRecordingTimerRef.current = setTimeout(
+          () => {
+            const mediaRecorder = mediaRecorderRef.current;
+
+            if (
+              voiceSessionActiveRef.current &&
+              mediaRecorder?.state === "recording"
+            ) {
+              stopLiveTranscriptPreview();
+              mediaRecorder.stop();
+            }
+          },
+          finalChunk ? 900 : 1800
+        );
+      }
     };
 
     recognition.onerror = () => {
       liveRecognitionRef.current = null;
+      if (voiceSessionActiveRef.current) {
+        clearAutoStopRecordingTimer();
+        autoStopRecordingTimerRef.current = setTimeout(() => {
+          const mediaRecorder = mediaRecorderRef.current;
+
+          if (
+            voiceSessionActiveRef.current &&
+            mediaRecorder?.state === "recording"
+          ) {
+            mediaRecorder.stop();
+          }
+        }, 2500);
+      }
     };
 
     liveRecognitionRef.current = recognition;
 
     try {
       recognition.start();
+      return true;
     } catch {
       liveRecognitionRef.current = null;
+      return false;
     }
-  }, [livePreviewLanguage, stopLiveTranscriptPreview]);
+  }, [
+    clearAutoStopRecordingTimer,
+    livePreviewLanguage,
+    stopLiveTranscriptPreview,
+  ]);
 
   const conversationMessages = useMemo<AssistantConversationMessage[]>(
     () => messages.map(({ role, content }) => ({ role, content })),
@@ -886,13 +1118,27 @@ function SafeSpeakAssistantConversationPage({
         mediaRecorderRef.current.stop();
       }
 
+      voiceSessionActiveRef.current = false;
+      clearAutoStopRecordingTimer();
+      clearRestartListeningTimer();
       stopLiveTranscriptPreview();
       cleanupRecording();
+      cleanupSpeechAudio();
     };
-  }, [cleanupRecording, stopLiveTranscriptPreview]);
+  }, [
+    cleanupRecording,
+    cleanupSpeechAudio,
+    clearAutoStopRecordingTimer,
+    clearRestartListeningTimer,
+    stopLiveTranscriptPreview,
+  ]);
 
   const requestAssistantTurn = useCallback(
-    async (message: string, conversation: AssistantConversationMessage[]) => {
+    async (
+      message: string,
+      conversation: AssistantConversationMessage[],
+      options: { speakResponse?: boolean; continueVoiceSession?: boolean } = {}
+    ) => {
       setIsSending(true);
       setError(null);
 
@@ -939,23 +1185,37 @@ function SafeSpeakAssistantConversationPage({
 
           return nextTimeline;
         });
-        setMessages((currentMessages) => [
-          ...currentMessages,
-          {
-            role: "assistant",
-            content: response.assistantMessage.content,
-            responseMeta: {
-              disclaimer: response.responseMeta?.disclaimer,
-              citations: response.responseMeta?.citations,
-              confidence: response.responseMeta?.confidence,
-              reviewStatus: response.responseMeta?.reviewStatus,
-              ragUnavailable: response.responseMeta?.rag?.unavailable,
-              pendingHumanReview: Boolean(
-                response.triage?.humanReviewRecommended
-              ),
-            },
+        const assistantMessage: ConversationUiMessage = {
+          role: "assistant",
+          content: response.assistantMessage.content,
+          responseMeta: {
+            disclaimer: response.responseMeta?.disclaimer,
+            citations: response.responseMeta?.citations,
+            confidence: response.responseMeta?.confidence,
+            reviewStatus: response.responseMeta?.reviewStatus,
+            ragUnavailable: response.responseMeta?.rag?.unavailable,
+            pendingHumanReview: Boolean(
+              response.triage?.humanReviewRecommended
+            ),
           },
-        ]);
+        };
+
+        if (options.speakResponse) {
+          void playAssistantSpeech(response.assistantMessage.content, {
+            continueVoiceSession: options.continueVoiceSession,
+            revealAfterPlayback: () => {
+              setMessages((currentMessages) => [
+                ...currentMessages,
+                assistantMessage,
+              ]);
+            },
+          });
+        } else {
+          setMessages((currentMessages) => [
+            ...currentMessages,
+            assistantMessage,
+          ]);
+        }
 
         if (
           isTriageRequested(message) ||
@@ -967,10 +1227,14 @@ function SafeSpeakAssistantConversationPage({
         ) {
           setShowTriageCta(true);
         }
-
       } catch (conversationFlowError) {
         if (captureConsentError(conversationFlowError)) {
-          pendingAssistantRequestRef.current = { message, conversation };
+          pendingAssistantRequestRef.current = {
+            message,
+            conversation,
+            speakResponse: options.speakResponse,
+            continueVoiceSession: options.continueVoiceSession,
+          };
           return;
         }
 
@@ -1011,23 +1275,37 @@ function SafeSpeakAssistantConversationPage({
 
             return nextTimeline;
           });
-          setMessages((currentMessages) => [
-            ...currentMessages,
-            {
-              role: "assistant",
-              content: assistantContent,
-              responseMeta: {
-                disclaimer: response.disclaimer,
-                citations: response.citations,
-                confidence: response.confidence,
-                reviewStatus: response.reviewStatus,
-                ragUnavailable: response.rag?.unavailable,
-                pendingHumanReview:
-                  response.reviewStatus === "pending_human_review",
-                legalAwareness: response.legalAwareness,
-              },
+          const assistantMessage: ConversationUiMessage = {
+            role: "assistant",
+            content: assistantContent,
+            responseMeta: {
+              disclaimer: response.disclaimer,
+              citations: response.citations,
+              confidence: response.confidence,
+              reviewStatus: response.reviewStatus,
+              ragUnavailable: response.rag?.unavailable,
+              pendingHumanReview:
+                response.reviewStatus === "pending_human_review",
+              legalAwareness: response.legalAwareness,
             },
-          ]);
+          };
+
+          if (options.speakResponse) {
+            void playAssistantSpeech(assistantContent, {
+              continueVoiceSession: options.continueVoiceSession,
+              revealAfterPlayback: () => {
+                setMessages((currentMessages) => [
+                  ...currentMessages,
+                  assistantMessage,
+                ]);
+              },
+            });
+          } else {
+            setMessages((currentMessages) => [
+              ...currentMessages,
+              assistantMessage,
+            ]);
+          }
 
           if (
             isTriageRequested(message) ||
@@ -1043,10 +1321,14 @@ function SafeSpeakAssistantConversationPage({
           ) {
             setShowTriageCta(true);
           }
-
         } catch (requestError) {
           if (captureConsentError(requestError)) {
-            pendingAssistantRequestRef.current = { message, conversation };
+            pendingAssistantRequestRef.current = {
+              message,
+              conversation,
+              speakResponse: options.speakResponse,
+              continueVoiceSession: options.continueVoiceSession,
+            };
             return;
           }
 
@@ -1065,6 +1347,7 @@ function SafeSpeakAssistantConversationPage({
       conversationSessionId,
       initialCategory,
       initialTopic,
+      playAssistantSpeech,
       timeline,
       transcriptionLanguage,
       useNswLegalAwareness,
@@ -1077,8 +1360,15 @@ function SafeSpeakAssistantConversationPage({
     }
 
     hasSentInitialRef.current = true;
-    void requestAssistantTurn(seededMessage, latestMessagesRef.current);
-  }, [existingDraft, requestAssistantTurn, seededMessage]);
+    if (startVoiceMode) {
+      voiceSessionActiveRef.current = true;
+      setIsVoiceSessionActive(true);
+    }
+    void requestAssistantTurn(seededMessage, latestMessagesRef.current, {
+      speakResponse: startVoiceMode,
+      continueVoiceSession: startVoiceMode,
+    });
+  }, [existingDraft, requestAssistantTurn, seededMessage, startVoiceMode]);
 
   const handleCancel = () => {
     clearAssistantConversationDraft({
@@ -1101,6 +1391,7 @@ function SafeSpeakAssistantConversationPage({
       if (!audioBlob.size) {
         setIsTranscribing(false);
         setSpeechError(getRecordingErrorMessage("no-speech", t));
+        scheduleNextVoiceTurn();
         return;
       }
 
@@ -1113,19 +1404,41 @@ function SafeSpeakAssistantConversationPage({
 
         if (!transcript) {
           setSpeechError(getRecordingErrorMessage("no-speech", t));
+          scheduleNextVoiceTurn();
           return;
         }
 
+        const voiceMessage = [input.trim(), transcript]
+          .filter(Boolean)
+          .join(" ");
+        const nextMessages = [
+          ...latestMessagesRef.current,
+          {
+            role: "user" as const,
+            content: voiceMessage,
+          },
+        ];
+
         setSpeechError(null);
-        setInput((currentInput) =>
-          [currentInput.trim(), transcript].filter(Boolean).join(" ")
-        );
+        setInput("");
+        setMessages(nextMessages);
+
+        if (isTriageRequested(voiceMessage)) {
+          setShowTriageCta(true);
+        }
+
+        void requestAssistantTurn(voiceMessage, nextMessages, {
+          speakResponse: true,
+          continueVoiceSession: voiceSessionActiveRef.current,
+        });
       } catch (recordingError) {
         if (captureConsentError(recordingError)) {
           setSpeechError(null);
           return;
         }
 
+        voiceSessionActiveRef.current = false;
+        setIsVoiceSessionActive(false);
         setSpeechError(
           recordingError instanceof Error
             ? recordingError.message
@@ -1136,36 +1449,46 @@ function SafeSpeakAssistantConversationPage({
         setLiveTranscript("");
       }
     },
-    [captureConsentError, cleanupRecording, t, transcriptionLanguage]
+    [
+      captureConsentError,
+      cleanupRecording,
+      input,
+      requestAssistantTurn,
+      scheduleNextVoiceTurn,
+      t,
+      transcriptionLanguage,
+    ]
   );
 
-  const startVoiceRecording = useCallback(async () => {
+  const startVoiceRecording = useCallback(async (): Promise<boolean> => {
+    if (isSending || isTranscribing || isGeneratingSpeech || isSpeaking) {
+      return false;
+    }
+
     if (
       !navigator.mediaDevices?.getUserMedia ||
       typeof MediaRecorder === "undefined"
     ) {
       setSpeechError(t("dashboard.assistant.speechErrors.unsupported"));
-      return;
+      return false;
     }
 
     let canRecord = false;
 
     try {
-      canRecord = await requireConsent(
-        consentRequirements.audioTranscription
-      );
+      canRecord = await requireConsent(consentRequirements.audioTranscription);
     } catch (consentCheckError) {
       setSpeechError(
         consentCheckError instanceof Error
           ? consentCheckError.message
           : "Consent status could not be checked."
       );
-      return;
+      return false;
     }
 
     if (!canRecord) {
       setSpeechError(null);
-      return;
+      return false;
     }
 
     setSpeechError(null);
@@ -1215,8 +1538,24 @@ function SafeSpeakAssistantConversationPage({
       };
 
       mediaRecorder.start();
-      startLiveTranscriptPreview();
+      const hasLiveEndpointing = startLiveTranscriptPreview();
+
+      if (voiceSessionActiveRef.current && !hasLiveEndpointing) {
+        clearAutoStopRecordingTimer();
+        autoStopRecordingTimerRef.current = setTimeout(() => {
+          const activeRecorder = mediaRecorderRef.current;
+
+          if (
+            voiceSessionActiveRef.current &&
+            activeRecorder?.state === "recording"
+          ) {
+            activeRecorder.stop();
+          }
+        }, 8000);
+      }
+
       setIsRecordingActive(true);
+      return true;
     } catch (recordingError) {
       stopLiveTranscriptPreview();
       cleanupRecording();
@@ -1226,38 +1565,103 @@ function SafeSpeakAssistantConversationPage({
           ? "not-allowed"
           : "audio-capture";
       setSpeechError(getRecordingErrorMessage(errorCode, t));
+      return false;
     }
   }, [
     cleanupRecording,
+    clearAutoStopRecordingTimer,
     handleRecordedAudio,
+    isGeneratingSpeech,
+    isSending,
+    isSpeaking,
+    isTranscribing,
     requireConsent,
     startLiveTranscriptPreview,
     stopLiveTranscriptPreview,
     t,
   ]);
 
-  const stopVoiceRecording = useCallback(() => {
+  useEffect(() => {
+    startVoiceRecordingRef.current = () => {
+      void startVoiceRecording();
+    };
+  }, [startVoiceRecording]);
+
+  const startVoiceSession = useCallback(async () => {
+    if (voiceSessionActiveRef.current) {
+      return;
+    }
+
+    voiceSessionActiveRef.current = true;
+    setIsVoiceSessionActive(true);
+    shouldContinueAfterPlaybackRef.current = false;
+    setSpeechError(null);
+    setSpeechPlaybackError(null);
+
+    const started = await startVoiceRecording();
+
+    if (!started) {
+      voiceSessionActiveRef.current = false;
+      setIsVoiceSessionActive(false);
+    }
+  }, [startVoiceRecording]);
+
+  const stopVoiceSession = useCallback(() => {
+    voiceSessionActiveRef.current = false;
+    setIsVoiceSessionActive(false);
+    shouldContinueAfterPlaybackRef.current = false;
+    shouldProcessRecordingRef.current = false;
+    clearAutoStopRecordingTimer();
+    clearRestartListeningTimer();
+    stopLiveTranscriptPreview();
+    stopAssistantSpeech();
+
     const mediaRecorder = mediaRecorderRef.current;
 
-    stopLiveTranscriptPreview();
-
-    if (!mediaRecorder || mediaRecorder.state === "inactive") {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    } else {
       cleanupRecording();
-      setIsRecordingActive(false);
-      return;
     }
 
-    mediaRecorder.stop();
-  }, [cleanupRecording, stopLiveTranscriptPreview]);
+    audioChunksRef.current = [];
+    setIsRecordingActive(false);
+    setIsTranscribing(false);
+    setLiveTranscript("");
+  }, [
+    cleanupRecording,
+    clearAutoStopRecordingTimer,
+    clearRestartListeningTimer,
+    stopAssistantSpeech,
+    stopLiveTranscriptPreview,
+  ]);
 
   const toggleVoiceRecording = useCallback(() => {
-    if (isRecordingActive) {
-      stopVoiceRecording();
+    if (isVoiceSessionActive || isRecordingActive) {
+      stopVoiceSession();
       return;
     }
 
-    void startVoiceRecording();
-  }, [isRecordingActive, startVoiceRecording, stopVoiceRecording]);
+    void startVoiceSession();
+  }, [
+    isRecordingActive,
+    isVoiceSessionActive,
+    startVoiceSession,
+    stopVoiceSession,
+  ]);
+
+  useEffect(() => {
+    if (
+      !startVoiceMode ||
+      seededMessage ||
+      hasStartedInitialVoiceModeRef.current
+    ) {
+      return;
+    }
+
+    hasStartedInitialVoiceModeRef.current = true;
+    void startVoiceSession();
+  }, [seededMessage, startVoiceMode, startVoiceSession]);
 
   const handleAllowPendingConsent = async () => {
     const requirement = pendingConsentRequirement;
@@ -1267,8 +1671,10 @@ function SafeSpeakAssistantConversationPage({
       setError(null);
       setSpeechError(null);
 
-      if (requirement?.source === consentRequirements.audioTranscription.source) {
-        void startVoiceRecording();
+      if (
+        requirement?.source === consentRequirements.audioTranscription.source
+      ) {
+        void startVoiceSession();
         return;
       }
 
@@ -1278,8 +1684,19 @@ function SafeSpeakAssistantConversationPage({
       if (pendingRequest) {
         void requestAssistantTurn(
           pendingRequest.message,
-          pendingRequest.conversation
+          pendingRequest.conversation,
+          {
+            speakResponse: pendingRequest.speakResponse,
+            continueVoiceSession: pendingRequest.continueVoiceSession,
+          }
         );
+        return;
+      }
+
+      if (isVoiceSessionActive && replayVoiceText) {
+        void playAssistantSpeech(replayVoiceText, {
+          continueVoiceSession: true,
+        });
       }
     } catch (consentError) {
       setError(
@@ -1300,7 +1717,15 @@ function SafeSpeakAssistantConversationPage({
 
     const message = input.trim();
 
-    if (!message || isSending || isRecordingActive || isTranscribing) {
+    if (
+      !message ||
+      isSending ||
+      isVoiceSessionActive ||
+      isRecordingActive ||
+      isTranscribing ||
+      isGeneratingSpeech ||
+      isSpeaking
+    ) {
       return;
     }
 
@@ -1426,6 +1851,60 @@ function SafeSpeakAssistantConversationPage({
                   </div>
                 ) : null}
 
+                {isGeneratingSpeech || isSpeaking ? (
+                  <div
+                    className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]"
+                    aria-live="polite"
+                  >
+                    {isGeneratingSpeech ? (
+                      <IconLoader2 size={12} className="animate-spin" />
+                    ) : (
+                      <IconMicrophone size={12} />
+                    )}
+                    <span>
+                      {isGeneratingSpeech
+                        ? t("dashboard.assistant.generatingVoice")
+                        : t("dashboard.assistant.speaking")}
+                    </span>
+                    {isSpeaking ? (
+                      <button
+                        type="button"
+                        onClick={stopAssistantSpeech}
+                        className="ml-1 rounded-full border border-[#d6e7f6] px-2 py-1 text-[10px] font-bold text-[#0f5d9f]"
+                        aria-label={t("dashboard.assistant.stopVoicePlayback")}
+                      >
+                        {t("dashboard.assistant.stopVoicePlayback")}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {speechPlaybackError ? (
+                  <div
+                    className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]"
+                    aria-live="polite"
+                  >
+                    <IconAlertCircle size={12} />
+                    <span>{speechPlaybackError}</span>
+                    {replayVoiceText ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void playAssistantSpeech(replayVoiceText, {
+                            continueVoiceSession: voiceSessionActiveRef.current,
+                          });
+                        }}
+                        className="ml-1 rounded-full border border-[#d6e7f6] px-2 py-1 text-[10px] font-bold text-[#0f5d9f]"
+                        aria-label={t(
+                          "dashboard.assistant.replayVoiceResponse"
+                        )}
+                      >
+                        {t("dashboard.assistant.replayVoiceResponse")}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {isRecordingActive || isTranscribing || liveTranscript ? (
                   <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
                     {isTranscribing ? (
@@ -1458,24 +1937,54 @@ function SafeSpeakAssistantConversationPage({
                 <button
                   type="button"
                   onClick={toggleVoiceRecording}
-                  disabled={isTranscribing}
+                  disabled={
+                    !isVoiceSessionActive &&
+                    (isSending ||
+                      isTranscribing ||
+                      isGeneratingSpeech ||
+                      isSpeaking)
+                  }
                   aria-label={t("dashboard.assistant.toggleMicrophone")}
-                  aria-pressed={isRecordingActive}
+                  aria-pressed={isVoiceSessionActive || isRecordingActive}
                   className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-[#f4f7fb] ${
-                    isRecordingActive
+                    isVoiceSessionActive || isRecordingActive
                       ? "bg-[#de3838] text-white"
                       : "text-[#8b97a8]"
-                  } ${isTranscribing ? "cursor-not-allowed opacity-40" : ""}`}
+                  } ${
+                    !isVoiceSessionActive &&
+                    (isSending ||
+                      isTranscribing ||
+                      isGeneratingSpeech ||
+                      isSpeaking)
+                      ? "cursor-not-allowed opacity-40"
+                      : ""
+                  }`}
                 >
                   <IconMicrophone size={16} />
                 </button>
+                {isVoiceSessionActive ? (
+                  <button
+                    type="button"
+                    onClick={stopVoiceSession}
+                    className="inline-flex h-10 shrink-0 items-center rounded-full bg-[#de3838] px-4 text-[11px] font-bold text-white"
+                    aria-label={t("dashboard.assistant.stopRecording")}
+                  >
+                    <span className="mr-1" aria-hidden>
+                      &bull;
+                    </span>
+                    {t("dashboard.assistant.stopRecording")}
+                  </button>
+                ) : null}
                 <button
                   type="submit"
                   data-testid="ai-conversation-send"
                   disabled={
                     isSending ||
+                    isVoiceSessionActive ||
                     isRecordingActive ||
                     isTranscribing ||
+                    isGeneratingSpeech ||
+                    isSpeaking ||
                     !input.trim()
                   }
                   aria-label={t("common.send")}
@@ -1495,7 +2004,6 @@ function SafeSpeakAssistantConversationPage({
                 </button>
               </div>
             </form>
-
           </div>
         </div>
       </div>
