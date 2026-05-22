@@ -1,9 +1,11 @@
 import { type Locator, type Page, expect, test } from "@playwright/test";
 
-const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3030";
+const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3130";
 const API_ROUTE = "**/api/v1/**";
 const START_URL = `${BASE_URL}/dashboard?view=assistantconversation&category=domestic_violence&topic=domestic_violence&message=Some+one+pull+my+hijub`;
+const VOICE_START_URL = `${BASE_URL}/dashboard?view=assistantconversation&category=domestic_violence&topic=domestic_violence&voice=1`;
 const INITIAL_MESSAGE = "Some one pull my hijub";
+const VOICE_TRANSCRIPT = "This is a voice e2e transcript about what happened.";
 const E2E_USER = {
   id: "user-e2e",
   email: "e2e@safespeak.test",
@@ -26,6 +28,7 @@ type ApiMockState = {
   conversationMessages: number;
   timelineAssistantRequests: number;
   transcriptionRequests: number;
+  speechSynthesisRequests: number;
 };
 
 function apiEnvelope(data: unknown, message = "OK") {
@@ -49,6 +52,7 @@ async function mockSafeSpeakApi(
     conversationMessages: 0,
     timelineAssistantRequests: 0,
     transcriptionRequests: 0,
+    speechSynthesisRequests: 0,
   };
 
   await page.route(API_ROUTE, async (route) => {
@@ -217,6 +221,35 @@ async function mockSafeSpeakApi(
 
     if (pathname.endsWith("/ai/transcribe-audio")) {
       state.transcriptionRequests += 1;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          apiEnvelope({
+            transcript: VOICE_TRANSCRIPT,
+            language: "en",
+            model: "e2e-transcribe",
+            saved: false,
+          })
+        ),
+      });
+      return;
+    }
+
+    if (pathname.endsWith("/ai/synthesize-speech")) {
+      state.speechSynthesisRequests += 1;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          apiEnvelope({
+            audioBase64: "AA==",
+            mimeType: "audio/mpeg",
+            model: "e2e-tts",
+            voice: "e2e",
+            temporary: true,
+          })
+        ),
+      });
+      return;
     }
 
     await route.fulfill({
@@ -246,6 +279,81 @@ async function expectLocatorReceivesPointer(locator: Locator) {
   });
 
   expect(receivesPointer).toBe(true);
+}
+
+async function installVoiceMocks(page: Page) {
+  await page.addInitScript(() => {
+    class MockMediaRecorder {
+      static isTypeSupported() {
+        return true;
+      }
+
+      mimeType = "audio/webm";
+      state: "inactive" | "recording" = "inactive";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor(_stream: MediaStream, options?: { mimeType?: string }) {
+        this.mimeType = options?.mimeType ?? "audio/webm";
+      }
+
+      start() {
+        this.state = "recording";
+        window.setTimeout(() => {
+          if (this.state !== "recording") {
+            return;
+          }
+
+          this.ondataavailable?.({
+            data: new Blob(["voice-e2e"], { type: this.mimeType }),
+          });
+          this.stop();
+        }, 50);
+      }
+
+      stop() {
+        if (this.state === "inactive") {
+          return;
+        }
+
+        this.state = "inactive";
+        window.setTimeout(() => this.onstop?.(), 0);
+      }
+    }
+
+    class MockAudio {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor(_url: string) {}
+
+      play() {
+        return Promise.reject(
+          new DOMException("Autoplay blocked in e2e", "NotAllowedError")
+        );
+      }
+
+      pause() {}
+    }
+
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => ({
+          getTracks: () => [{ stop: () => undefined }],
+        }),
+      },
+    });
+    Object.defineProperty(window, "MediaRecorder", {
+      configurable: true,
+      value: MockMediaRecorder,
+    });
+    Object.defineProperty(window, "Audio", {
+      configurable: true,
+      value: MockAudio,
+    });
+  });
 }
 
 test.describe("SafeSpeak AI Conversation", () => {
@@ -376,5 +484,49 @@ test.describe("SafeSpeak AI Conversation", () => {
 
     await expect(triageButton).toBeVisible();
     await expect(triageButton).toHaveText(/Continue to Triage/i);
+  });
+
+  test("runs voice-first consent, transcription, autoplay fallback, replay, and stop flow", async ({
+    page,
+  }) => {
+    await installVoiceMocks(page);
+    await page.goto(VOICE_START_URL, { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByTestId("ai-conversation-page")).toBeVisible();
+    await expect(page.getByText("Audio transcription consent required")).toBeVisible();
+    expect(apiMock.transcriptionRequests).toBe(0);
+    expect(apiMock.conversationMessages).toBe(0);
+
+    await page
+      .getByRole("button", { name: /Allow transcription and continue/i })
+      .click();
+
+    await expect(page.getByText(VOICE_TRANSCRIPT)).toBeVisible();
+    await expect(page.getByText("AI consent required")).toBeVisible();
+    expect(apiMock.transcriptionRequests).toBe(1);
+    expect(apiMock.conversationSessionCreates).toBe(0);
+    expect(apiMock.conversationMessages).toBe(0);
+    expect(apiMock.speechSynthesisRequests).toBe(0);
+
+    await page
+      .getByRole("button", { name: /Allow AI and continue/i })
+      .click();
+
+    await expect(page.getByText("Assistant e2e response 1")).toBeVisible();
+    await expect(page.getByText("Tap to play response.")).toBeVisible();
+    const replayButton = page.getByRole("button", { name: "Replay" });
+    await expect(replayButton).toBeVisible();
+    expect(apiMock.conversationSessionCreates).toBe(1);
+    expect(apiMock.conversationMessages).toBe(1);
+    expect(apiMock.speechSynthesisRequests).toBe(1);
+
+    await replayButton.click();
+    await expect(page.getByText("Tap to play response.")).toBeVisible();
+    expect(apiMock.speechSynthesisRequests).toBe(2);
+
+    const stopButton = page.getByRole("button", { name: "Stop Recording" });
+    await expect(stopButton).toBeVisible();
+    await stopButton.click();
+    await expect(stopButton).toHaveCount(0);
   });
 });

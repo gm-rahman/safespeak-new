@@ -8,13 +8,21 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
 
 # next.js
 /.next/
 /.next-dev/
+/.next-dev-*/
+/.next-dev-webpack/
+/.next-e2e/
 /out/
 .next
 .next-dev
+.next-dev-*
+.next-dev-webpack
+.next-e2e
 
 # production
 /build

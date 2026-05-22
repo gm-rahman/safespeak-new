@@ -719,8 +719,7 @@ function SafeSpeakAssistantConversationPage({
   );
   const [error, setError] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [isVoiceSessionActive, setIsVoiceSessionActive] =
-    useState(startVoiceMode);
+  const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
   const [isRecordingActive, setIsRecordingActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
@@ -752,7 +751,7 @@ function SafeSpeakAssistantConversationPage({
   const audioChunksRef = useRef<BlobPart[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const shouldProcessRecordingRef = useRef(false);
-  const voiceSessionActiveRef = useRef(startVoiceMode);
+  const voiceSessionActiveRef = useRef(false);
   const shouldContinueAfterPlaybackRef = useRef(false);
   const autoStopRecordingTimerRef = useRef<ReturnType<
     typeof setTimeout

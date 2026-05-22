@@ -2,10 +2,13 @@
   "name": "next-start",
   "version": "0.1.0",
   "scripts": {
-    "dev": "next dev --turbopack -p 3000",
-    "dev:webpack": "next dev -p 3000",
+    "dev": "node scripts/start-next-dev.mjs --port 3000 --dist .next-dev",
+    "dev:3030": "node scripts/start-next-dev.mjs --port 3030 --dist .next-dev-3030",
+    "dev:e2e": "node scripts/start-next-dev.mjs --port 3130 --dist .next-e2e",
+    "dev:webpack": "node scripts/start-next-dev.mjs --port 3000 --dist .next-dev-webpack --webpack",
     "build": "next build",
     "start": "next start",
+    "test:e2e": "playwright test",
     "lint": "next lint",
     "format": "prettier src/ --write"
   },
