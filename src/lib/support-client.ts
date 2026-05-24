@@ -77,6 +77,16 @@ export type AdvocateRequestRecord = {
   updatedAt?: string;
 };
 
+export type HelpSupportRequestRecord = {
+  _id?: string;
+  id?: string;
+  title: string;
+  message: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type TrustedContactInput = {
   name?: string;
   relationship?: string;
@@ -132,6 +142,10 @@ type AdvocateListResponse = {
 
 type AdvocateRequestResponse = {
   request: AdvocateRequestRecord;
+};
+
+type HelpSupportRequestResponse = {
+  request: HelpSupportRequestRecord;
 };
 
 type SafetyPlanResponse = {
@@ -280,6 +294,18 @@ export async function requestAdvocate(input: {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.advocateRequest, headers);
   const response = await supportApiRequest<AdvocateRequestResponse>("/support/advocate-request", {
+    method: "POST",
+    body: input,
+  });
+
+  return response.data.request;
+}
+
+export async function createHelpSupportRequest(input: {
+  title: string;
+  message: string;
+}): Promise<HelpSupportRequestRecord> {
+  const response = await supportApiRequest<HelpSupportRequestResponse>("/support/help-request", {
     method: "POST",
     body: input,
   });

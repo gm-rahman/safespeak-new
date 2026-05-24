@@ -48,6 +48,40 @@ export interface RegisterInput extends LoginInput {
   fullName?: string;
 }
 
+export interface PasswordResetCodeRequestInput {
+  email: string;
+}
+
+export interface PasswordResetCodeRequestResult {
+  resetRequestId: string;
+  expiresAt: string;
+  debugOtp?: string;
+}
+
+export interface PasswordResetCodeVerifyInput {
+  email: string;
+  resetRequestId: string;
+  code: string;
+}
+
+export interface PasswordResetCodeVerifyResult {
+  resetToken: string;
+  resetTokenExpiresAt: string;
+}
+
+export interface PasswordResetInput {
+  email: string;
+  resetRequestId: string;
+  resetToken: string;
+  newPassword: string;
+}
+
+export interface PasswordResetSession {
+  email: string;
+  resetRequestId: string;
+  expiresAt: string;
+}
+
 export interface AuthOptions {
   baseUrl?: string;
   persistSession?: boolean;
@@ -56,6 +90,7 @@ export interface AuthOptions {
 export type SocialAuthProvider = "google" | "facebook" | "apple";
 
 const AUTH_SESSION_KEY = "safespeak_auth_session";
+const PASSWORD_RESET_SESSION_KEY = "safespeak_password_reset_session";
 const TOKEN_REFRESH_SKEW_SECONDS = 30;
 let refreshAuthSessionPromise: Promise<AuthData> | null = null;
 
@@ -122,6 +157,44 @@ export function clearAuthSession(): void {
 
   window.localStorage.removeItem(AUTH_SESSION_KEY);
   window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+}
+
+export function savePasswordResetSession(session: PasswordResetSession): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(
+    PASSWORD_RESET_SESSION_KEY,
+    JSON.stringify(session)
+  );
+}
+
+export function getPasswordResetSession(): PasswordResetSession | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.sessionStorage.getItem(PASSWORD_RESET_SESSION_KEY);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as PasswordResetSession;
+  } catch {
+    clearPasswordResetSession();
+    return null;
+  }
+}
+
+export function clearPasswordResetSession(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(PASSWORD_RESET_SESSION_KEY);
 }
 
 function replaceAuthSession(
@@ -315,6 +388,63 @@ export async function registerUser(
 
   persistAuthData(response.data, options, response.timestamp);
   return response.data;
+}
+
+export async function requestPasswordResetCode(
+  input: PasswordResetCodeRequestInput,
+  options: Pick<AuthOptions, "baseUrl"> = {}
+): Promise<PasswordResetCodeRequestResult> {
+  const response = await apiRequest<PasswordResetCodeRequestResult>(
+    "/auth/forgot-password",
+    {
+      method: "POST",
+      body: {
+        email: input.email,
+        audience: "public",
+      },
+      baseUrl: options.baseUrl,
+    }
+  );
+
+  return response.data;
+}
+
+export async function verifyPasswordResetCode(
+  input: PasswordResetCodeVerifyInput,
+  options: Pick<AuthOptions, "baseUrl"> = {}
+): Promise<PasswordResetCodeVerifyResult> {
+  const response = await apiRequest<PasswordResetCodeVerifyResult>(
+    "/auth/verify-reset-otp",
+    {
+      method: "POST",
+      body: {
+        email: input.email,
+        audience: "public",
+        resetRequestId: input.resetRequestId,
+        otp: input.code,
+      },
+      baseUrl: options.baseUrl,
+    }
+  );
+
+  return response.data;
+}
+
+export async function resetPasswordWithVerifiedCode(
+  input: PasswordResetInput,
+  options: Pick<AuthOptions, "baseUrl"> = {}
+): Promise<void> {
+  await apiRequest<null>("/auth/reset-password", {
+    method: "POST",
+    body: {
+      email: input.email,
+      audience: "public",
+      resetRequestId: input.resetRequestId,
+      resetToken: input.resetToken,
+      newPassword: input.newPassword,
+    },
+    baseUrl: options.baseUrl,
+  });
 }
 
 export async function getCurrentUser(

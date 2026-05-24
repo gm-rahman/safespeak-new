@@ -22,8 +22,16 @@ export type ScamAnalysisRecord = {
     draft?: string;
     notes?: string;
     indicators?: string[];
+    redFlags?: string[];
+    recommendations?: string[];
+    confidence?: string;
+    scamCategory?: string;
+    platform?: string;
+    senderName?: string;
+    extractedEntities?: Record<string, unknown>;
     riskLevel?: string;
     riskScore?: number;
+    [key: string]: unknown;
   };
   metadata?: Record<string, unknown>;
   status?: string;
@@ -48,11 +56,14 @@ export async function analyzeScamText(input: {
 }): Promise<ScamAnalysisRecord> {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.scamAnalysis, headers);
-  const response = await apiRequest<ScamAnalysisResponse>("/scamshield/analyze-text", {
-    method: "POST",
-    headers,
-    body: input,
-  });
+  const response = await apiRequest<ScamAnalysisResponse>(
+    "/scamshield/analyze-text",
+    {
+      method: "POST",
+      headers,
+      body: input,
+    }
+  );
 
   return response.data.analysis;
 }
@@ -67,11 +78,14 @@ export async function analyzeScamEmail(input: {
 }): Promise<ScamAnalysisRecord> {
   const requestHeaders = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.scamAnalysis, requestHeaders);
-  const response = await apiRequest<ScamAnalysisResponse>("/scamshield/analyze-email", {
-    method: "POST",
-    headers: requestHeaders,
-    body: input,
-  });
+  const response = await apiRequest<ScamAnalysisResponse>(
+    "/scamshield/analyze-email",
+    {
+      method: "POST",
+      headers: requestHeaders,
+      body: input,
+    }
+  );
 
   return response.data.analysis;
 }
@@ -128,11 +142,14 @@ export async function analyzeScamScreenshot(input: {
           reportId: input.reportId,
           metadata: input.metadata,
         };
-  const response = await apiRequest<ScamAnalysisResponse>("/scamshield/analyze-screenshot", {
-    method: "POST",
-    headers,
-    body,
-  });
+  const response = await apiRequest<ScamAnalysisResponse>(
+    "/scamshield/analyze-screenshot",
+    {
+      method: "POST",
+      headers,
+      body,
+    }
+  );
 
   return response.data.analysis;
 }
@@ -144,11 +161,14 @@ export async function checkScamUrl(input: {
 }): Promise<ScamAnalysisRecord> {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.scamAnalysis, headers);
-  const response = await apiRequest<ScamAnalysisResponse>("/scamshield/check-url", {
-    method: "POST",
-    headers,
-    body: input,
-  });
+  const response = await apiRequest<ScamAnalysisResponse>(
+    "/scamshield/check-url",
+    {
+      method: "POST",
+      headers,
+      body: input,
+    }
+  );
 
   return response.data.analysis;
 }
@@ -177,11 +197,14 @@ export async function generateScamReportDraftLegacy(input: {
   notes?: string;
 }): Promise<ScamAnalysisRecord> {
   const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<ScamDraftResponse>("/scamshield/generate-report-draft", {
-    method: "POST",
-    headers,
-    body: input,
-  });
+  const response = await apiRequest<ScamDraftResponse>(
+    "/scamshield/generate-report-draft",
+    {
+      method: "POST",
+      headers,
+      body: input,
+    }
+  );
 
   return response.data.analysis;
 }
@@ -193,23 +216,31 @@ export async function submitScamReport(input: {
 }): Promise<ScamAnalysisRecord> {
   const headers = await getSessionAwareAuthHeaders();
   await ensureConsent(consentRequirements.shareWithAgencies, headers);
-  const response = await apiRequest<ScamAnalysisResponse>(`/scamshield/${input.analysisId}/submit`, {
-    method: "POST",
-    headers,
-    body: {
-      destination: input.destination,
-      consentToShare: input.consentToShare,
-    },
-  });
+  const response = await apiRequest<ScamAnalysisResponse>(
+    `/scamshield/${input.analysisId}/submit`,
+    {
+      method: "POST",
+      headers,
+      body: {
+        destination: input.destination,
+        consentToShare: input.consentToShare,
+      },
+    }
+  );
 
   return response.data.analysis;
 }
 
-export async function getScamAnalysis(analysisId: string): Promise<ScamAnalysisRecord> {
+export async function getScamAnalysis(
+  analysisId: string
+): Promise<ScamAnalysisRecord> {
   const headers = await getSessionAwareAuthHeaders();
-  const response = await apiRequest<ScamAnalysisResponse>(`/scamshield/${analysisId}`, {
-    headers,
-  });
+  const response = await apiRequest<ScamAnalysisResponse>(
+    `/scamshield/${analysisId}`,
+    {
+      headers,
+    }
+  );
 
   return response.data.analysis;
 }

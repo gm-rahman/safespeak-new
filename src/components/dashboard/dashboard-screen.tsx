@@ -9,6 +9,7 @@ import {
   SettingsPage,
   SettingsPrivacyPolicyPage,
   SettingsSupportPage,
+  SettingsTermsConditionsPage,
 } from "./dashboard-settings-pages";
 import type { DashboardTab, NotificationView, SettingsView } from "./dashboard-types";
 
@@ -34,6 +35,8 @@ export default function DashboardScreen({
       <SettingsSupportPage />
     ) : settingsView === "privacy" ? (
       <SettingsPrivacyPolicyPage />
+    ) : settingsView === "terms" ? (
+      <SettingsTermsConditionsPage />
     ) : (
       <SettingsPage />
     );

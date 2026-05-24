@@ -43,11 +43,17 @@ export default function LoginPage() {
 
   useEffect(() => {
     const authError = searchParams.get("authError");
+    const resetStatus = searchParams.get("reset");
 
     if (authError) {
       setError(authError);
+      return;
     }
-  }, [searchParams]);
+
+    if (resetStatus === "success") {
+      setSuccess(t("auth.login.resetSuccess"));
+    }
+  }, [searchParams, t]);
 
   useEffect(() => {
     let isActive = true;
@@ -169,7 +175,7 @@ export default function LoginPage() {
             {t("auth.login.rememberMe")}
           </label>
           <Link
-            href="/register"
+            href={"/forgot-password" as Route}
             className="font-semibold text-[#ffb54a] transition hover:text-[#ffc56f]"
           >
             {t("auth.login.forgotPassword")}

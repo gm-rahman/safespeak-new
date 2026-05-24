@@ -23,7 +23,10 @@ import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
-import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
+import {
+  VoiceAvatarAnimation,
+  type VoiceAvatarState,
+} from "@/components/dashboard/voice-avatar-animation";
 import { useConsentGate } from "@/hooks/use-consent-gate";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import { getAuthSession, getCurrentUser } from "@/lib/auth";
@@ -83,6 +86,8 @@ type SpeechWindow = Window & {
   webkitSpeechRecognition?: SpeechRecognitionConstructor;
 };
 
+const VOICE_RECORDING_TIMEOUT_MS = 8000;
+
 function getRecordingErrorMessage(
   errorCode: RecordingErrorCode,
   t: (key: string) => string
@@ -137,7 +142,9 @@ export function AssistantInteraction({
   const [isRecordingActive, setIsRecordingActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [, setLiveTranscript] = useState("");
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [voiceAvatarState, setVoiceAvatarState] =
+    useState<VoiceAvatarState>("idle");
   const [isMetadataEnabled, setIsMetadataEnabled] = useState(false);
   const [isMetadataCapturing, setIsMetadataCapturing] = useState(false);
   const [assistantFirstName, setAssistantFirstName] = useState<string>(
@@ -312,6 +319,8 @@ export function AssistantInteraction({
       );
 
       if (finalChunk || interimChunk) {
+        // Voice state: the browser recognizer has detected user speech.
+        setVoiceAvatarState("userSpeaking");
         clearAutoStopRecordingTimer();
         autoStopRecordingTimerRef.current = setTimeout(
           () => {
@@ -337,6 +346,12 @@ export function AssistantInteraction({
           mediaRecorder.stop();
         }
       }, 2500);
+    };
+
+    recognition.onend = () => {
+      if (liveRecognitionRef.current === recognition) {
+        liveRecognitionRef.current = null;
+      }
     };
 
     liveRecognitionRef.current = recognition;
@@ -383,6 +398,7 @@ export function AssistantInteraction({
 
       if (!audioBlob.size) {
         setIsTranscribing(false);
+        setVoiceAvatarState("idle");
         setSpeechError(getRecordingErrorMessage("no-speech", t));
         return;
       }
@@ -395,6 +411,7 @@ export function AssistantInteraction({
         const transcript = transcription.transcript.trim();
 
         if (!transcript) {
+          setVoiceAvatarState("idle");
           setSpeechError(getRecordingErrorMessage("no-speech", t));
           return;
         }
@@ -407,10 +424,12 @@ export function AssistantInteraction({
         );
       } catch (error) {
         if (captureConsentError(error)) {
+          setVoiceAvatarState("idle");
           setSpeechError(null);
           return;
         }
 
+        setVoiceAvatarState("idle");
         setSpeechError(
           error instanceof Error
             ? error.message
@@ -435,6 +454,7 @@ export function AssistantInteraction({
       !navigator.mediaDevices?.getUserMedia ||
       typeof MediaRecorder === "undefined"
     ) {
+      setVoiceAvatarState("idle");
       setSpeechError(t("dashboard.assistant.speechErrors.unsupported"));
       return;
     }
@@ -449,11 +469,13 @@ export function AssistantInteraction({
           ? error.message
           : "Consent status could not be checked."
       );
+      setVoiceAvatarState("idle");
       return;
     }
 
     if (!canRecord) {
       setSpeechError(null);
+      setVoiceAvatarState("idle");
       return;
     }
 
@@ -477,6 +499,8 @@ export function AssistantInteraction({
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
+          // Voice state: MediaRecorder produced audio data, a fallback signal for speech activity.
+          setVoiceAvatarState("userSpeaking");
         }
       };
 
@@ -484,6 +508,7 @@ export function AssistantInteraction({
         shouldProcessRecordingRef.current = false;
         setIsRecordingActive(false);
         setIsTranscribing(false);
+        setVoiceAvatarState("idle");
         cleanupRecording();
         setSpeechError(getRecordingErrorMessage("audio-capture", t));
       };
@@ -494,9 +519,12 @@ export function AssistantInteraction({
         if (!shouldProcessRecordingRef.current) {
           audioChunksRef.current = [];
           cleanupRecording();
+          setVoiceAvatarState("idle");
           return;
         }
 
+        // Voice state: user speech has ended and the assistant is processing it.
+        setVoiceAvatarState("listening");
         setIsTranscribing(true);
         void handleRecordedAudio(
           mediaRecorder.mimeType || mimeType || "audio/webm"
@@ -504,23 +532,28 @@ export function AssistantInteraction({
       };
 
       mediaRecorder.start();
+      // Voice state: microphone is open and waiting for the user to speak.
+      setVoiceAvatarState("listening");
       const hasLiveEndpointing = startLiveTranscriptPreview();
 
-      if (!hasLiveEndpointing) {
-        clearAutoStopRecordingTimer();
-        autoStopRecordingTimerRef.current = setTimeout(() => {
-          const activeRecorder = mediaRecorderRef.current;
+      clearAutoStopRecordingTimer();
+      autoStopRecordingTimerRef.current = setTimeout(() => {
+        const activeRecorder = mediaRecorderRef.current;
 
-          if (activeRecorder?.state === "recording") {
-            activeRecorder.stop();
+        if (activeRecorder?.state === "recording") {
+          if (hasLiveEndpointing) {
+            stopLiveTranscriptPreview();
           }
-        }, 8000);
-      }
+
+          activeRecorder.stop();
+        }
+      }, VOICE_RECORDING_TIMEOUT_MS);
 
       setIsRecordingActive(true);
     } catch (error) {
       stopLiveTranscriptPreview();
       cleanupRecording();
+      setVoiceAvatarState("idle");
       const errorCode =
         error instanceof DOMException && error.name === "NotAllowedError"
           ? "not-allowed"
@@ -546,6 +579,7 @@ export function AssistantInteraction({
     if (!mediaRecorder || mediaRecorder.state === "inactive") {
       cleanupRecording();
       setIsRecordingActive(false);
+      setVoiceAvatarState("idle");
       return;
     }
 
@@ -660,10 +694,19 @@ export function AssistantInteraction({
           ? t("dashboard.assistant.metadataReady")
           : t("dashboard.assistant.metadataDeviceOnly")
         : t("dashboard.assistant.metadataDescription");
+  const resolvedVoiceAvatarState: VoiceAvatarState = isTranscribing
+    ? "listening"
+    : liveTranscript
+      ? "userSpeaking"
+      : voiceAvatarState;
 
   return (
     <div className="flex flex-1 flex-col items-center px-2 pb-2 pt-4 sm:px-4 sm:pb-4 sm:pt-5">
-      <AssistantSphereAnimated alt={t("dashboard.assistant.sphereAlt")} />
+      <VoiceAvatarAnimation
+        state={resolvedVoiceAvatarState}
+        size="large"
+        alt={t("dashboard.assistant.sphereAlt")}
+      />
 
       <p className={headlineClassName}>
         {t("dashboard.assistant.greetingPrefix")}{" "}

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import {
   IconAlertTriangle,
@@ -21,18 +21,17 @@ import {
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
-import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import {
   ConsentRequiredError,
-  grantConsent,
   type ConsentRequirement,
+  grantConsent,
 } from "@/lib/consent";
-
+import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 import {
+  type MediaAssetItem,
   getMediaAssetImageUrl,
   listPublishedMediaAssets,
-  type MediaAssetItem,
 } from "@/lib/media-assets";
 import {
   analyzeScamEmail,
@@ -98,6 +97,36 @@ function formatEvidenceFileSize(size: number): string {
   return `${Math.round((size / 1024 / 1024) * 10) / 10} MB`;
 }
 
+function normalizeScamShieldUrlInput(value: string): string {
+  const trimmedValue = value.trim();
+
+  if (/^https?:\/\//i.test(trimmedValue)) {
+    return trimmedValue;
+  }
+
+  return `https://${trimmedValue}`;
+}
+
+function isValidScamShieldUrl(value: string): boolean {
+  try {
+    const url = new URL(normalizeScamShieldUrlInput(value));
+
+    return Boolean(url.hostname.includes("."));
+  } catch {
+    return false;
+  }
+}
+
+function getDraftReportValue(
+  draftReport: Record<string, unknown> | undefined,
+  key: string,
+  fallback: string
+): string {
+  const value = draftReport?.[key];
+
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
 function ScamShieldIntakePage({
   initialTopic,
 }: {
@@ -107,19 +136,31 @@ function ScamShieldIntakePage({
   const router = useRouter();
   const existingState = getScamShieldFlowState();
   const evidenceFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [messageContent, setMessageContent] = useState(existingState?.inputText ?? "");
+  const [messageContent, setMessageContent] = useState(
+    existingState?.inputText ?? ""
+  );
   const [inputMode, setInputMode] = useState<
     "text" | "url" | "email" | "screenshot"
   >(existingState?.inputMode ?? "text");
   const [intakeError, setIntakeError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState<File[]>([]);
-  const [evidencePreviewUrls, setEvidencePreviewUrls] = useState<Record<string, string>>({});
+  const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState<File[]>(
+    []
+  );
+  const [evidencePreviewUrls, setEvidencePreviewUrls] = useState<
+    Record<string, string>
+  >({});
   const [pendingConsentRequirement, setPendingConsentRequirement] =
     useState<ConsentRequirement | null>(null);
   const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const readyItemCount =
     selectedEvidenceFiles.length + (messageContent.trim() ? 1 : 0);
+  const hasAnalyzableInput =
+    inputMode === "screenshot"
+      ? selectedEvidenceFiles.length > 0 || Boolean(messageContent.trim())
+      : Boolean(messageContent.trim());
+  const isAnalyzeDisabled =
+    isAnalyzing || isGrantingConsent || !hasAnalyzableInput;
 
   const attachEvidenceFiles = (files: FileList | File[]) => {
     const incomingFiles = Array.from(files);
@@ -128,7 +169,9 @@ function ScamShieldIntakePage({
       return;
     }
 
-    const supportedFiles = incomingFiles.filter(isSupportedScamShieldEvidenceFile);
+    const supportedFiles = incomingFiles.filter(
+      isSupportedScamShieldEvidenceFile
+    );
     const unsupportedFiles = incomingFiles.filter(
       (file) => !isSupportedScamShieldEvidenceFile(file)
     );
@@ -164,14 +207,33 @@ function ScamShieldIntakePage({
 
   const runAnalysis = async () => {
     const trimmedInput = messageContent.trim();
+    const normalizedUrl =
+      inputMode === "url"
+        ? normalizeScamShieldUrlInput(trimmedInput)
+        : trimmedInput;
 
-    if (inputMode === "screenshot" && !selectedEvidenceFiles.length && !trimmedInput) {
-      setIntakeError("Select evidence files or paste the visible message text before analysis.");
+    if (
+      inputMode === "screenshot" &&
+      !selectedEvidenceFiles.length &&
+      !trimmedInput
+    ) {
+      setIntakeError(
+        "Select evidence files or paste the visible message text before analysis."
+      );
       return;
     }
 
     if (inputMode !== "screenshot" && !trimmedInput) {
-      setIntakeError("Add suspicious text, a URL, or an email body before analysis.");
+      setIntakeError(
+        "Add suspicious text, a URL, or an email body before analysis."
+      );
+      return;
+    }
+
+    if (inputMode === "url" && !isValidScamShieldUrl(trimmedInput)) {
+      setIntakeError(
+        "Enter a complete URL or domain, such as https://example.com."
+      );
       return;
     }
 
@@ -181,7 +243,7 @@ function ScamShieldIntakePage({
     try {
       const analysis =
         inputMode === "url"
-          ? await checkScamUrl({ url: trimmedInput })
+          ? await checkScamUrl({ url: normalizedUrl })
           : inputMode === "email"
             ? await analyzeScamEmail({ body: trimmedInput })
             : inputMode === "screenshot"
@@ -192,7 +254,7 @@ function ScamShieldIntakePage({
               : await analyzeScamText({ text: trimmedInput, language: "en" });
 
       mergeScamShieldFlowState({
-        inputText: trimmedInput,
+        inputText: inputMode === "url" ? normalizedUrl : trimmedInput,
         inputMode,
         analysis,
       });
@@ -204,7 +266,9 @@ function ScamShieldIntakePage({
       }
 
       setIntakeError(
-        error instanceof Error ? error.message : "Scam analysis could not be completed."
+        error instanceof Error
+          ? error.message
+          : "Scam analysis could not be completed."
       );
     } finally {
       setIsAnalyzing(false);
@@ -214,7 +278,9 @@ function ScamShieldIntakePage({
   useEffect(() => {
     const previewEntries = selectedEvidenceFiles
       .filter((file) => file.type.startsWith("image/"))
-      .map((file) => [getEvidenceFileKey(file), URL.createObjectURL(file)] as const);
+      .map(
+        (file) => [getEvidenceFileKey(file), URL.createObjectURL(file)] as const
+      );
     const nextPreviewUrls = Object.fromEntries(previewEntries);
 
     setEvidencePreviewUrls(nextPreviewUrls);
@@ -252,7 +318,8 @@ function ScamShieldIntakePage({
                 Cyber scam context
               </p>
               <p className="mt-1 text-[11px] leading-[1.55] text-[#60728a]">
-                Paste suspicious text, upload a screenshot, or continue to the next step to review scam risk indicators.
+                Paste suspicious text, upload a screenshot, or continue to the
+                next step to review scam risk indicators.
               </p>
             </div>
           ) : null}
@@ -270,7 +337,9 @@ function ScamShieldIntakePage({
                     key={mode}
                     type="button"
                     onClick={() =>
-                      setInputMode(mode as "text" | "url" | "email" | "screenshot")
+                      setInputMode(
+                        mode as "text" | "url" | "email" | "screenshot"
+                      )
                     }
                     className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-bold ${
                       inputMode === mode
@@ -368,7 +437,8 @@ function ScamShieldIntakePage({
                       {selectedEvidenceFiles.length === 1 ? "" : "s"} attached
                     </p>
                     <p className="mt-0.5 text-[9px] text-[#7f90a6]">
-                      Images use OCR. PDFs and Word documents are parsed for scam text.
+                      Images use OCR. PDFs and Word documents are parsed for
+                      scam text.
                     </p>
                   </div>
                 ) : null}
@@ -382,7 +452,9 @@ function ScamShieldIntakePage({
                   {selectedEvidenceFiles.map((file) => {
                     const fileKey = getEvidenceFileKey(file);
                     const previewUrl = evidencePreviewUrls[fileKey];
-                    const extension = getEvidenceFileExtension(file.name).replace(".", "").toUpperCase();
+                    const extension = getEvidenceFileExtension(file.name)
+                      .replace(".", "")
+                      .toUpperCase();
 
                     return (
                       <article
@@ -412,7 +484,8 @@ function ScamShieldIntakePage({
                           {file.name}
                         </p>
                         <p className="text-[8px] font-semibold text-[#8ea2bf]">
-                          {extension || "FILE"} - {formatEvidenceFileSize(file.size)}
+                          {extension || "FILE"} -{" "}
+                          {formatEvidenceFileSize(file.size)}
                         </p>
                       </article>
                     );
@@ -479,13 +552,20 @@ function ScamShieldIntakePage({
             </p>
             <button
               type="button"
+              disabled={isAnalyzeDisabled}
               onClick={() => {
                 void runAnalysis();
               }}
-              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-[#ff9900] px-7 text-[11px] font-bold uppercase tracking-[0.02em] text-white shadow-[0_8px_18px_rgba(255,153,0,0.33)]"
+              className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-full px-7 text-[11px] font-bold uppercase tracking-[0.02em] text-white shadow-[0_8px_18px_rgba(255,153,0,0.33)] ${
+                isAnalyzeDisabled
+                  ? "cursor-not-allowed bg-[#f5c779] opacity-70"
+                  : "bg-[#ff9900]"
+              }`}
             >
               <IconShieldFilled size={12} />
-              {isAnalyzing ? "Analyzing..." : t("dashboard.scamShield.analyzeNow")}
+              {isAnalyzing
+                ? "Analyzing..."
+                : t("dashboard.scamShield.analyzeNow")}
             </button>
           </div>
         </article>
@@ -497,33 +577,72 @@ function ScamShieldIntakePage({
 function ScamShieldRiskPage() {
   const { t } = useTranslation();
   const analysis = getScamShieldFlowState()?.analysis;
-  const isDemoFallback = !analysis;
-  const riskScore = Math.round((analysis?.riskScore ?? 0) * 100) / 100;
-  const riskLevel = analysis?.riskLevel ?? "high";
-  const confidence = analysis?.confidence ?? (analysis ? "rule-based" : "demo");
-  const redFlags = useMemo(
-    () =>
-      analysis?.redFlags?.length
-        ? analysis.redFlags
-        : analysis?.indicators?.length
-          ? analysis.indicators
-          : isDemoFallback
-            ? ["Demo preview only"]
-            : [],
-    [analysis?.indicators, analysis?.redFlags, isDemoFallback]
-  );
-  const recommendations = useMemo(
-    () =>
-      analysis?.recommendations?.length
-        ? analysis.recommendations
-        : redFlags.map(() => "Pause, do not click links or send money, and verify through an official channel."),
-    [analysis?.recommendations, redFlags]
-  );
+
+  if (!analysis) {
+    return (
+      <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
+        <div className="mx-auto w-full max-w-[1184px]">
+          <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
+            <Link
+              href="/dashboard?view=scamshieldintake"
+              className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
+            >
+              <IconChevronLeft size={14} />
+              {t("dashboard.scamShield.scamRiskResults")}
+            </Link>
+            <Link
+              href="/dashboard"
+              className="text-xs font-medium text-[#7b8798]"
+            >
+              {t("common.cancel")}
+            </Link>
+          </div>
+
+          <article className="mt-3 rounded-[16px] border border-[#dce5f1] bg-white px-4 py-8 text-center shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:px-6">
+            <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#ecf4ff] text-[#0f5d9f]">
+              <IconShieldFilled size={20} />
+            </span>
+            <h2 className="mt-3 text-xl font-bold text-[#1f2a3a]">
+              Run a ScamShield analysis first
+            </h2>
+            <p className="mx-auto mt-2 max-w-[520px] text-xs leading-[1.55] text-[#61748f]">
+              Paste a message, check a URL, analyze an email, or upload evidence
+              so ScamShield can produce real risk results for this session.
+            </p>
+            <Link
+              href="/dashboard?view=scamshieldintake"
+              className="mt-4 inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#0f5d9f] px-6 text-[11px] font-semibold text-white"
+            >
+              Start analysis
+              <IconArrowRight size={12} />
+            </Link>
+          </article>
+        </div>
+      </div>
+    );
+  }
+
+  const riskScore =
+    Math.round(Math.max(0, Math.min(100, analysis.riskScore ?? 0)) * 100) / 100;
+  const riskLevel = analysis.riskLevel ?? "low";
+  const confidence = analysis.confidence ?? "rule-based";
+  const redFlags = analysis.redFlags?.length
+    ? analysis.redFlags
+    : analysis.indicators?.length
+      ? analysis.indicators
+      : [];
+  const recommendations = analysis.recommendations?.length
+    ? analysis.recommendations
+    : redFlags.map(
+        () =>
+          "Pause, do not click links or send money, and verify through an official channel."
+      );
   const extractedTextLength =
-    typeof analysis?.metadata?.extractedTextLength === "number"
+    typeof analysis.metadata?.extractedTextLength === "number"
       ? analysis.metadata.extractedTextLength
       : null;
-  const extractedEntities = analysis?.extractedEntities ?? analysis?.metadata?.extractedEntities;
+  const extractedEntities =
+    analysis.extractedEntities ?? analysis.metadata?.extractedEntities;
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -545,11 +664,6 @@ function ScamShieldRiskPage() {
         </div>
 
         <article className="mt-3 rounded-[16px] border border-[#dce5f1] bg-[#f4f7fc] p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-4">
-          {isDemoFallback ? (
-            <div className="mb-3 rounded-[12px] border border-[#ffe0b2] bg-[#fff7ed] px-3 py-3 text-[11px] leading-[1.55] text-[#9a5b12]">
-              Backend scam analysis was not available for this session. These values are a clearly marked demo preview only and are not a live SafeSpeak result.
-            </div>
-          ) : null}
           <article className="rounded-[14px] border border-[#e3eaf5] bg-white px-4 py-5 text-center sm:px-6 sm:py-6">
             <p className="text-[58px] font-black leading-none text-[#cf2f34]">
               {riskScore}%
@@ -558,16 +672,11 @@ function ScamShieldRiskPage() {
               {riskLevel} risk | {confidence} confidence
             </p>
             <p className="mt-2 text-[26px] font-extrabold leading-none text-[#cf2f34]">
-              {analysis?.summary ??
-                (analysis
-                  ? "ScamShield analysis completed"
-                  : t("dashboard.scamShield.highRiskDetected"))}
+              {analysis.summary ?? "ScamShield analysis completed"}
             </p>
             <p className="mx-auto mt-2 max-w-[540px] text-xs leading-[1.5] text-[#61748f]">
-              {analysis?.summary ??
-                (analysis
-                  ? `Backend returned ${riskLevel} risk with ${redFlags.length} indicator${redFlags.length === 1 ? "" : "s"}.`
-                  : t("dashboard.scamShield.highRiskDetectedBody"))}
+              {analysis.summary ??
+                `ScamShield returned ${riskLevel} risk with ${redFlags.length} indicator${redFlags.length === 1 ? "" : "s"}.`}
             </p>
             {extractedTextLength ? (
               <p className="mt-2 text-[10px] font-semibold text-[#60728a]">
@@ -587,27 +696,34 @@ function ScamShieldRiskPage() {
 
           <div className="mt-2 space-y-2">
             {redFlags.map((flag, index) => (
-            <article
-              key={`${flag}-${index}`}
-              className="flex items-start gap-3 rounded-xl border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4"
-            >
-              <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#fff6e5] text-[#f59e0b]">
-                <IconAlertTriangle size={13} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-[#1f2a3a]">
-                  {flag}
-                </p>
-                <p className="mt-1 text-[11px] leading-[1.45] text-[#64748b]">
-                  {recommendations[index] ?? t("dashboard.scamShield.highRiskDetectedBody")}
-                </p>
-                <span className="mt-2 inline-flex items-center gap-1 text-[9px] font-semibold text-[#2c66b0]">
-                  {t("dashboard.scamShield.howToStaySafe")}
-                  <IconArrowRight size={10} />
+              <article
+                key={`${flag}-${index}`}
+                className="flex items-start gap-3 rounded-xl border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4"
+              >
+                <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#fff6e5] text-[#f59e0b]">
+                  <IconAlertTriangle size={13} />
                 </span>
-              </div>
-            </article>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-[#1f2a3a]">{flag}</p>
+                  <p className="mt-1 text-[11px] leading-[1.45] text-[#64748b]">
+                    {recommendations[index] ??
+                      t("dashboard.scamShield.highRiskDetectedBody")}
+                  </p>
+                  <span className="mt-2 inline-flex items-center gap-1 text-[9px] font-semibold text-[#2c66b0]">
+                    {t("dashboard.scamShield.howToStaySafe")}
+                    <IconArrowRight size={10} />
+                  </span>
+                </div>
+              </article>
             ))}
+            {!redFlags.length ? (
+              <article className="rounded-xl border border-[#e2eaf4] bg-white px-3 py-3 text-[11px] leading-[1.55] text-[#64748b] sm:px-4">
+                No clear scam red flags were detected from the supplied content.
+                Keep verifying through official channels if the request feels
+                unusual or involves money, passwords, identity documents, or
+                account access.
+              </article>
+            ) : null}
           </div>
 
           {extractedEntities && typeof extractedEntities === "object" ? (
@@ -659,15 +775,17 @@ function ScamShieldAssetsPage() {
   useEffect(() => {
     let isMounted = true;
 
-    void listPublishedMediaAssets(SCAM_SHIELD_MEDIA_ASSET_CATEGORY).then((assets) => {
-      if (isMounted) {
-        setMediaAssets(assets);
-      }
-    }).catch(() => {
-      if (isMounted) {
-        setMediaAssets([]);
-      }
-    });
+    void listPublishedMediaAssets(SCAM_SHIELD_MEDIA_ASSET_CATEGORY)
+      .then((assets) => {
+        if (isMounted) {
+          setMediaAssets(assets);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setMediaAssets([]);
+        }
+      });
 
     return () => {
       isMounted = false;
@@ -720,10 +838,16 @@ function ScamShieldAssetsPage() {
                   </div>
                 </div>
 
-                <button className="inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[#ff9800] px-5 text-[11px] font-semibold text-white shadow-[0_8px_16px_rgba(255,152,0,0.26)]">
+                <Link
+                  href="/dashboard?view=scamshieldagency"
+                  onClick={() => {
+                    mergeScamShieldFlowState({ selectedAgency: "bank" });
+                  }}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[#ff9800] px-5 text-[11px] font-semibold text-white shadow-[0_8px_16px_rgba(255,152,0,0.26)]"
+                >
                   {t("dashboard.scamShield.callFraudDepartment")}
                   <IconExternalLink size={12} />
-                </button>
+                </Link>
               </div>
             </article>
 
@@ -753,6 +877,9 @@ function ScamShieldAssetsPage() {
 
                 <Link
                   href="/dashboard?view=scamshieldagency"
+                  onClick={() => {
+                    mergeScamShieldFlowState({ selectedAgency: "accc" });
+                  }}
                   className="inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[#ff9800] px-5 text-[11px] font-semibold text-white shadow-[0_8px_16px_rgba(255,152,0,0.26)]"
                 >
                   {t("dashboard.scamShield.launchReportTool")}
@@ -779,6 +906,9 @@ function ScamShieldAssetsPage() {
 
                 <Link
                   href="/dashboard?view=scamshieldagency"
+                  onClick={() => {
+                    mergeScamShieldFlowState({ selectedAgency: "reportCyber" });
+                  }}
                   className="inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[#ff9800] px-5 text-[11px] font-semibold text-white shadow-[0_8px_16px_rgba(255,152,0,0.26)]"
                 >
                   {t("dashboard.scamShield.launchReportTool")}
@@ -832,7 +962,7 @@ function ScamShieldAgencyPage() {
   const flowState = getScamShieldFlowState();
   const [expandedSection, setExpandedSection] = useState<
     "accc" | "reportCyber" | "bank" | null
-  >("accc");
+  >(flowState?.selectedAgency ?? "accc");
   const [privacyConsentEnabled, setPrivacyConsentEnabled] = useState(false);
   const [draftSummary, setDraftSummary] = useState(
     flowState?.reportDraft?.draftReport?.draft ??
@@ -845,7 +975,30 @@ function ScamShieldAgencyPage() {
   const [isGrantingConsent, setIsGrantingConsent] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const analysisSummary = flowState?.analysis?.summary ?? "";
-  const analysisIndicators = flowState?.analysis?.indicators ?? flowState?.analysis?.redFlags ?? [];
+  const analysisIndicators =
+    flowState?.analysis?.indicators ?? flowState?.analysis?.redFlags ?? [];
+  const draftReport = flowState?.reportDraft?.draftReport as
+    | Record<string, unknown>
+    | undefined;
+  const draftSenderName = getDraftReportValue(
+    draftReport,
+    "senderName",
+    flowState?.analysis ? "Unknown sender" : "Run analysis first"
+  );
+  const draftScamCategory = getDraftReportValue(
+    draftReport,
+    "scamCategory",
+    analysisIndicators.length
+      ? analysisIndicators.slice(0, 2).join(", ")
+      : "Pending analysis details"
+  );
+  const draftPlatform = getDraftReportValue(
+    draftReport,
+    "platform",
+    flowState?.analysis?.type
+      ? `${flowState.analysis.type} input`
+      : "Pending analysis details"
+  );
 
   useEffect(() => {
     if (!flowState?.analysis?._id) {
@@ -886,7 +1039,9 @@ function ScamShieldAgencyPage() {
 
   const handleSubmitToAgency = async () => {
     if (!flowState?.analysis?._id) {
-      setAgencyError("Run a ScamShield analysis before preparing agency submission.");
+      setAgencyError(
+        "Run a ScamShield analysis before preparing agency submission."
+      );
       return;
     }
 
@@ -904,9 +1059,15 @@ function ScamShieldAgencyPage() {
     setAgencyError(null);
 
     try {
+      const destination =
+        expandedSection === "bank"
+          ? "bank"
+          : expandedSection === "reportCyber"
+            ? "reportCyber"
+            : "scamwatch";
       const submittedAnalysis = await submitScamReport({
         analysisId: flowState.analysis._id,
-        destination: expandedSection === "bank" ? "bank" : "scamwatch",
+        destination,
         consentToShare: privacyConsentEnabled,
       });
       mergeScamShieldFlowState({
@@ -978,6 +1139,14 @@ function ScamShieldAgencyPage() {
             ) : null}
           </article>
 
+          {!flowState?.analysis ? (
+            <div className="mt-3 rounded-[12px] border border-[#dbeafe] bg-[#eff6ff] px-3 py-3 text-[11px] leading-[1.55] text-[#1d4f8f]">
+              Run a ScamShield analysis before preparing agency fields. This
+              page will use the real analysis summary, indicators, and extracted
+              details once available.
+            </div>
+          ) : null}
+
           {agencyError ? (
             <div className="mt-3 rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-3 text-[11px] text-[#b45353]">
               {agencyError}
@@ -1024,7 +1193,7 @@ function ScamShieldAgencyPage() {
                     <div className="relative mt-1">
                       <input
                         readOnly
-                        value={t("dashboard.scamShield.prefilledSenderName")}
+                        value={draftSenderName}
                         className="h-10 w-full rounded-[8px] border border-[#dce5f1] bg-[#f8fbff] px-3 pr-10 text-[12px] text-[#253447] outline-none"
                       />
                       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#16a56a]">
@@ -1041,9 +1210,7 @@ function ScamShieldAgencyPage() {
                       <div className="relative mt-1">
                         <input
                           readOnly
-                          value={t(
-                            "dashboard.scamShield.prefilledScamCategory"
-                          )}
+                          value={draftScamCategory}
                           className="h-10 w-full rounded-[8px] border border-[#dce5f1] bg-[#f8fbff] px-3 pr-9 text-[12px] text-[#253447] outline-none"
                         />
                         <IconChevronRight
@@ -1060,7 +1227,7 @@ function ScamShieldAgencyPage() {
                       <div className="relative mt-1">
                         <input
                           readOnly
-                          value={t("dashboard.scamShield.prefilledPlatform")}
+                          value={draftPlatform}
                           className="h-10 w-full rounded-[8px] border border-[#dce5f1] bg-[#f8fbff] px-3 pr-9 text-[12px] text-[#253447] outline-none"
                         />
                         <IconChevronRight

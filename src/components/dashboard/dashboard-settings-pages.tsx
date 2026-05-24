@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import type { Route } from "next";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -25,6 +26,8 @@ import {
 import { useTranslation } from "react-i18next";
 
 import safeReporting from "@/assets/safe_reporting.svg?url";
+import { LegalDocumentPage } from "@/components/legal/legal-document-page";
+import { ApiRequestError } from "@/lib/api";
 import {
   getConsentHistory,
   getCurrentConsent,
@@ -48,6 +51,7 @@ import {
   savePrivacyExportFile,
   type PrivacyRequestRecord,
 } from "@/lib/privacy-client";
+import { createHelpSupportRequest } from "@/lib/support-client";
 import {
   communityOptions,
   cultureOptions,
@@ -915,12 +919,18 @@ export function SettingsPage() {
           </article>
         </div>
 
-        <div className="mt-3 flex justify-end">
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
           <Link
             href="/dashboard/settings/privacy-policy"
             className="inline-flex h-10 items-center rounded-full border border-[#d6e0ec] bg-white px-5 text-xs font-semibold text-[#0f5d9f] transition hover:bg-[#f7fbff]"
           >
             {t("footer.privacyPolicy")}
+          </Link>
+          <Link
+            href={"/dashboard/settings/terms-conditions" as Route}
+            className="inline-flex h-10 items-center rounded-full border border-[#d6e0ec] bg-white px-5 text-xs font-semibold text-[#0f5d9f] transition hover:bg-[#f7fbff]"
+          >
+            {t("footer.termsOfUse")}
           </Link>
         </div>
       </div>
@@ -930,6 +940,40 @@ export function SettingsPage() {
 
 export function SettingsSupportPage() {
   const { t } = useTranslation();
+  const [supportTitle, setSupportTitle] = useState("");
+  const [supportMessage, setSupportMessage] = useState("");
+  const [supportSubmitStatus, setSupportSubmitStatus] = useState("");
+  const [isSubmittingSupportRequest, setIsSubmittingSupportRequest] =
+    useState(false);
+
+  async function handleSupportSubmit(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (isSubmittingSupportRequest) {
+      return;
+    }
+
+    setIsSubmittingSupportRequest(true);
+    setSupportSubmitStatus("");
+
+    try {
+      await createHelpSupportRequest({
+        title: supportTitle,
+        message: supportMessage,
+      });
+      setSupportSubmitStatus("Support request sent.");
+    } catch (error) {
+      setSupportSubmitStatus(
+        error instanceof ApiRequestError
+          ? error.message
+          : "Support request could not be sent."
+      );
+    } finally {
+      setIsSubmittingSupportRequest(false);
+    }
+  }
 
   return (
     <div className="px-2 pb-5 pt-2 sm:px-4 sm:pb-8 sm:pt-4">
@@ -967,7 +1011,13 @@ export function SettingsSupportPage() {
             {t("dashboard.settings.supportSubheading")}
           </p>
 
-          <form className="mt-5 w-full rounded-[16px] border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5">
+          <form
+            className="mt-5 w-full rounded-[16px] border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5"
+            onSubmit={handleSupportSubmit}
+          >
+            <p className="sr-only" aria-live="polite">
+              {supportSubmitStatus}
+            </p>
             <div>
               <label
                 htmlFor="support-title"
@@ -979,6 +1029,8 @@ export function SettingsSupportPage() {
                 id="support-title"
                 type="text"
                 placeholder={t("dashboard.settings.supportTitlePlaceholder")}
+                value={supportTitle}
+                onChange={(event) => setSupportTitle(event.target.value)}
                 className="mt-2 h-10 w-full rounded-[8px] border border-[#e2e8f0] bg-[#f8fafc] px-3 text-xs text-[#1f2937] outline-none placeholder:text-[#9ca3af] focus:border-[#cfd8e3]"
               />
             </div>
@@ -994,6 +1046,8 @@ export function SettingsSupportPage() {
                 id="support-message"
                 rows={6}
                 placeholder={t("dashboard.settings.supportMessagePlaceholder")}
+                value={supportMessage}
+                onChange={(event) => setSupportMessage(event.target.value)}
                 className="mt-2 w-full resize-none rounded-[8px] border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2 text-xs text-[#1f2937] outline-none placeholder:text-[#9ca3af] focus:border-[#cfd8e3]"
               />
             </div>
@@ -1011,70 +1065,35 @@ export function SettingsSupportPage() {
 
 export function SettingsPrivacyPolicyPage() {
   const { t } = useTranslation();
-  const policyItems = [
-    t("dashboard.settings.privacyItems.0"),
-    t("dashboard.settings.privacyItems.1"),
-    t("dashboard.settings.privacyItems.2"),
-    t("dashboard.settings.privacyItems.3"),
-    t("dashboard.settings.privacyItems.4"),
-  ];
 
   return (
     <div className="px-2 pb-5 pt-2 sm:px-4 sm:pb-8 sm:pt-4">
       <div className="mx-auto w-full xl:max-w-[1120px] 2xl:max-w-[1184px]">
-        <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
-          <Link
-            href="/dashboard/settings"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
-          >
-            <IconChevronLeft size={14} />
-            {t("dashboard.settings.privacyPolicyTitle")}
-          </Link>
-          <Link
-            href="/dashboard/settings"
-            className="text-xs font-medium text-[#7b8798]"
-          >
-            {t("common.cancel")}
-          </Link>
-        </div>
+        <LegalDocumentPage
+          pageKey="privacy-policy"
+          title={t("footer.privacyPolicy")}
+          intro={t("dashboard.settings.privacyIntro")}
+          backHref="/dashboard/settings"
+          backLabel={t("dashboard.settings.profileSettings")}
+        />
+      </div>
+    </div>
+  );
+}
 
-        <article className="mt-4 rounded-[10px] border border-[#e1e8f2] bg-white px-4 py-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:px-6 sm:py-8">
-          <p className="text-center text-[10px] font-bold uppercase tracking-[0.12em] text-[#8b97a8]">
-            {t("dashboard.settings.privacyEffectiveDate")}
-          </p>
-          <h2 className="mt-2 text-center text-[34px] font-extrabold leading-[1.04] text-[#1f2a3a] sm:text-[40px]">
-            {t("dashboard.settings.privacyAgreement")}
-          </h2>
-          <p className="mx-auto mt-2 max-w-[760px] text-center text-xs leading-[1.6] text-[#6a7d94]">
-            {t("dashboard.settings.privacyIntro")}
-          </p>
+export function SettingsTermsConditionsPage() {
+  const { t } = useTranslation();
 
-          <div className="mt-6 space-y-3">
-            {policyItems.map((item, index) => (
-              <div key={item} className="flex items-start gap-3">
-                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#eaf2ff] text-[10px] font-bold text-[#1d72d8]">
-                  {index + 1}
-                </span>
-                <p className="text-sm leading-[1.65] text-[#42546b]">{item}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-            <Link
-              href="/dashboard/settings"
-              className="inline-flex h-10 items-center rounded-lg border border-[#d8e0eb] bg-white px-5 text-xs font-semibold text-[#42546b] transition hover:bg-[#f8fafd]"
-            >
-              {t("dashboard.settings.decline")}
-            </Link>
-            <Link
-              href="/dashboard/settings"
-              className="inline-flex h-10 items-center rounded-lg bg-[#ef4444] px-5 text-xs font-bold text-white transition hover:bg-[#dc2626]"
-            >
-              Return to settings
-            </Link>
-          </div>
-        </article>
+  return (
+    <div className="px-2 pb-5 pt-2 sm:px-4 sm:pb-8 sm:pt-4">
+      <div className="mx-auto w-full xl:max-w-[1120px] 2xl:max-w-[1184px]">
+        <LegalDocumentPage
+          pageKey="terms-conditions"
+          title={t("footer.termsOfUse")}
+          intro={t("dashboard.settings.termsIntro")}
+          backHref="/dashboard/settings"
+          backLabel={t("dashboard.settings.profileSettings")}
+        />
       </div>
     </div>
   );

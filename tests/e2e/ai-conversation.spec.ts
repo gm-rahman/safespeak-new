@@ -4,6 +4,7 @@ const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3130";
 const API_ROUTE = "**/api/v1/**";
 const START_URL = `${BASE_URL}/dashboard?view=assistantconversation&category=domestic_violence&topic=domestic_violence&message=Some+one+pull+my+hijub`;
 const VOICE_START_URL = `${BASE_URL}/dashboard?view=assistantconversation&category=domestic_violence&topic=domestic_violence&voice=1`;
+const SEEDED_VOICE_START_URL = `${BASE_URL}/dashboard?view=assistantconversation&category=domestic_violence&topic=domestic_violence&voice=1&message=First+voice+message`;
 const INITIAL_MESSAGE = "Some one pull my hijub";
 const VOICE_TRANSCRIPT = "This is a voice e2e transcript about what happened.";
 const E2E_USER = {
@@ -26,6 +27,7 @@ type ApiMockState = {
   consent: ConsentState;
   conversationSessionCreates: number;
   conversationMessages: number;
+  forceBlockedTriage?: boolean;
   timelineAssistantRequests: number;
   transcriptionRequests: number;
   speechSynthesisRequests: number;
@@ -134,7 +136,8 @@ async function mockSafeSpeakApi(
       turnNumber += 1;
       const body = request.postDataJSON() as { content?: string };
       const userContent = body.content ?? "";
-      const offerTriage = turnNumber >= 4;
+      const reachedTriageThreshold = turnNumber >= 4;
+      const offerTriage = reachedTriageThreshold && !state.forceBlockedTriage;
       const assistantContent = offerTriage
         ? "Assistant e2e response 4: enough facts are collected for triage."
         : `Assistant e2e response ${turnNumber}: I captured that detail. Please share one more relevant fact.`;
@@ -146,8 +149,15 @@ async function mockSafeSpeakApi(
             session: {
               id: "conversation-e2e",
               selectedTopic: "domestic_violence",
-              detectedCategory: "domestic_violence",
-              status: offerTriage ? "ready_for_triage" : "active",
+              detectedCategory: state.forceBlockedTriage
+                ? "general_support"
+                : "domestic_violence",
+              status:
+                reachedTriageThreshold && state.forceBlockedTriage
+                  ? "ready_for_triage"
+                  : offerTriage
+                    ? "ready_for_triage"
+                    : "active",
               safetyRiskLevel: offerTriage ? "medium" : "low",
               jurisdiction: "NSW",
               messageCount: turnNumber * 2,
@@ -167,26 +177,35 @@ async function mockSafeSpeakApi(
             },
             factExtraction: {
               whatHappened: userContent,
-              missingInformation: offerTriage ? [] : ["location", "timing"],
+              missingInformation: reachedTriageThreshold
+                ? []
+                : ["location", "timing"],
               timeline: {
                 whatHappened: userContent,
               },
             },
-            triage: offerTriage
+            triage: reachedTriageThreshold
               ? {
-                  likelyCategory: "domestic_violence",
-                  likelyCategoryLabel: "Domestic violence",
-                  confidenceScore: 0.78,
-                  confidenceLabel: "medium",
-                  safetyRiskLevel: "medium",
-                  reasoningSummary:
-                    "The conversation includes harm-related facts.",
+                  likelyCategory: state.forceBlockedTriage
+                    ? "general_support"
+                    : "domestic_violence",
+                  likelyCategoryLabel: state.forceBlockedTriage
+                    ? "General support"
+                    : "Domestic violence",
+                  confidenceScore: state.forceBlockedTriage ? 0.31 : 0.78,
+                  confidenceLabel: state.forceBlockedTriage ? "low" : "medium",
+                  safetyRiskLevel: state.forceBlockedTriage ? "low" : "medium",
+                  reasoningSummary: state.forceBlockedTriage
+                    ? "The conversation does not include harm-related facts."
+                    : "The conversation includes harm-related facts.",
                   matchedLegislationIds: [],
                   matchedKnowledgeSources: [],
-                  humanReviewRecommended: false,
+                  humanReviewRecommended: Boolean(state.forceBlockedTriage),
                   missingInformation: [],
-                  canProceedToRecommendations: true,
-                  matchedResourceTypes: ["support_service"],
+                  canProceedToRecommendations: !state.forceBlockedTriage,
+                  matchedResourceTypes: state.forceBlockedTriage
+                    ? ["general"]
+                    : ["support_service"],
                   disclaimer: "This is information only, not legal advice.",
                 }
               : null,
@@ -356,6 +375,116 @@ async function installVoiceMocks(page: Page) {
   });
 }
 
+async function installContinuousVoiceLoopMocks(page: Page) {
+  await page.addInitScript(() => {
+    class MockMediaRecorder {
+      static isTypeSupported() {
+        return true;
+      }
+
+      mimeType = "audio/webm";
+      state: "inactive" | "recording" = "inactive";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor(_stream: MediaStream, options?: { mimeType?: string }) {
+        this.mimeType = options?.mimeType ?? "audio/webm";
+      }
+
+      start() {
+        this.state = "recording";
+        window.setTimeout(() => {
+          if (this.state !== "recording") {
+            return;
+          }
+
+          this.ondataavailable?.({
+            data: new Blob(["voice-loop-e2e"], { type: this.mimeType }),
+          });
+        }, 50);
+      }
+
+      stop() {
+        if (this.state === "inactive") {
+          return;
+        }
+
+        this.state = "inactive";
+        window.setTimeout(() => this.onstop?.(), 0);
+      }
+    }
+
+    class MockSpeechRecognition {
+      continuous = false;
+      interimResults = false;
+      lang = "en-US";
+      maxAlternatives = 1;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onend: (() => void) | null = null;
+
+      start() {}
+
+      stop() {
+        window.setTimeout(() => this.onend?.(), 0);
+      }
+
+      abort() {
+        window.setTimeout(() => this.onend?.(), 0);
+      }
+    }
+
+    class MockAudio {
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor(_url: string) {}
+
+      play() {
+        window.setTimeout(() => {
+          this.onended?.();
+        }, 50);
+        return Promise.resolve();
+      }
+
+      pause() {}
+    }
+
+    const getUserMedia = async () => {
+      return {
+        getTracks: () => [{ stop: () => undefined }],
+      };
+    };
+
+    if (navigator.mediaDevices) {
+      Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+        configurable: true,
+        value: getUserMedia,
+      });
+    } else {
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: {
+          getUserMedia,
+        },
+      });
+    }
+    Object.defineProperty(window, "MediaRecorder", {
+      configurable: true,
+      value: MockMediaRecorder,
+    });
+    Object.defineProperty(window, "webkitSpeechRecognition", {
+      configurable: true,
+      value: MockSpeechRecognition,
+    });
+    Object.defineProperty(window, "Audio", {
+      configurable: true,
+      value: MockAudio,
+    });
+  });
+}
+
 test.describe("SafeSpeak AI Conversation", () => {
   test.setTimeout(90_000);
   let apiMock: ApiMockState;
@@ -425,9 +554,7 @@ test.describe("SafeSpeak AI Conversation", () => {
     expect(apiMock.timelineAssistantRequests).toBe(0);
     expect(apiMock.transcriptionRequests).toBe(0);
 
-    await page
-      .getByRole("button", { name: /Allow AI and continue/i })
-      .click();
+    await page.getByRole("button", { name: /Allow AI and continue/i }).click();
     await expect(page.getByText("Assistant e2e response 1")).toBeVisible();
     expect(apiMock.conversationSessionCreates).toBe(1);
     expect(apiMock.conversationMessages).toBe(1);
@@ -493,7 +620,9 @@ test.describe("SafeSpeak AI Conversation", () => {
     await page.goto(VOICE_START_URL, { waitUntil: "domcontentloaded" });
 
     await expect(page.getByTestId("ai-conversation-page")).toBeVisible();
-    await expect(page.getByText("Audio transcription consent required")).toBeVisible();
+    await expect(
+      page.getByText("Audio transcription consent required")
+    ).toBeVisible();
     expect(apiMock.transcriptionRequests).toBe(0);
     expect(apiMock.conversationMessages).toBe(0);
 
@@ -508,9 +637,7 @@ test.describe("SafeSpeak AI Conversation", () => {
     expect(apiMock.conversationMessages).toBe(0);
     expect(apiMock.speechSynthesisRequests).toBe(0);
 
-    await page
-      .getByRole("button", { name: /Allow AI and continue/i })
-      .click();
+    await page.getByRole("button", { name: /Allow AI and continue/i }).click();
 
     await expect(page.getByText("Assistant e2e response 1")).toBeVisible();
     await expect(page.getByText("Tap to play response.")).toBeVisible();
@@ -523,6 +650,67 @@ test.describe("SafeSpeak AI Conversation", () => {
     await replayButton.click();
     await expect(page.getByText("Tap to play response.")).toBeVisible();
     expect(apiMock.speechSynthesisRequests).toBe(2);
+
+    const stopButton = page.getByRole("button", { name: "Stop Recording" });
+    await expect(stopButton).toBeVisible();
+    await stopButton.click();
+    await expect(stopButton).toHaveCount(0);
+  });
+
+  test("does not show triage CTA for blocked low-confidence triage responses", async ({
+    page,
+  }) => {
+    apiMock.forceBlockedTriage = true;
+    apiMock.consent = {
+      process_with_ai: true,
+      transcribe_audio: true,
+    };
+
+    await page.goto(START_URL, { waitUntil: "domcontentloaded" });
+
+    const input = page.getByTestId("ai-conversation-input");
+    const sendButton = page.getByTestId("ai-conversation-send");
+    const triageButton = page.getByTestId("ai-conversation-triage-button");
+
+    await expect(page.getByText("Assistant e2e response 1")).toBeVisible();
+
+    for (const message of [
+      "I am only checking how this chat works.",
+      "There is no incident to report right now.",
+      "I just want general information for later.",
+    ]) {
+      await input.fill(message);
+      await sendButton.click();
+      await expect(page.getByText(message)).toBeVisible();
+    }
+
+    await expect(page.getByText("Assistant e2e response 4")).toBeVisible();
+    await expect(triageButton).toHaveCount(0);
+  });
+
+  test("keeps listening after spoken assistant replies when live recognition stalls", async ({
+    page,
+  }) => {
+    apiMock.consent = {
+      process_with_ai: true,
+      transcribe_audio: true,
+    };
+    await installContinuousVoiceLoopMocks(page);
+
+    await page.goto(SEEDED_VOICE_START_URL, { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByText("First voice message")).toBeVisible();
+    await expect(page.getByText("Assistant e2e response 1")).toBeVisible();
+    expect(apiMock.conversationMessages).toBe(1);
+    expect(apiMock.speechSynthesisRequests).toBe(1);
+
+    await expect
+      .poll(() => apiMock.transcriptionRequests, { timeout: 12_000 })
+      .toBeGreaterThanOrEqual(1);
+
+    await expect(page.getByText(VOICE_TRANSCRIPT)).toBeVisible();
+    await expect(page.getByText("Assistant e2e response 2")).toBeVisible();
+    expect(apiMock.conversationMessages).toBe(2);
 
     const stopButton = page.getByRole("button", { name: "Stop Recording" });
     await expect(stopButton).toBeVisible();

@@ -1,0 +1,254 @@
+.avatar {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  isolation: isolate;
+  transform: translateZ(0);
+  transition:
+    transform 220ms ease,
+    opacity 220ms ease;
+}
+
+.large {
+  width: 176px;
+  height: 176px;
+}
+
+.small {
+  width: 58px;
+  height: 58px;
+}
+
+.sphere {
+  z-index: 3;
+  overflow: visible;
+  transform-origin: center;
+  animation: voiceAvatarCoreIdle 4.8s ease-in-out infinite;
+}
+
+.halo {
+  position: absolute;
+  z-index: 1;
+  border-radius: 9999px;
+  opacity: 0.46;
+  background:
+    radial-gradient(
+      circle at 28% 28%,
+      rgba(111, 184, 255, 0.66),
+      transparent 38%
+    ),
+    radial-gradient(
+      circle at 72% 70%,
+      rgba(245, 143, 211, 0.58),
+      transparent 42%
+    ),
+    rgba(255, 255, 255, 0.6);
+  filter: blur(10px);
+  transform: scale(0.92);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.large .halo {
+  inset: -7%;
+}
+
+.small .halo {
+  inset: -8%;
+}
+
+.blob {
+  position: absolute;
+  z-index: 2;
+  display: block;
+  border-radius: 9999px;
+  background:
+    radial-gradient(
+      circle at 32% 28%,
+      rgba(255, 255, 255, 0.88),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 46% 62%,
+      rgba(111, 184, 255, 0.94),
+      transparent 43%
+    ),
+    radial-gradient(
+      circle at 68% 68%,
+      rgba(245, 143, 211, 0.9),
+      transparent 48%
+    ),
+    #2f4bff;
+  box-shadow:
+    0 12px 26px rgba(63, 125, 224, 0.2),
+    0 0 28px rgba(245, 143, 211, 0.25);
+  opacity: 0.58;
+  transform: translate3d(0, 0, 0) scale(0.78);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.large .blob {
+  width: 42px;
+  height: 42px;
+}
+
+.small .blob {
+  width: 15px;
+  height: 15px;
+}
+
+.large .blobOne {
+  left: 18%;
+  top: 14%;
+}
+
+.large .blobTwo {
+  right: 12%;
+  top: 44%;
+}
+
+.large .blobThree {
+  bottom: 10%;
+  left: 38%;
+}
+
+.small .blobOne {
+  left: 7px;
+  top: 8px;
+}
+
+.small .blobTwo {
+  right: 5px;
+  top: 22px;
+}
+
+.small .blobThree {
+  bottom: 5px;
+  left: 23px;
+}
+
+.idle .blob {
+  opacity: 0.24;
+}
+
+.idle.small .blob {
+  opacity: 0.34;
+}
+
+.listening .halo,
+.userSpeaking .halo,
+.aiSpeaking .halo {
+  opacity: 0.82;
+  transform: scale(1);
+  animation: voiceAvatarHalo 2.1s ease-in-out infinite;
+}
+
+.listening .sphere,
+.userSpeaking .sphere,
+.aiSpeaking .sphere {
+  animation: voiceAvatarCoreActive 1.8s ease-in-out infinite;
+}
+
+.listening .blob,
+.userSpeaking .blob,
+.aiSpeaking .blob {
+  opacity: 0.9;
+  animation: voiceAvatarBounce 1.05s ease-in-out infinite;
+}
+
+.listening .blobTwo,
+.userSpeaking .blobTwo,
+.aiSpeaking .blobTwo {
+  animation-delay: 120ms;
+}
+
+.listening .blobThree,
+.userSpeaking .blobThree,
+.aiSpeaking .blobThree {
+  animation-delay: 240ms;
+}
+
+.userSpeaking .blob {
+  animation-duration: 820ms;
+}
+
+.aiSpeaking .blob {
+  animation-duration: 940ms;
+}
+
+.aiSpeaking .halo {
+  animation-duration: 1.65s;
+}
+
+@keyframes voiceAvatarCoreIdle {
+  0%,
+  100% {
+    transform: scale(0.985);
+  }
+
+  50% {
+    transform: scale(1);
+  }
+}
+
+@keyframes voiceAvatarCoreActive {
+  0%,
+  100% {
+    transform: scale(0.96);
+  }
+
+  50% {
+    transform: scale(1.035);
+  }
+}
+
+@keyframes voiceAvatarHalo {
+  0%,
+  100% {
+    transform: scale(0.9);
+  }
+
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes voiceAvatarBounce {
+  0%,
+  100% {
+    transform: translate3d(0, 6px, 0) scale(0.78);
+  }
+
+  45% {
+    transform: translate3d(0, -7px, 0) scale(1.04);
+  }
+}
+
+@media (min-width: 640px) {
+  .large {
+    width: 208px;
+    height: 208px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .large {
+    width: 240px;
+    height: 240px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar,
+  .avatar *,
+  .avatar *::before,
+  .avatar *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

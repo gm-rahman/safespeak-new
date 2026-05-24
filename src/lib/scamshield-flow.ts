@@ -10,6 +10,7 @@ export type ScamShieldFlowState = {
   analysis?: ScamAnalysisRecord;
   reportDraft?: ScamAnalysisRecord;
   submitted?: boolean;
+  selectedAgency?: "accc" | "reportCyber" | "bank";
   updatedAt: string;
 };
 
@@ -41,7 +42,10 @@ export function saveScamShieldFlowState(
   } satisfies ScamShieldFlowState;
 
   if (typeof window !== "undefined") {
-    window.sessionStorage.setItem(SCAMSHIELD_FLOW_KEY, JSON.stringify(nextState));
+    window.sessionStorage.setItem(
+      SCAMSHIELD_FLOW_KEY,
+      JSON.stringify(nextState)
+    );
   }
 
   return nextState;
@@ -58,6 +62,7 @@ export function mergeScamShieldFlowState(
     analysis: state.analysis ?? currentState?.analysis,
     reportDraft: state.reportDraft ?? currentState?.reportDraft,
     submitted: state.submitted ?? currentState?.submitted,
+    selectedAgency: state.selectedAgency ?? currentState?.selectedAgency,
   });
 }
 

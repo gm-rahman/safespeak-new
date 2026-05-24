@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import type { Route } from "next";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { useRouter, useSearchParams } from "next/navigation";
@@ -195,7 +197,23 @@ export default function RegisterPage() {
             onChange={(event) => setAcceptedTerms(event.target.checked)}
             className="mt-0.5 h-4 w-4 rounded border-white/30 bg-transparent accent-[#ff8f00]"
           />
-          {t("auth.register.terms")}
+          <span>
+            {t("auth.register.termsPrefix")}{" "}
+            <Link
+              href={"/terms-conditions" as Route}
+              className="font-semibold text-[#ffb54a] underline-offset-4 hover:underline"
+            >
+              {t("footer.termsOfUse")}
+            </Link>{" "}
+            {t("auth.register.termsJoiner")}{" "}
+            <Link
+              href={"/privacy-policy" as Route}
+              className="font-semibold text-[#ffb54a] underline-offset-4 hover:underline"
+            >
+              {t("footer.privacyPolicy")}
+            </Link>
+            .
+          </span>
         </label>
 
         {error ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 
 import {
   IconBrandFacebookFilled,
@@ -114,14 +115,14 @@ export default function FooterSection() {
             <p>{t("footer.copyright")}</p>
             <div className="flex flex-wrap items-center gap-4 sm:gap-7">
               <Link
-                href="/dashboard/settings/privacy-policy"
+                href={"/privacy-policy" as Route}
                 className="hover:text-white"
               >
                 {t("footer.privacyPolicy")}
               </Link>
-              <a href="#" className="hover:text-white">
+              <Link href={"/terms-conditions" as Route} className="hover:text-white">
                 {t("footer.termsOfUse")}
-              </a>
+              </Link>
             </div>
           </div>
         </div>

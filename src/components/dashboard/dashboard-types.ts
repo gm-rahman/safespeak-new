@@ -29,4 +29,4 @@ export type HomeView =
 
 export type NotificationView = "today" | "past";
 
-export type SettingsView = "overview" | "support" | "privacy";
+export type SettingsView = "overview" | "support" | "privacy" | "terms";
