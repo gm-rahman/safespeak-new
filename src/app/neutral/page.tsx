@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { COVERT_MODE_KEY } from "@/lib/safety";
+import { COVERT_MODE_KEY, applyCovertSafetyPresentation } from "@/lib/safety";
 
 const keypadRows = [
   ["7", "8", "9", "/"],
@@ -31,6 +31,10 @@ function safeEvaluate(expression: string): string {
 
 export default function NeutralPage() {
   const [display, setDisplay] = useState("0");
+
+  useEffect(() => {
+    applyCovertSafetyPresentation();
+  }, []);
 
   const helperText = useMemo(() => {
     return display === "Error" ? "Please try again." : "Utility calculator";
