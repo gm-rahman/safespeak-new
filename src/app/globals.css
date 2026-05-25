@@ -76,12 +76,23 @@ body {
   --dashboard-safety-rail-x-offset: -12px;
   bottom: 5.25rem;
   left: 0.75rem;
+  pointer-events: none;
   width: calc(100vw - 1.5rem);
+}
+
+.dashboard-safety-rail a,
+.dashboard-safety-rail button {
+  pointer-events: auto;
 }
 
 .dashboard-safety-minimized {
   bottom: 5.25rem;
   right: 0.75rem;
+  pointer-events: none;
+}
+
+.dashboard-safety-minimized button {
+  pointer-events: auto;
 }
 
 @media (min-width: 640px) {
