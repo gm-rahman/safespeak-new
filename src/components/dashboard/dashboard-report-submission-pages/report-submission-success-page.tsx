@@ -35,6 +35,54 @@ import {
   listReportSubmissions,
 } from "@/lib/reports-client";
 
+function isActualDeliveryStatus(status?: string): boolean {
+  return status === "submitted" || status === "acknowledged";
+}
+
+function getSubmissionOutcomeLabel(submission: ReportSubmissionRecord): string {
+  if (submission.actuallySent || isActualDeliveryStatus(submission.status)) {
+    return "Sent through SafeSpeak";
+  }
+
+  if (submission.status === "config_missing") {
+    return "Not sent - partner setup needed";
+  }
+
+  if (submission.status === "requires_manual_action") {
+    return "Prepared for manual follow-up";
+  }
+
+  if (submission.status === "failed") {
+    return "Delivery failed";
+  }
+
+  return submission.status;
+}
+
+function getPreparedStatusLabel(status?: string): string {
+  if (status === "config_missing") {
+    return "Not sent - partner setup needed";
+  }
+
+  if (status === "requires_manual_action") {
+    return "Prepared for manual follow-up";
+  }
+
+  if (status === "failed") {
+    return "Delivery failed";
+  }
+
+  if (status === "requires_review") {
+    return "Prepared - review required";
+  }
+
+  if (status === "prepared_only") {
+    return "Prepared only";
+  }
+
+  return "Prepared";
+}
+
 function ReportSubmissionSuccessPage() {
   const reportDraft = useMemo(() => getReportFlowDraft(), []);
   const preparedSubmission = reportDraft?.preparedSubmission ?? null;
@@ -60,12 +108,9 @@ function ReportSubmissionSuccessPage() {
     latestSubmission?.destinationId ??
     preparedSubmission?.destinationId ??
     reportDraft?.selectedDestinationId;
-  const preparedStatusLabel =
-    preparedSubmission?.status === "requires_review"
-      ? "Prepared - review required"
-      : preparedSubmission?.status === "prepared_only"
-        ? "Prepared only"
-        : "Prepared";
+  const preparedStatusLabel = getPreparedStatusLabel(
+    preparedSubmission?.status
+  );
 
   useEffect(() => {
     if (!reportDraft?.reportId) {
@@ -95,7 +140,13 @@ function ReportSubmissionSuccessPage() {
           : null;
         const shouldUseFallbackSubmission =
           !reportDraft.preparedSubmission ||
-          reportDraft.preparedSubmission.status === "submitted";
+          [
+            "submitted",
+            "acknowledged",
+            "requires_manual_action",
+            "config_missing",
+            "failed",
+          ].includes(reportDraft.preparedSubmission.status);
 
         setReportRef(report.refNo ?? report._id);
         setReportStatus(status.current);
@@ -162,7 +213,7 @@ function ReportSubmissionSuccessPage() {
       done: Boolean(latestSubmission),
     },
     {
-      label: "Send through SafeSpeak",
+      label: "Record delivery outcome",
       done: Boolean(latestSubmission),
     },
   ];
@@ -226,9 +277,21 @@ function ReportSubmissionSuccessPage() {
                 {preparedSubmission.message}
               </p>
             ) : null}
-            {latestSubmission?.externalReference ? (
+                  {latestSubmission?.externalReference ? (
               <p className="mt-1 text-[10px] font-semibold text-[#0b8b54]">
                 External reference: {latestSubmission.externalReference}
+              </p>
+            ) : null}
+            {latestSubmission ? (
+              <p
+                className={`mt-1 text-[10px] font-semibold ${
+                  latestSubmission.actuallySent ||
+                  isActualDeliveryStatus(latestSubmission.status)
+                    ? "text-[#0b8b54]"
+                    : "text-[#9a5b12]"
+                }`}
+              >
+                {getSubmissionOutcomeLabel(latestSubmission)}
               </p>
             ) : null}
           </div>
@@ -499,6 +562,12 @@ function ReportSubmissionSuccessPage() {
                     <p className="mt-1 text-[10px] font-semibold leading-[16px] text-[#9a5b12]">
                       Manual follow-up is required before this destination can
                       treat the report as sent.
+                    </p>
+                  ) : null}
+                  {latestSubmission.status === "config_missing" ? (
+                    <p className="mt-1 text-[10px] font-semibold leading-[16px] text-[#9a5b12]">
+                      Partner delivery is not fully configured. SafeSpeak did
+                      not send this report externally.
                     </p>
                   ) : null}
                   {latestSubmission.expectedNextSteps.length ? (

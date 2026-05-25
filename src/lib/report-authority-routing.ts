@@ -14,6 +14,7 @@ export type AuthorityMatch = {
   contactPhone?: string;
   consentRequired?: boolean;
   supportsAcknowledgement?: boolean;
+  deliveryReadiness?: ReportDestinationPreview["deliveryReadiness"];
   missingRequiredInfo: string[];
   expectedNextSteps: string[];
 };
@@ -224,6 +225,11 @@ const buildDestinationTags = (
     destination.jurisdiction,
     draft?.incidentCategory?.replace(/_/g, " "),
     destination.missingRequiredInfo.length ? "Needs review" : "Ready to share",
+    destination.deliveryReadiness?.status === "config_missing"
+      ? "Needs setup"
+      : destination.deliveryReadiness?.status === "manual_action"
+        ? "Manual follow-up"
+        : undefined,
   ]).slice(0, 4);
 
 export const toAuthorityMatch = (
@@ -245,6 +251,7 @@ export const toAuthorityMatch = (
   contactPhone: destination.contactPhone,
   consentRequired: destination.consentRequired,
   supportsAcknowledgement: destination.supportsAcknowledgement,
+  deliveryReadiness: destination.deliveryReadiness,
   missingRequiredInfo: destination.missingRequiredInfo,
   expectedNextSteps: destination.expectedNextSteps,
 });

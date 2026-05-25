@@ -50,6 +50,15 @@ export type ReportDestinationPreview = {
   supportsAcknowledgement: boolean;
   requiredConsentFlags: string[];
   matchedIncidentTypes: string[];
+  deliveryReadiness?: {
+    status: "ready" | "manual_action" | "config_missing";
+    mode: "automated" | "manual" | "config_missing";
+    canAutoSend: boolean;
+    actuallySends: boolean;
+    credentialConfigured: boolean;
+    credentialReference?: string;
+    configurationIssues: string[];
+  };
   payloadPreview: {
     refNo: string;
     title: string;
@@ -88,6 +97,10 @@ export type ReportSubmissionRecord = {
   consentSnapshot: Record<string, unknown>;
   deliveryArtifacts?: Array<Record<string, unknown>>;
   deliveryMessage?: string;
+  deliveryMode?: "automated" | "manual" | "config_missing";
+  deliveryConfigurationStatus?: "ready" | "manual_action" | "config_missing";
+  deliveryConfigurationIssues?: string[];
+  actuallySent?: boolean;
   externalReference?: string;
   acknowledgementMessage?: string;
   acknowledgementPayload?: Record<string, unknown>;

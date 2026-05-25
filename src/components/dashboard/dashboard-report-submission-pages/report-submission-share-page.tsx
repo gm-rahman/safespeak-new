@@ -26,6 +26,7 @@ import {
   rankAuthorityMatches,
 } from "@/lib/report-authority-routing";
 import {
+  type PreparedSubmissionStatus,
   getReportFlowDraft,
   mergeReportFlowDraft,
 } from "@/lib/report-flow";
@@ -58,6 +59,74 @@ function getRequiredInfoLabel(match: AuthorityMatch | null): string {
   return match.missingRequiredInfo.length
     ? match.missingRequiredInfo.join(", ")
     : "Complete";
+}
+
+function isActualDeliveryStatus(status?: string): boolean {
+  return status === "submitted" || status === "acknowledged";
+}
+
+function toPreparedSubmissionStatus(status?: string): PreparedSubmissionStatus {
+  if (isActualDeliveryStatus(status)) {
+    return status as PreparedSubmissionStatus;
+  }
+
+  if (
+    status === "requires_manual_action" ||
+    status === "config_missing" ||
+    status === "failed"
+  ) {
+    return status;
+  }
+
+  return "prepared_only";
+}
+
+function getDeliveryActionLabel(match: AuthorityMatch | null): string {
+  if (match?.deliveryReadiness?.status === "config_missing") {
+    return "Record attempt - no external send";
+  }
+
+  if (match?.deliveryReadiness?.status === "manual_action") {
+    return "Prepare manual follow-up";
+  }
+
+  return "Confirm and send through SafeSpeak";
+}
+
+function getDeliveryReadinessCopy(match: AuthorityMatch | null): string | null {
+  if (!match?.deliveryReadiness) {
+    return null;
+  }
+
+  if (match.deliveryReadiness.status === "config_missing") {
+    const issues = match.deliveryReadiness.configurationIssues.join(" ");
+
+    return `This destination is not fully configured for outbound delivery yet. ${issues} SafeSpeak can record the attempt, but no external report will be sent.`;
+  }
+
+  if (match.deliveryReadiness.status === "manual_action") {
+    return "This destination requires manual follow-up. SafeSpeak will prepare an auditable handoff record, but it will not send the report externally.";
+  }
+
+  return "This destination has an automated delivery channel configured. SafeSpeak will only send after your consent and final confirmation.";
+}
+
+function getShareNotice(submission: ReportSubmissionRecord): string {
+  if (submission.actuallySent || isActualDeliveryStatus(submission.status)) {
+    return submission.externalReference
+      ? `Report sent and recorded with external reference ${submission.externalReference}.`
+      : "Report sent through the configured SafeSpeak delivery channel.";
+  }
+
+  if (submission.status === "config_missing") {
+    return "Sharing was recorded, but no external report was sent because partner delivery is not fully configured.";
+  }
+
+  if (submission.status === "requires_manual_action") {
+    return "Sharing was recorded for manual follow-up. No external report was sent by SafeSpeak.";
+  }
+
+  return "Sharing outcome has been recorded in SafeSpeak.";
 }
 
 function ReportSubmissionSharePage() {
@@ -119,7 +188,13 @@ function ReportSubmissionSharePage() {
           : null;
         const shouldUseFallbackSubmission =
           !reportDraft.preparedSubmission ||
-          reportDraft.preparedSubmission.status === "submitted";
+          [
+            "submitted",
+            "acknowledged",
+            "requires_manual_action",
+            "config_missing",
+            "failed",
+          ].includes(reportDraft.preparedSubmission.status);
 
         setReportRef(report.refNo ?? report._id);
         setReportStatus(status.current);
@@ -270,20 +345,18 @@ function ReportSubmissionSharePage() {
           destinationName: destination.destinationName,
           destinationType: destination.destinationType,
           channel: destination.channel,
-          status: "submitted",
+          status: toPreparedSubmissionStatus(submission.status),
           missingRequiredInfo: destination.missingRequiredInfo,
           reason: destination.reason,
           message: submission.deliveryMessage,
+          actuallySent:
+            submission.actuallySent ?? isActualDeliveryStatus(submission.status),
           updatedAt: new Date().toISOString(),
         },
       });
       setLatestSubmission(submission);
       setReportStatus(submission.status);
-      setShareNotice(
-        submission.externalReference
-          ? `Sharing recorded with external reference ${submission.externalReference}.`
-          : "Sharing has been recorded in SafeSpeak."
-      );
+      setShareNotice(getShareNotice(submission));
       setPendingShareDestinationId(null);
     } catch (error) {
       if (captureConsentError(error)) {
@@ -334,6 +407,8 @@ function ReportSubmissionSharePage() {
     clearPendingConsent();
     setShareError("No report was sent. The report remains prepared only.");
   };
+  const deliveryReadinessCopy = getDeliveryReadinessCopy(selectedMatch);
+  const deliveryActionLabel = getDeliveryActionLabel(selectedMatch);
 
   return (
     <div className="px-6 pb-12 pt-12">
@@ -504,6 +579,20 @@ function ReportSubmissionSharePage() {
                           {getRequiredInfoLabel(selectedMatch)}
                         </p>
                       </div>
+                      <div className="rounded-[12px] border border-[#e4edf7] bg-[#f8fbff] px-3 py-2 sm:col-span-2">
+                        <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                          Delivery readiness
+                        </p>
+                        <p className="mt-1 text-[11px] font-semibold text-[#1f2a3a]">
+                          {selectedMatch.deliveryReadiness?.status ===
+                          "config_missing"
+                            ? "Needs partner setup"
+                            : selectedMatch.deliveryReadiness?.status ===
+                                "manual_action"
+                              ? "Manual follow-up required"
+                              : "Automated channel ready"}
+                        </p>
+                      </div>
                     </div>
 
                     {selectedMatch.contactPhone || selectedMatch.contactEmail ? (
@@ -669,8 +758,16 @@ function ReportSubmissionSharePage() {
                   ) : null}
                   {latestSubmission ? (
                     <p className="rounded-[10px] border border-[#d7f3e4] bg-[#f3fbf7] px-3 py-2 text-[#0b8b54]">
-                      Sharing has already been recorded for{" "}
+                      {latestSubmission.actuallySent ||
+                      isActualDeliveryStatus(latestSubmission.status)
+                        ? "A sent delivery is already recorded for"
+                        : "A non-sent delivery outcome is already recorded for"}{" "}
                       {latestSubmission.destinationName}.
+                    </p>
+                  ) : null}
+                  {!latestSubmission && deliveryReadinessCopy ? (
+                    <p className="rounded-[10px] border border-[#dbe7f4] bg-[#f8fbff] px-3 py-2 text-[#526982]">
+                      {deliveryReadinessCopy}
                     </p>
                   ) : null}
                 </div>
@@ -686,7 +783,7 @@ function ReportSubmissionSharePage() {
                   ) : (
                     <IconShare size={13} />
                   )}
-                  Confirm and send through SafeSpeak
+                  {deliveryActionLabel}
                 </button>
 
                 <Link

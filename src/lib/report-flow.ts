@@ -14,10 +14,18 @@ export type ReportFlowDraft = {
     destinationName: string;
     destinationType?: string;
     channel: string;
-    status: "submitted" | "requires_review" | "prepared_only";
+    status:
+      | "submitted"
+      | "acknowledged"
+      | "requires_manual_action"
+      | "config_missing"
+      | "failed"
+      | "requires_review"
+      | "prepared_only";
     missingRequiredInfo?: string[];
     reason?: string;
     message?: string;
+    actuallySent?: boolean;
     updatedAt: string;
   };
   title: string;
@@ -32,6 +40,10 @@ export type ReportFlowDraft = {
   evidenceIds: string[];
   updatedAt: string;
 };
+
+export type PreparedSubmissionStatus = NonNullable<
+  ReportFlowDraft["preparedSubmission"]
+>["status"];
 
 export const defaultReportFlowDraft: Omit<ReportFlowDraft, "updatedAt"> = {
   title: "",
