@@ -2254,6 +2254,7 @@ function SafeSpeakAssistantConversationPage({
   const isTranscriptionCaptureActive =
     activeVoiceCaptureTarget === "transcription" && isRecordingActive;
   const shouldShowSendButton = input.trim().length > 0;
+  const shouldShowVoiceAvatar = isVoiceSessionActive;
 
   return (
     <div
@@ -2429,15 +2430,16 @@ function SafeSpeakAssistantConversationPage({
 
             <form
               onSubmit={handleSubmit}
-              className="bg-white/92 relative z-20 mt-4 shrink-0 rounded-[20px] border border-white/80 p-2.5 shadow-[0_16px_36px_rgba(148,163,184,0.18)] backdrop-blur"
+              className="relative z-20 mt-4 shrink-0"
             >
-              <div className="mb-1.5 flex h-[60px] items-center justify-center">
+              {shouldShowVoiceAvatar ? (
                 <VoiceAvatarAnimation
                   state={conversationVoiceAvatarState}
                   size="small"
                   alt={t("dashboard.assistant.sphereAlt")}
+                  className="mx-auto mb-1.5"
                 />
-              </div>
+              ) : null}
               {isTranscriptionCaptureActive || pendingVoiceReviewBlob ? (
                 <div className="flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-4 py-2">
                   <div className="flex flex-1 items-center gap-3 overflow-hidden">
