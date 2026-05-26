@@ -9,7 +9,6 @@ import { useTranslation } from "react-i18next";
 import bottomLeft from "@/assets/bottom-left.svg?url";
 import bottomRight from "@/assets/bottom-right.svg?url";
 import scamShield from "@/assets/scam shield icon.svg?url";
-import sphereAdv from "@/assets/sphere-adv.svg?url";
 import topLeft from "@/assets/top-left.svg?url";
 import topMask from "@/assets/top-mask.svg?url";
 import topRight from "@/assets/top-right.svg?url";
@@ -18,7 +17,7 @@ import {
   getDashboardCardEntryHref,
 } from "@/lib/dashboard-card-flows";
 
-import AssistantSphereAnimated from "./AssistantSphereAnimated";
+import AIOrbAvatar from "./AIOrbAvatar";
 import { interFont, localIntelligenceMapSrc } from "./dashboard-shared";
 import SMDasboardHome from "./sm-dashboard-home";
 
@@ -303,12 +302,18 @@ function HomeDashboardPage() {
           className="absolute left-1/2 z-20 hidden -translate-x-1/2 overflow-hidden rounded-full [clip-path:circle(50%_at_50%_50%)] lg:top-[clamp(176px,18vw,195px)] lg:block lg:h-[clamp(184px,19vw,236px)] lg:w-[clamp(184px,19vw,220px)] xl:top-[245px] xl:h-[248px] xl:w-[248px] 2xl:top-[279px] 2xl:h-[270px] 2xl:w-[270px]"
           aria-label="Talk with SafeSpeak"
         >
-          <AssistantSphereAnimated
-            imageSrc={sphereAdv}
-            alt="SafeSpeak center sphere"
-            particleCount={720}
-            fillParent
-          />
+          <div className="flex h-full w-full items-center justify-center rounded-full bg-[radial-gradient(circle_at_50%_35%,#ffffff_0%,#f5f9ff_62%,#e7f0fb_100%)] p-[4px] shadow-[0_18px_38px_rgba(15,93,159,0.14)]">
+            <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full border-[5px] border-white bg-[radial-gradient(circle_at_50%_30%,#fdfefe_0%,#eef5ff_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.96),0_8px_20px_rgba(148,163,184,0.16)]">
+              <div className="absolute inset-[-18%]">
+                <AIOrbAvatar
+                  size="100%"
+                  voiceState="idle"
+                  showAmbientEffects={false}
+                  className="h-full w-full"
+                />
+              </div>
+            </div>
+          </div>
         </Link>
       </div>
     </div>
