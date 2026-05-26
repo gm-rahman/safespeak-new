@@ -43,6 +43,7 @@ import {
   getAssistantConversationDraft,
   saveAssistantConversationDraft,
 } from "@/lib/assistant-draft";
+import { consumeAssistantVoiceHandoff } from "@/lib/assistant-voice-handoff";
 import {
   clearAssistantTriageSource,
   saveAssistantTriageSource,
@@ -800,6 +801,7 @@ function SafeSpeakAssistantConversationPage({
   const startVoiceRecordingRef = useRef<() => Promise<boolean>>(
     async () => false
   );
+  const hasHandledPendingVoiceHandoffRef = useRef(false);
   const liveRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const liveFinalTranscriptRef = useRef("");
   const speechAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -1519,16 +1521,11 @@ function SafeSpeakAssistantConversationPage({
     clearAssistantTriageSource();
   };
 
-  const handleRecordedAudio = useCallback(
-    async (mimeType: string) => {
-      const audioBlob = new Blob(audioChunksRef.current, {
-        type: mimeType || "audio/webm",
-      });
-
-      shouldProcessRecordingRef.current = false;
-      audioChunksRef.current = [];
-      cleanupRecording();
-
+  const processVoiceAudioBlob = useCallback(
+    async (
+      audioBlob: Blob,
+      options: { speakResponse: boolean; continueVoiceSession: boolean }
+    ) => {
       if (!audioBlob.size) {
         setIsTranscribing(false);
         setSpeechError(getRecordingErrorMessage("no-speech", t));
@@ -1574,10 +1571,7 @@ function SafeSpeakAssistantConversationPage({
 
         // Voice state: speech was captured and the assistant response is starting.
         setVoiceAvatarState("aiSpeaking");
-        void requestAssistantTurn(voiceMessage, nextMessages, {
-          speakResponse: true,
-          continueVoiceSession: voiceSessionActiveRef.current,
-        });
+        void requestAssistantTurn(voiceMessage, nextMessages, options);
       } catch (recordingError) {
         if (captureConsentError(recordingError)) {
           setVoiceAvatarState("idle");
@@ -1610,13 +1604,60 @@ function SafeSpeakAssistantConversationPage({
     },
     [
       captureConsentError,
-      cleanupRecording,
       input,
       requestAssistantTurn,
       scheduleNextVoiceTurn,
       t,
       transcriptionLanguage,
     ]
+  );
+
+  useEffect(() => {
+    if (
+      existingDraft ||
+      seededMessage ||
+      hasHandledPendingVoiceHandoffRef.current
+    ) {
+      return;
+    }
+
+    const pendingAudio = consumeAssistantVoiceHandoff();
+
+    if (!pendingAudio) {
+      return;
+    }
+
+    hasHandledPendingVoiceHandoffRef.current = true;
+
+    if (startVoiceMode) {
+      voiceSessionActiveRef.current = true;
+      setIsVoiceSessionActive(true);
+    }
+
+    setIsTranscribing(true);
+    setVoiceAvatarState("listening");
+    void processVoiceAudioBlob(pendingAudio, {
+      speakResponse: startVoiceMode,
+      continueVoiceSession: startVoiceMode,
+    });
+  }, [existingDraft, processVoiceAudioBlob, seededMessage, startVoiceMode]);
+
+  const handleRecordedAudio = useCallback(
+    async (mimeType: string) => {
+      const audioBlob = new Blob(audioChunksRef.current, {
+        type: mimeType || "audio/webm",
+      });
+
+      shouldProcessRecordingRef.current = false;
+      audioChunksRef.current = [];
+      cleanupRecording();
+
+      await processVoiceAudioBlob(audioBlob, {
+        speakResponse: true,
+        continueVoiceSession: voiceSessionActiveRef.current,
+      });
+    },
+    [cleanupRecording, processVoiceAudioBlob]
   );
 
   const startVoiceRecording = useCallback(async (): Promise<boolean> => {
