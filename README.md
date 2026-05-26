@@ -51,6 +51,7 @@ pnpm dev
 ## SafeSpeak integration notes
 
 - Dashboard home now routes to explicit SafeSpeak scope flows for reporting, support, ScamShield, resources, local-intelligence placeholder, and Smart Dialler.
+- For Vercel, set `NEXT_PUBLIC_API_BASE_URL=https://safespeak-backend-ules.onrender.com/api/v1` so email login, Google login, and dashboard API calls target the Render backend instead of localhost.
 - Persistent dashboard safety controls include Quick Exit, 000, 1800RESPECT, language toggle, covert-mode state, and Smart Dialler access.
 - Learn & Resources now uses `/dashboard?view=resources` as the main library entry, while micro-education remains separately reachable.
 - Landing page internals were intentionally left unchanged in this task.
