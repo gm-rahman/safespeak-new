@@ -2259,9 +2259,9 @@ function SafeSpeakAssistantConversationPage({
   return (
     <div
       data-testid="ai-conversation-page"
-      className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 xl:flex-1 xl:overflow-hidden xl:pb-0"
+      className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 xl:flex xl:flex-1 xl:flex-col xl:overflow-hidden xl:pb-0"
     >
-      <div className="mx-auto flex w-full max-w-[1120px] flex-col xl:h-full xl:min-h-0">
+      <div className="mx-auto flex w-full max-w-[1320px] flex-col xl:h-full xl:min-h-0">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           <Link
             href={assistantEntryHref}
@@ -2279,8 +2279,8 @@ function SafeSpeakAssistantConversationPage({
           </button>
         </div>
 
-        <div className="mt-3 min-h-0 xl:flex-1">
-          <div className="relative flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-transparent p-4 xl:h-full xl:min-h-0">
+        <div className="mt-4 min-h-0 xl:flex-1">
+          <div className="relative flex min-h-[520px] flex-col bg-transparent px-2 pb-2 pt-2 xl:h-full xl:min-h-0 sm:px-3">
             {pendingConsentRequirement ? (
               <div className="relative z-30 mb-3 max-w-[560px]">
                 <ConsentRequiredCard
@@ -2293,155 +2293,158 @@ function SafeSpeakAssistantConversationPage({
                 />
               </div>
             ) : null}
-            <div className="relative min-h-0 flex-1 overflow-hidden rounded-[18px]">
+            <div className="relative min-h-0 flex-1 overflow-hidden">
               <div
                 data-testid="ai-conversation-chat"
-                className="flex h-full flex-col gap-3 overflow-y-auto overscroll-contain pr-1.5"
+                className="conversation-scrollbar h-full overflow-y-auto"
               >
-                {messages.map((message, index) => (
-                  <div
-                    key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
-                    data-testid={`ai-conversation-message-${message.role}`}
-                    className={
-                      message.role === "user" ? "flex justify-end" : ""
-                    }
-                  >
-                    <div className="max-w-[min(88%,540px)]">
-                      <div
-                        className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-2.5 text-[13px] leading-[1.6] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
-                          message.role === "user"
-                            ? "rounded-tr-[8px] text-[#314256]"
-                            : "rounded-tl-[8px] text-[#5f6f86]"
-                        }`}
-                      >
-                        {getAssistantDisplayContent(message)}
+                <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 pb-40 pr-2">
+                  {messages.map((message, index) => (
+                    <div
+                      key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
+                      data-testid={`ai-conversation-message-${message.role}`}
+                      className={
+                        message.role === "user" ? "flex justify-end" : ""
+                      }
+                    >
+                      <div className="max-w-[min(88%,540px)]">
+                        <div
+                          className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-2.5 text-[13px] leading-[1.6] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
+                            message.role === "user"
+                              ? "rounded-tr-[8px] text-[#314256]"
+                              : "rounded-tl-[8px] text-[#5f6f86]"
+                          }`}
+                        >
+                          {getAssistantDisplayContent(message)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
 
-                {showTriageCta ? (
-                  <div className="flex justify-center py-2">
-                    <Link
-                      href={continueReportSubmissionHref}
-                      data-testid="ai-conversation-triage-button"
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_12px_28px_rgba(15,93,159,0.26)] transition hover:bg-[#0b528d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f5d9f]"
-                    >
-                      Continue to Triage
-                      <IconArrowRight size={14} />
-                    </Link>
-                  </div>
-                ) : null}
-
-                {isSending ? (
-                  <div className="inline-flex w-fit items-center rounded-[18px] rounded-tl-[8px] bg-white px-3 py-2 shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
-                    <span className="sr-only">Assistant is typing</span>
-                    <div className="flex items-center gap-1" aria-hidden="true">
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:0ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:150ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:300ms]" />
+                  {showTriageCta ? (
+                    <div className="flex justify-center py-2">
+                      <Link
+                        href={continueReportSubmissionHref}
+                        data-testid="ai-conversation-triage-button"
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_12px_28px_rgba(15,93,159,0.26)] transition hover:bg-[#0b528d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f5d9f]"
+                      >
+                        Continue to Triage
+                        <IconArrowRight size={14} />
+                      </Link>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                {error ? (
-                  <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
-                    <IconAlertCircle size={12} />
-                    {error}
-                  </div>
-                ) : null}
+                  {isSending ? (
+                    <div className="inline-flex w-fit items-center rounded-[18px] rounded-tl-[8px] bg-white px-3 py-2 shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                      <span className="sr-only">Assistant is typing</span>
+                      <div className="flex items-center gap-1" aria-hidden="true">
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:0ms]" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:150ms]" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:300ms]" />
+                      </div>
+                    </div>
+                  ) : null}
 
-                {speechError ? (
-                  <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
-                    <IconAlertCircle size={12} />
-                    {speechError}
-                  </div>
-                ) : null}
+                  {error ? (
+                    <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                      <IconAlertCircle size={12} />
+                      {error}
+                    </div>
+                  ) : null}
 
-                {isGeneratingSpeech || isSpeaking ? (
-                  <div
-                    className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]"
-                    aria-live="polite"
-                  >
-                    {isGeneratingSpeech ? (
-                      <IconLoader2 size={12} className="animate-spin" />
-                    ) : (
-                      <IconMicrophone size={12} />
-                    )}
-                    <span>
-                      {isGeneratingSpeech
-                        ? t("dashboard.assistant.generatingVoice")
-                        : t("dashboard.assistant.speaking")}
-                    </span>
-                    {isSpeaking ? (
-                      <button
-                        type="button"
-                        onClick={stopAssistantSpeech}
-                        className="ml-1 rounded-full border border-[#d6e7f6] px-2 py-1 text-[10px] font-bold text-[#0f5d9f]"
-                        aria-label={t("dashboard.assistant.stopVoicePlayback")}
-                      >
-                        {t("dashboard.assistant.stopVoicePlayback")}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
+                  {speechError ? (
+                    <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                      <IconAlertCircle size={12} />
+                      {speechError}
+                    </div>
+                  ) : null}
 
-                {speechPlaybackError ? (
-                  <div
-                    className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]"
-                    aria-live="polite"
-                  >
-                    <IconAlertCircle size={12} />
-                    <span>{speechPlaybackError}</span>
-                    {replayVoiceText ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void playAssistantSpeech(replayVoiceText, {
-                            continueVoiceSession: voiceSessionActiveRef.current,
-                          });
-                        }}
-                        className="ml-1 rounded-full border border-[#d6e7f6] px-2 py-1 text-[10px] font-bold text-[#0f5d9f]"
-                        aria-label={t(
-                          "dashboard.assistant.replayVoiceResponse"
-                        )}
-                      >
-                        {t("dashboard.assistant.replayVoiceResponse")}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
+                  {isGeneratingSpeech || isSpeaking ? (
+                    <div
+                      className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]"
+                      aria-live="polite"
+                    >
+                      {isGeneratingSpeech ? (
+                        <IconLoader2 size={12} className="animate-spin" />
+                      ) : (
+                        <IconMicrophone size={12} />
+                      )}
+                      <span>
+                        {isGeneratingSpeech
+                          ? t("dashboard.assistant.generatingVoice")
+                          : t("dashboard.assistant.speaking")}
+                      </span>
+                      {isSpeaking ? (
+                        <button
+                          type="button"
+                          onClick={stopAssistantSpeech}
+                          className="ml-1 rounded-full border border-[#d6e7f6] px-2 py-1 text-[10px] font-bold text-[#0f5d9f]"
+                          aria-label={t("dashboard.assistant.stopVoicePlayback")}
+                        >
+                          {t("dashboard.assistant.stopVoicePlayback")}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
 
-                {isRecordingActive || isTranscribing || liveTranscript ? (
-                  <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
-                    {isTranscribing ? (
-                      <IconLoader2 size={12} className="animate-spin" />
-                    ) : (
-                      <IconMicrophone size={12} />
-                    )}
-                    {isTranscribing
-                      ? t("dashboard.assistant.transcribing")
-                      : liveTranscript || t("dashboard.assistant.listening")}
-                  </div>
-                ) : null}
-                <div ref={messagesEndRef} aria-hidden="true" />
+                  {speechPlaybackError ? (
+                    <div
+                      className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#c24141] shadow-[0_8px_22px_rgba(148,163,184,0.12)]"
+                      aria-live="polite"
+                    >
+                      <IconAlertCircle size={12} />
+                      <span>{speechPlaybackError}</span>
+                      {replayVoiceText ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void playAssistantSpeech(replayVoiceText, {
+                              continueVoiceSession: voiceSessionActiveRef.current,
+                            });
+                          }}
+                          className="ml-1 rounded-full border border-[#d6e7f6] px-2 py-1 text-[10px] font-bold text-[#0f5d9f]"
+                          aria-label={t(
+                            "dashboard.assistant.replayVoiceResponse"
+                          )}
+                        >
+                          {t("dashboard.assistant.replayVoiceResponse")}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {isRecordingActive || isTranscribing || liveTranscript ? (
+                    <div className="inline-flex max-w-[540px] items-center gap-2 rounded-[18px] bg-white px-4 py-2.5 text-[11px] text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
+                      {isTranscribing ? (
+                        <IconLoader2 size={12} className="animate-spin" />
+                      ) : (
+                        <IconMicrophone size={12} />
+                      )}
+                      {isTranscribing
+                        ? t("dashboard.assistant.transcribing")
+                        : liveTranscript || t("dashboard.assistant.listening")}
+                    </div>
+                  ) : null}
+                  <div ref={messagesEndRef} aria-hidden="true" />
+                </div>
               </div>
             </div>
 
             <form
               onSubmit={handleSubmit}
-              className="relative z-20 mt-4 shrink-0"
+              className="absolute bottom-0 left-0 right-0 z-20 w-full px-2 pb-2 pt-4 [background:linear-gradient(180deg,rgba(238,243,248,0)_0%,rgba(238,243,248,0.88)_30%,rgba(238,243,248,1)_100%)]"
             >
-              {shouldShowVoiceAvatar ? (
-                <VoiceAvatarAnimation
-                  state={conversationVoiceAvatarState}
-                  size="small"
-                  alt={t("dashboard.assistant.sphereAlt")}
-                  className="mx-auto mb-1.5"
-                />
-              ) : null}
-              {isTranscriptionCaptureActive || pendingVoiceReviewBlob ? (
-                <div className="flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-4 py-2">
+              <div className="mx-auto w-full max-w-[1120px]">
+                {shouldShowVoiceAvatar ? (
+                  <VoiceAvatarAnimation
+                    state={conversationVoiceAvatarState}
+                    size="small"
+                    alt={t("dashboard.assistant.sphereAlt")}
+                    className="mx-auto mb-2"
+                  />
+                ) : null}
+                {isTranscriptionCaptureActive || pendingVoiceReviewBlob ? (
+                  <div className="flex items-center gap-2 rounded-[28px] border border-[#dbe6f2] bg-[#f8fbff]/96 px-4 py-2 shadow-[0_10px_30px_rgba(148,163,184,0.18)] backdrop-blur">
                   <div className="flex flex-1 items-center gap-3 overflow-hidden">
                     <span className="text-[11px] font-medium text-[#64748b]">
                       {isTranscriptionCaptureActive ? "Listening..." : "Use transcribed text"}
@@ -2480,123 +2483,124 @@ function SafeSpeakAssistantConversationPage({
                   >
                     <IconCheck size={16} />
                   </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={handleInputChange}
-                    data-testid="ai-conversation-input"
-                    placeholder={t("dashboard.assistant.typeYourResponse")}
-                    className="h-11 flex-1 rounded-full border border-transparent bg-transparent px-3 text-sm text-[#1f2937] outline-none transition-[background-color,box-shadow,border-color] duration-150 placeholder:text-[#95a3b8] focus-visible:outline-none"
-                  />
-                  {!isVoiceSessionActive ? (
-                    <button
-                      type="button"
-                      onClick={toggleTranscriptionCapture}
-                      disabled={
-                        isGeneratingSpeech ||
-                        isSpeaking ||
-                        isSending ||
-                        isTranscribing
-                      }
-                      aria-label={t("dashboard.assistant.toggleMicrophone")}
-                      className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
-                        isGeneratingSpeech ||
-                        isSpeaking ||
-                        isSending ||
-                        isTranscribing
-                          ? "cursor-not-allowed opacity-40"
-                          : ""
-                      }`}
-                    >
-                      <IconMicrophone size={18} />
-                    </button>
-                  ) : null}
-                  {shouldShowSendButton ? (
-                    <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-[28px] border border-[#dbe6f2] bg-white/96 px-3 py-2 shadow-[0_10px_30px_rgba(148,163,184,0.18)] backdrop-blur">
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={handleInputChange}
+                      data-testid="ai-conversation-input"
+                      placeholder={t("dashboard.assistant.typeYourResponse")}
+                      className="h-10 flex-1 rounded-full border border-transparent bg-transparent px-3 text-sm text-[#1f2937] outline-none transition-[background-color,box-shadow,border-color] duration-150 placeholder:text-[#95a3b8] focus-visible:outline-none"
+                    />
+                    {!isVoiceSessionActive ? (
                       <button
-                        type="submit"
-                        data-testid="ai-conversation-send"
+                        type="button"
+                        onClick={toggleTranscriptionCapture}
                         disabled={
-                          isSending ||
-                          isVoiceSessionActive ||
-                          isRecordingActive ||
-                          isTranscribing ||
                           isGeneratingSpeech ||
                           isSpeaking ||
-                          !input.trim()
+                          isSending ||
+                          isTranscribing
                         }
-                        aria-label={t("common.send")}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white shadow-[0_10px_24px_rgba(15,93,159,0.22)] transition hover:bg-[#0c518a] disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        {isSending ? (
-                          <IconLoader2 size={16} className="animate-spin" />
-                        ) : (
-                          <Image
-                            src={sendIcon}
-                            alt={t("common.send")}
-                            width={12}
-                            height={16}
-                            className="h-4 w-3"
-                          />
-                        )}
-                      </button>
-                    </span>
-                  ) : isVoiceSessionActive ? (
-                    <div className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-1.5 py-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
-                      <button
-                        type="button"
-                        onClick={toggleVoiceSessionMute}
-                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
-                          isVoiceSessionMuted
-                            ? "bg-[#eef2f7] text-[#94a3b8]"
-                            : "bg-[#f3f4f6] text-[#111827]"
-                        }`}
-                        aria-label={
-                          isVoiceSessionMuted ? "Unmute voice mode" : "Mute voice mode"
-                        }
-                      >
-                        {isVoiceSessionMuted ? (
-                          <IconMicrophoneOff size={18} />
-                        ) : (
-                          <IconMicrophone size={18} />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={stopVoiceSession}
-                        className="inline-flex h-9 shrink-0 items-center rounded-full bg-[#1f8cff] px-4 text-[11px] font-bold text-white transition hover:bg-[#137cf0]"
-                        aria-label="End voice mode"
-                      >
-                        <span className="mr-2 inline-flex items-center gap-[2px]" aria-hidden="true">
-                          <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
-                          <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
-                          <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
-                        </span>
-                        End
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
-                      <button
-                        type="button"
-                        onClick={startVoiceSession}
-                        disabled={isSending || isTranscribing}
-                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#111827] text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition hover:bg-[#0b1220] ${
-                          isSending || isTranscribing
+                        aria-label={t("dashboard.assistant.toggleMicrophone")}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
+                          isGeneratingSpeech ||
+                          isSpeaking ||
+                          isSending ||
+                          isTranscribing
                             ? "cursor-not-allowed opacity-40"
                             : ""
                         }`}
-                        aria-label="Start avatar voice mode"
                       >
-                        <AvatarVoiceControlGlyph />
+                        <IconMicrophone size={18} />
                       </button>
-                    </span>
-                  )}
-                </div>
-              )}
+                    ) : null}
+                    {shouldShowSendButton ? (
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                        <button
+                          type="submit"
+                          data-testid="ai-conversation-send"
+                          disabled={
+                            isSending ||
+                            isVoiceSessionActive ||
+                            isRecordingActive ||
+                            isTranscribing ||
+                            isGeneratingSpeech ||
+                            isSpeaking ||
+                            !input.trim()
+                          }
+                          aria-label={t("common.send")}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#0f5d9f] text-white shadow-[0_10px_24px_rgba(15,93,159,0.22)] transition hover:bg-[#0c518a] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          {isSending ? (
+                            <IconLoader2 size={15} className="animate-spin" />
+                          ) : (
+                            <Image
+                              src={sendIcon}
+                              alt={t("common.send")}
+                              width={11}
+                              height={15}
+                              className="h-[15px] w-[11px]"
+                            />
+                          )}
+                        </button>
+                      </span>
+                    ) : isVoiceSessionActive ? (
+                      <div className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-1.5 py-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                        <button
+                          type="button"
+                          onClick={toggleVoiceSessionMute}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
+                            isVoiceSessionMuted
+                              ? "bg-[#eef2f7] text-[#94a3b8]"
+                              : "bg-[#f3f4f6] text-[#111827]"
+                          }`}
+                          aria-label={
+                            isVoiceSessionMuted ? "Unmute voice mode" : "Mute voice mode"
+                          }
+                        >
+                          {isVoiceSessionMuted ? (
+                            <IconMicrophoneOff size={16} />
+                          ) : (
+                            <IconMicrophone size={16} />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={stopVoiceSession}
+                          className="inline-flex h-8 shrink-0 items-center rounded-full bg-[#1f8cff] px-4 text-[11px] font-bold text-white transition hover:bg-[#137cf0]"
+                          aria-label="End voice mode"
+                        >
+                          <span className="mr-2 inline-flex items-center gap-[2px]" aria-hidden="true">
+                            <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
+                            <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
+                            <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
+                          </span>
+                          End
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                        <button
+                          type="button"
+                          onClick={startVoiceSession}
+                          disabled={isSending || isTranscribing}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#111827] text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition hover:bg-[#0b1220] ${
+                            isSending || isTranscribing
+                              ? "cursor-not-allowed opacity-40"
+                              : ""
+                          }`}
+                          aria-label="Start avatar voice mode"
+                        >
+                          <AvatarVoiceControlGlyph />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </form>
           </div>
         </div>

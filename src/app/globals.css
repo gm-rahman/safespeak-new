@@ -189,6 +189,39 @@ body.quick-exit-active .site-shell {
   transform: scale(1.01);
 }
 
+.conversation-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(111, 138, 169, 0.7) transparent;
+}
+
+.conversation-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.conversation-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.conversation-scrollbar::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background: linear-gradient(
+    180deg,
+    rgba(145, 171, 199, 0.9) 0%,
+    rgba(111, 138, 169, 0.9) 100%
+  );
+  background-clip: padding-box;
+}
+
+.conversation-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    rgba(122, 152, 185, 0.95) 0%,
+    rgba(92, 121, 154, 0.95) 100%
+  );
+  background-clip: padding-box;
+}
+
 body.quick-exit-active::after {
   content: "";
   position: fixed;
