@@ -44,7 +44,7 @@ export type TimelineAssistantResponse = {
   timeline: AssistantTimeline;
   readyForSubmission: boolean;
   confidence: "low" | "medium" | "high";
-  disclaimer: string;
+  disclaimer?: string;
   citations: Array<{
     sourceId?: string;
     title: string;

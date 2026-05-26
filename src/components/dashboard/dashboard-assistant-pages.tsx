@@ -1351,7 +1351,6 @@ function SafeSpeakAssistantConversationPage({
           role: "assistant",
           content: response.assistantMessage.content,
           responseMeta: {
-            disclaimer: response.responseMeta?.disclaimer,
             citations: response.responseMeta?.citations,
             confidence: response.responseMeta?.confidence,
             reviewStatus: response.responseMeta?.reviewStatus,
@@ -1437,7 +1436,6 @@ function SafeSpeakAssistantConversationPage({
             role: "assistant",
             content: assistantContent,
             responseMeta: {
-              disclaimer: response.disclaimer,
               citations: response.citations,
               confidence: response.confidence,
               reviewStatus: response.reviewStatus,
