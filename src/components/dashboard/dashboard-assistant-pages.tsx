@@ -2298,7 +2298,7 @@ function SafeSpeakAssistantConversationPage({
                 data-testid="ai-conversation-chat"
                 className="conversation-scrollbar h-full overflow-y-auto"
               >
-                <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 pb-40 pr-2">
+                <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 px-2 pb-40">
                   {messages.map((message, index) => (
                     <div
                       key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
@@ -2434,7 +2434,7 @@ function SafeSpeakAssistantConversationPage({
               onSubmit={handleSubmit}
               className="absolute bottom-0 left-0 right-0 z-20 w-full px-2 pb-2 pt-4 [background:linear-gradient(180deg,rgba(238,243,248,0)_0%,rgba(238,243,248,0.88)_30%,rgba(238,243,248,1)_100%)]"
             >
-              <div className="mx-auto w-full max-w-[1120px]">
+              <div className="mx-auto w-full max-w-[1120px] px-2">
                 {shouldShowVoiceAvatar ? (
                   <VoiceAvatarAnimation
                     state={conversationVoiceAvatarState}
