@@ -45,7 +45,7 @@ import {
   clearReportMetadata,
   saveReportMetadata,
 } from "@/lib/report-metadata";
-import { saveAssistantVoiceHandoff } from "@/lib/assistant-voice-handoff";
+import { transcribeAssistantVoice } from "@/lib/voice-transcription";
 
 type RecordingErrorCode =
   | "audio-capture"
@@ -95,7 +95,7 @@ type SpeechWindow = Window & {
 
 const VOICE_RECORDING_TIMEOUT_MS = 8000;
 
-type VoiceCaptureTarget = "recording" | "conversation";
+type VoiceCaptureTarget = "recording";
 
 function getRecordingErrorMessage(
   errorCode: RecordingErrorCode,
@@ -156,6 +156,8 @@ export function AssistantInteraction({
     useState<VoiceAvatarState>("idle");
   const [activeVoiceCaptureTarget, setActiveVoiceCaptureTarget] =
     useState<VoiceCaptureTarget | null>(null);
+  const [pendingVoiceReviewBlob, setPendingVoiceReviewBlob] =
+    useState<Blob | null>(null);
   const [isMetadataEnabled, setIsMetadataEnabled] = useState(false);
   const [isMetadataCapturing, setIsMetadataCapturing] = useState(false);
   const [assistantFirstName, setAssistantFirstName] = useState<string>(
@@ -181,6 +183,7 @@ export function AssistantInteraction({
   > | null>(null);
   const liveRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const liveFinalTranscriptRef = useRef("");
+  const recordingDecisionRef = useRef<"confirm" | "cancel" | null>(null);
 
   const transcriptionLanguage = useMemo(() => {
     return i18n.resolvedLanguage === "es" || i18n.language === "es"
@@ -395,7 +398,7 @@ export function AssistantInteraction({
   ]);
 
   const handleRecordedAudio = useCallback(
-    async (mimeType: string, target: VoiceCaptureTarget) => {
+    async (mimeType: string) => {
       const audioBlob = new Blob(audioChunksRef.current, {
         type: mimeType || "audio/webm",
       });
@@ -408,12 +411,14 @@ export function AssistantInteraction({
         setIsTranscribing(false);
         setVoiceAvatarState("idle");
         setSpeechError(getRecordingErrorMessage("no-speech", t));
+        setActiveVoiceCaptureTarget(null);
         return;
       }
 
       try {
-        await saveAssistantVoiceHandoff(audioBlob);
-        continueToConversation(target === "conversation");
+        setPendingVoiceReviewBlob(audioBlob);
+        setSpeechError(null);
+        setVoiceAvatarState("idle");
       } catch (error) {
         setVoiceAvatarState("idle");
         setSpeechError(
@@ -426,11 +431,7 @@ export function AssistantInteraction({
         setActiveVoiceCaptureTarget(null);
       }
     },
-    [
-      cleanupRecording,
-      continueToConversation,
-      t,
-    ]
+    [cleanupRecording, t]
   );
 
   const startVoiceRecording = useCallback(
@@ -591,6 +592,7 @@ export function AssistantInteraction({
   ]);
 
   const cancelVoiceCapture = useCallback(() => {
+    recordingDecisionRef.current = "cancel";
     clearAutoStopRecordingTimer();
     shouldProcessRecordingRef.current = false;
     stopLiveTranscriptPreview();
@@ -608,12 +610,58 @@ export function AssistantInteraction({
     setIsRecordingActive(false);
     setIsTranscribing(false);
     setActiveVoiceCaptureTarget(null);
+    setPendingVoiceReviewBlob(null);
     setVoiceAvatarState("idle");
   }, [
     cleanupRecording,
     clearAutoStopRecordingTimer,
     stopLiveTranscriptPreview,
   ]);
+
+  const confirmVoiceReview = useCallback(async () => {
+    if (!pendingVoiceReviewBlob) {
+      return;
+    }
+
+    setIsTranscribing(true);
+    setSpeechError(null);
+    setVoiceAvatarState("listening");
+
+    try {
+      const transcription = await transcribeAssistantVoice(
+        pendingVoiceReviewBlob,
+        transcriptionLanguage
+      );
+      const transcript = transcription.transcript.trim();
+
+      if (!transcript) {
+        setSpeechError(getRecordingErrorMessage("no-speech", t));
+        setVoiceAvatarState("idle");
+        return;
+      }
+
+      setMessage((currentMessage) =>
+        [currentMessage.trim(), transcript].filter(Boolean).join(" ")
+      );
+      setPendingVoiceReviewBlob(null);
+      setVoiceAvatarState("idle");
+    } catch (error) {
+      setVoiceAvatarState("idle");
+      setSpeechError(
+        error instanceof Error
+          ? error.message
+          : getRecordingErrorMessage("network", t)
+      );
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, [pendingVoiceReviewBlob, t, transcriptionLanguage]);
+
+  const cancelVoiceReview = useCallback(() => {
+    setPendingVoiceReviewBlob(null);
+    setSpeechError(null);
+    setVoiceAvatarState("idle");
+  }, []);
 
   const toggleTranscriptionRecording = () => {
     if (activeVoiceCaptureTarget === "recording" && isRecordingActive) {
@@ -628,18 +676,18 @@ export function AssistantInteraction({
     void startVoiceRecording("recording");
   };
 
-  const toggleConversationVoiceCapture = () => {
-    if (activeVoiceCaptureTarget === "conversation" && isRecordingActive) {
-      cancelVoiceCapture();
+  const startAvatarVoiceMode = useCallback(() => {
+    if (isRecordingActive || isTranscribing || pendingVoiceReviewBlob) {
       return;
     }
 
-    if (isRecordingActive) {
-      return;
-    }
-
-    void startVoiceRecording("conversation");
-  };
+    continueToConversation(true);
+  }, [
+    continueToConversation,
+    isRecordingActive,
+    isTranscribing,
+    pendingVoiceReviewBlob,
+  ]);
 
   useEffect(() => {
     if (!isRecording || hasHandledInitialRecordingRef.current) {
@@ -727,10 +775,9 @@ export function AssistantInteraction({
   };
 
   const recordingSpacingClass = "mt-7";
-  const isConversationVoiceCaptureActive =
-    activeVoiceCaptureTarget === "conversation" && isRecordingActive;
   const isTranscriptionCaptureActive =
     activeVoiceCaptureTarget === "recording" && isRecordingActive;
+  const shouldShowSendButton = message.trim().length > 0;
   const metadataStatusText = isMetadataCapturing
     ? t("dashboard.assistant.metadataCapturing")
     : metadataError
@@ -806,51 +853,108 @@ export function AssistantInteraction({
           {reportMetadata ? (
             <input type="hidden" name="metadataCapture" value="1" />
           ) : null}
-          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-            <input
-              type="text"
-              name="message"
-              value={message}
-              onChange={handleMessageChange}
-              placeholder={t("dashboard.assistant.typeYourResponse")}
-              className="h-10 min-w-[180px] flex-1 rounded-full border border-transparent bg-[#f6f9fc] px-4 text-xs text-[#1f2937] outline-none transition-[background-color,box-shadow,border-color] duration-150 placeholder:text-[#95a3b8] focus:border-white/70 focus:bg-white focus:shadow-[0_8px_22px_rgba(148,163,184,0.12)] focus-visible:outline-none"
-            />
-            <button
-              type="button"
-              onClick={toggleConversationVoiceCapture}
-              disabled={isTranscribing}
-              aria-label={
-                isConversationVoiceCaptureActive
-                  ? t("common.cancel")
-                  : t("dashboard.assistant.toggleMicrophone")
-              }
-              aria-pressed={isConversationVoiceCaptureActive}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${
-                isConversationVoiceCaptureActive
-                  ? "bg-[#de3838] text-white"
-                  : "text-[#8b97a8]"
-              } ${isTranscribing ? "cursor-not-allowed opacity-40" : ""}`}
-            >
-              {isConversationVoiceCaptureActive ? (
-                <IconX size={14} />
-              ) : (
-                <IconMicrophone size={14} />
-              )}
-            </button>
-            <button
-              type="submit"
-              aria-label={t("common.send")}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#f59e0b] text-white"
-            >
-              <Image
-                src={sendIcon}
-                alt={t("common.send")}
-                width={10}
-                height={14}
-                className="h-[14px] w-[10px]"
+          {isTranscriptionCaptureActive || pendingVoiceReviewBlob ? (
+            <div className="flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-4 py-2">
+              <div className="flex flex-1 items-center gap-3 overflow-hidden">
+                <span className="text-[11px] font-medium text-[#64748b]">
+                  {isTranscriptionCaptureActive ? "Listening..." : "Use transcribed text"}
+                </span>
+                <div className="flex h-8 flex-1 items-center gap-1 overflow-hidden">
+                  {Array.from({ length: 32 }).map((_, index) => (
+                    <span
+                      key={index}
+                      className={`w-1 rounded-full bg-[#7aa4d8] ${
+                        isTranscriptionCaptureActive ? "animate-pulse" : ""
+                      }`}
+                      style={{
+                        height: `${10 + ((index * 7) % 18)}px`,
+                        animationDelay: `${index * 45}ms`,
+                        opacity: 0.38 + ((index % 6) * 0.1),
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={isTranscriptionCaptureActive ? cancelVoiceCapture : cancelVoiceReview}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#dbe6f2] bg-white text-[#64748b] transition hover:bg-[#f4f7fb]"
+                aria-label={t("common.cancel")}
+              >
+                <IconX size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isTranscriptionCaptureActive) {
+                    recordingDecisionRef.current = "confirm";
+                    stopVoiceRecording();
+                    return;
+                  }
+
+                  void confirmVoiceReview();
+                }}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white transition hover:bg-[#0c518a]"
+                aria-label="Use voice text"
+              >
+                <IconCheck size={16} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
+              <input
+                type="text"
+                name="message"
+                value={message}
+                onChange={handleMessageChange}
+                placeholder={t("dashboard.assistant.typeYourResponse")}
+                className="h-11 min-w-[180px] flex-1 rounded-full border border-transparent bg-transparent px-3 text-sm text-[#1f2937] outline-none transition-[background-color,box-shadow,border-color] duration-150 placeholder:text-[#95a3b8] focus-visible:outline-none"
               />
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={toggleTranscriptionRecording}
+                disabled={isTranscribing}
+                aria-label={t("dashboard.assistant.toggleMicrophone")}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
+                  isTranscribing ? "cursor-not-allowed opacity-40" : ""
+                }`}
+              >
+                <IconMicrophone size={16} />
+              </button>
+              {shouldShowSendButton ? (
+                <button
+                  type="submit"
+                  aria-label={t("common.send")}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white"
+                >
+                  <Image
+                    src={sendIcon}
+                    alt={t("common.send")}
+                    width={10}
+                    height={14}
+                    className="h-[14px] w-[10px]"
+                  />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startAvatarVoiceMode}
+                  disabled={isTranscribing}
+                  aria-label="Start avatar voice mode"
+                  className={`inline-flex h-11 items-center gap-2 rounded-full bg-white px-2.5 text-[#0f5d9f] ring-1 ring-[#dbe6f2] transition hover:bg-[#f8fbff] ${
+                    isTranscribing ? "cursor-not-allowed opacity-40" : ""
+                  }`}
+                >
+                  <VoiceAvatarAnimation
+                    state="idle"
+                    size="small"
+                    alt="Start avatar voice mode"
+                    className="scale-[0.82]"
+                  />
+                </button>
+              )}
+            </div>
+          )}
           {speechError ? (
             <p
               className="px-4 pt-2 text-[11px] leading-[1.45] text-[#c24141]"
@@ -861,8 +965,7 @@ export function AssistantInteraction({
           ) : null}
         </form>
 
-        {!isConversationVoiceCaptureActive && (
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="flex h-[54px] flex-1 items-center justify-between rounded-full bg-white px-4">
               <div className="inline-flex items-center gap-2.5">
                 <span
@@ -910,28 +1013,7 @@ export function AssistantInteraction({
                 />
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={toggleTranscriptionRecording}
-              disabled={isTranscribing}
-              className={`inline-flex h-[54px] shrink-0 items-center justify-center rounded-full px-8 text-[11px] font-bold text-white sm:min-w-[188px] ${
-                isTranscriptionCaptureActive ? "bg-[#de3838]" : "bg-[#f59e0b]"
-              } ${
-                isTranscribing ? "cursor-not-allowed opacity-45" : ""
-              }`}
-            >
-              <span className="mr-1" aria-hidden>
-                {isTranscriptionCaptureActive ? "■" : "\u2022"}
-              </span>
-              {isTranscribing
-                ? t("dashboard.assistant.transcribing")
-                : isTranscriptionCaptureActive
-                  ? t("dashboard.assistant.stopRecording")
-                  : t("dashboard.assistant.tapToStartRecording")}
-            </button>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
