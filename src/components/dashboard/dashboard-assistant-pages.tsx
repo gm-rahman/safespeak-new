@@ -470,7 +470,6 @@ function SafeSpeakAssistantPage({
   initialCategory?: AssistantIncidentCategory;
   initialTopic?: DashboardCardFlowId;
 }) {
-  const { t } = useTranslation();
   const router = useRouter();
   const [isCheckingDraft, setIsCheckingDraft] = useState(true);
 
@@ -509,15 +508,6 @@ function SafeSpeakAssistantPage({
 
     router.replace("/dashboard?view=assistantconversation");
   }, [initialCategory, initialTopic, router]);
-
-  const handleCancel = () => {
-    clearAssistantConversationDraft({
-      topic: initialTopic,
-      incidentCategory: initialCategory,
-    });
-    clearAssistantTriageSource();
-  };
-
   if (isCheckingDraft) {
     return null;
   }
@@ -533,23 +523,6 @@ function SafeSpeakAssistantPage({
   return (
     <div className="px-2 pb-28 pt-2 sm:px-4 sm:pb-32 sm:pt-4 lg:pb-24">
       <div className="mx-auto flex w-full max-w-[1184px] flex-col">
-        <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
-          >
-            <IconChevronLeft size={14} />
-            {t("dashboard.assistant.timelineBuilder")}
-          </Link>
-          <Link
-            href="/dashboard"
-            onClick={handleCancel}
-            className="text-xs font-medium text-[#7b8798]"
-          >
-            {t("common.cancel")}
-          </Link>
-        </div>
-
         <AssistantInteraction
           isRecording={isRecording}
           initialCategory={initialCategory}
