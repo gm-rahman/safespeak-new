@@ -2555,7 +2555,7 @@ function SafeSpeakAssistantConversationPage({
                           className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
                             isVoiceSessionMuted
                               ? "bg-[#eef2f7] text-[#94a3b8]"
-                              : "bg-[#f3f4f6] text-[#111827]"
+                              : "border border-[#e3edf7] bg-[radial-gradient(circle_at_32%_30%,#6aa6e8_0%,#3f79bc_48%,#1f3f67_100%)] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.24),inset_0_-6px_12px_rgba(15,35,64,0.22),0_12px_24px_rgba(31,63,103,0.16)]"
                           }`}
                           aria-label={
                             isVoiceSessionMuted ? "Unmute voice mode" : "Mute voice mode"
@@ -2587,7 +2587,7 @@ function SafeSpeakAssistantConversationPage({
                           type="button"
                           onClick={startVoiceSession}
                           disabled={isSending || isTranscribing}
-                          className={`inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#111827] text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition hover:bg-[#0b1220] ${
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#e3edf7] bg-[radial-gradient(circle_at_32%_30%,#6aa6e8_0%,#3f79bc_48%,#1f3f67_100%)] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.24),inset_0_-6px_12px_rgba(15,35,64,0.22),0_12px_24px_rgba(31,63,103,0.16)] transition hover:brightness-[1.05] ${
                             isSending || isTranscribing
                               ? "cursor-not-allowed opacity-40"
                               : ""
