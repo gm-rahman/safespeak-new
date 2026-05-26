@@ -2515,33 +2515,35 @@ function SafeSpeakAssistantConversationPage({
                     </button>
                   ) : null}
                   {shouldShowSendButton ? (
-                    <button
-                      type="submit"
-                      data-testid="ai-conversation-send"
-                      disabled={
-                        isSending ||
-                        isVoiceSessionActive ||
-                        isRecordingActive ||
-                        isTranscribing ||
-                        isGeneratingSpeech ||
-                        isSpeaking ||
-                        !input.trim()
-                      }
-                      aria-label={t("common.send")}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white shadow-[0_10px_24px_rgba(15,93,159,0.22)] transition hover:bg-[#0c518a] disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      {isSending ? (
-                        <IconLoader2 size={16} className="animate-spin" />
-                      ) : (
-                        <Image
-                          src={sendIcon}
-                          alt={t("common.send")}
-                          width={12}
-                          height={16}
-                          className="h-4 w-3"
-                        />
-                      )}
-                    </button>
+                    <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                      <button
+                        type="submit"
+                        data-testid="ai-conversation-send"
+                        disabled={
+                          isSending ||
+                          isVoiceSessionActive ||
+                          isRecordingActive ||
+                          isTranscribing ||
+                          isGeneratingSpeech ||
+                          isSpeaking ||
+                          !input.trim()
+                        }
+                        aria-label={t("common.send")}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white shadow-[0_10px_24px_rgba(15,93,159,0.22)] transition hover:bg-[#0c518a] disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {isSending ? (
+                          <IconLoader2 size={16} className="animate-spin" />
+                        ) : (
+                          <Image
+                            src={sendIcon}
+                            alt={t("common.send")}
+                            width={12}
+                            height={16}
+                            className="h-4 w-3"
+                          />
+                        )}
+                      </button>
+                    </span>
                   ) : isVoiceSessionActive ? (
                     <div className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-1.5 py-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
                       <button

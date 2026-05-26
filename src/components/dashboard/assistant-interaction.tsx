@@ -934,19 +934,21 @@ export function AssistantInteraction({
                 <IconMicrophone size={18} />
               </button>
               {shouldShowSendButton ? (
-                <button
-                  type="submit"
-                  aria-label={t("common.send")}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white"
-                >
-                  <Image
-                    src={sendIcon}
-                    alt={t("common.send")}
-                    width={10}
-                    height={14}
-                    className="h-[14px] w-[10px]"
-                  />
-                </button>
+                <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                  <button
+                    type="submit"
+                    aria-label={t("common.send")}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white"
+                  >
+                    <Image
+                      src={sendIcon}
+                      alt={t("common.send")}
+                      width={10}
+                      height={14}
+                      className="h-[14px] w-[10px]"
+                    />
+                  </button>
+                </span>
               ) : (
                 <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
                   <button
