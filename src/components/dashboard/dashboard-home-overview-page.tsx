@@ -303,14 +303,16 @@ function HomeDashboardPage() {
           aria-label="Talk with SafeSpeak"
         >
           <div className="flex h-full w-full items-center justify-center rounded-full bg-white p-[6px] shadow-[0_14px_30px_rgba(15,93,159,0.12)]">
-            <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-[#edf4fd]">
-              <div className="absolute inset-[-18%]">
-                <AIOrbAvatar
-                  size="100%"
-                  voiceState="idle"
-                  showAmbientEffects={false}
-                  className="h-full w-full"
-                />
+            <div className="relative flex h-full w-full items-center justify-center rounded-full bg-[#edf4fd]">
+              <div className="relative h-[76%] w-[76%] overflow-hidden rounded-full border-[2px] border-[#5d6675] bg-[#0a1220] shadow-[0_10px_22px_rgba(15,23,42,0.22)]">
+                <div className="absolute inset-[-14%]">
+                  <AIOrbAvatar
+                    size="100%"
+                    voiceState="idle"
+                    showAmbientEffects={false}
+                    className="h-full w-full"
+                  />
+                </div>
               </div>
             </div>
           </div>
