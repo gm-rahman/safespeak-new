@@ -927,11 +927,11 @@ export function AssistantInteraction({
                 onClick={toggleTranscriptionRecording}
                 disabled={isTranscribing}
                 aria-label={t("dashboard.assistant.toggleMicrophone")}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
                   isTranscribing ? "cursor-not-allowed opacity-40" : ""
                 }`}
               >
-                <IconMicrophone size={16} />
+                <IconMicrophone size={18} />
               </button>
               {shouldShowSendButton ? (
                 <button

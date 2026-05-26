@@ -90,11 +90,12 @@ const harmfulActivityPatterns = [
 
 function AvatarVoiceControlGlyph() {
   return (
-    <span className="inline-flex h-4 items-end gap-[2px]" aria-hidden="true">
-      <span className="h-[7px] w-[2px] rounded-full bg-current opacity-70" />
-      <span className="h-[11px] w-[2px] rounded-full bg-current" />
-      <span className="h-[15px] w-[2px] rounded-full bg-current opacity-90" />
-      <span className="h-[10px] w-[2px] rounded-full bg-current opacity-80" />
+    <span className="inline-flex items-center gap-[2px]" aria-hidden="true">
+      <span className="h-[4px] w-[4px] rounded-full bg-current opacity-95" />
+      <span className="h-[10px] w-[2.5px] rounded-full bg-current" />
+      <span className="h-[14px] w-[2.5px] rounded-full bg-current" />
+      <span className="h-[10px] w-[2.5px] rounded-full bg-current" />
+      <span className="h-[4px] w-[4px] rounded-full bg-current opacity-95" />
     </span>
   );
 }
@@ -2398,7 +2399,7 @@ function SafeSpeakAssistantConversationPage({
                       isTranscribing
                     }
                     aria-label={t("dashboard.assistant.toggleMicrophone")}
-                    className={`inline-flex h-10 w-10 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
+                    className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
                       isVoiceSessionActive ||
                       isGeneratingSpeech ||
                       isSpeaking ||
@@ -2408,7 +2409,7 @@ function SafeSpeakAssistantConversationPage({
                         : ""
                     }`}
                   >
-                    <IconMicrophone size={16} />
+                    <IconMicrophone size={18} />
                   </button>
                   {shouldShowSendButton ? (
                     <button
@@ -2440,8 +2441,8 @@ function SafeSpeakAssistantConversationPage({
                     </button>
                   ) : isVoiceSessionActive ? (
                     <div className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-1.5 py-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
-                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#f3f4f6] text-[#111827]">
-                        <IconMicrophone size={16} />
+                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#f3f4f6] text-[#111827]">
+                        <IconMicrophone size={18} />
                       </span>
                       <button
                         type="button"
