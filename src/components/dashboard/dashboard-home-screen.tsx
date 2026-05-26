@@ -1,9 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect } from "react";
 
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
+import { LAST_NON_CONVERSATION_DASHBOARD_URL_STORAGE_KEY } from "@/lib/dashboard-navigation";
 
 import { DashboardShell } from "./dashboard-layout";
 import type { HomeView } from "./dashboard-types";
@@ -205,6 +208,27 @@ export default function DashboardHomeScreen({
   assistantCategory?: AssistantIncidentCategory;
   assistantTopic?: DashboardCardFlowId;
 }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      homeView === "assistantconversation" ||
+      !pathname
+    ) {
+      return;
+    }
+
+    const search = searchParams.toString();
+    const currentUrl = search ? `${pathname}?${search}` : pathname;
+
+    window.sessionStorage.setItem(
+      LAST_NON_CONVERSATION_DASHBOARD_URL_STORAGE_KEY,
+      currentUrl
+    );
+  }, [homeView, pathname, searchParams]);
+
   const page =
     homeView === "resources" ? (
       <ResourcesPage />

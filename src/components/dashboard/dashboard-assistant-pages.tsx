@@ -69,6 +69,7 @@ import {
   getDashboardAssistantTopicChips,
   getDashboardCardFlow,
 } from "@/lib/dashboard-card-flows";
+import { LAST_NON_CONVERSATION_DASHBOARD_URL_STORAGE_KEY } from "@/lib/dashboard-navigation";
 import { triggerQuickExit } from "@/lib/safety";
 import {
   createAssistantVoiceAudioUrl,
@@ -328,6 +329,22 @@ function getAssistantEntryHref(
       category: initialCategory,
     },
   } as const;
+}
+
+function getDashboardHrefString(input: {
+  pathname: string;
+  query?: Record<string, string | undefined>;
+}) {
+  const searchParams = new URLSearchParams();
+
+  Object.entries(input.query ?? {}).forEach(([key, value]) => {
+    if (typeof value === "string" && value.length > 0) {
+      searchParams.set(key, value);
+    }
+  });
+
+  const queryString = searchParams.toString();
+  return queryString ? `${input.pathname}?${queryString}` : input.pathname;
 }
 
 function shouldUseNswLegalAwareness(
@@ -815,6 +832,7 @@ function SafeSpeakAssistantConversationPage({
     initialTopic,
     initialCategory
   );
+  const assistantEntryHrefString = getDashboardHrefString(assistantEntryHref);
   const useNswLegalAwareness = shouldUseNswLegalAwareness(
     initialTopic,
     initialCategory
@@ -1513,14 +1531,6 @@ function SafeSpeakAssistantConversationPage({
     });
   }, [existingDraft, requestAssistantTurn, seededMessage, startVoiceMode]);
 
-  const handleCancel = () => {
-    clearAssistantConversationDraft({
-      topic: initialTopic,
-      incidentCategory: initialCategory,
-    });
-    clearAssistantTriageSource();
-  };
-
   const transcribeVoiceBlobToInput = useCallback(
     async (audioBlob: Blob) => {
       const transcription = await transcribeAssistantVoice(
@@ -1923,6 +1933,54 @@ function SafeSpeakAssistantConversationPage({
     stopLiveTranscriptPreview,
   ]);
 
+  const handleCancel = useCallback(() => {
+    stopVoiceSession();
+    clearAssistantConversationDraft({
+      topic: initialTopic,
+      incidentCategory: initialCategory,
+    });
+    clearAssistantTriageSource();
+
+    if (typeof window !== "undefined") {
+      const fallbackDashboardUrl = window.sessionStorage.getItem(
+        LAST_NON_CONVERSATION_DASHBOARD_URL_STORAGE_KEY
+      );
+      const currentUrl = `${window.location.pathname}${window.location.search}`;
+
+      if (
+        fallbackDashboardUrl &&
+        fallbackDashboardUrl !== currentUrl &&
+        !fallbackDashboardUrl.includes("view=assistantconversation")
+      ) {
+        window.location.assign(fallbackDashboardUrl);
+        return;
+      }
+
+      if (window.history.length > 1) {
+        window.history.back();
+        window.setTimeout(() => {
+          const nextUrl = `${window.location.pathname}${window.location.search}`;
+
+          if (nextUrl === currentUrl) {
+            window.location.assign(assistantEntryHrefString);
+          }
+        }, 150);
+        return;
+      }
+
+      window.location.assign(assistantEntryHrefString);
+      return;
+    }
+
+    router.push(assistantEntryHref);
+  }, [
+    assistantEntryHrefString,
+    assistantEntryHref,
+    initialCategory,
+    initialTopic,
+    stopVoiceSession,
+  ]);
+
   const toggleVoiceSessionMute = useCallback(() => {
     if (!voiceSessionActiveRef.current) {
       return;
@@ -2211,13 +2269,13 @@ function SafeSpeakAssistantConversationPage({
             <IconChevronLeft size={14} />
             AI Conversation
           </Link>
-          <Link
-            href="/dashboard"
+          <button
+            type="button"
             onClick={handleCancel}
             className="text-xs font-medium text-[#7b8798]"
           >
             {t("common.cancel")}
-          </Link>
+          </button>
         </div>
 
         <div className="mt-3 min-h-0 xl:flex-1">

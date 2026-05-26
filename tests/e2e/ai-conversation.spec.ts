@@ -613,6 +613,28 @@ test.describe("SafeSpeak AI Conversation", () => {
     await expect(triageButton).toHaveText(/Continue to Triage/i);
   });
 
+  test("cancel returns to the previous page instead of forcing home", async ({
+    page,
+  }) => {
+    apiMock.consent = {
+      process_with_ai: true,
+      transcribe_audio: true,
+    };
+
+    await page.goto(
+      `${BASE_URL}/dashboard?view=assistant&category=domestic_violence&topic=domestic_violence`,
+      { waitUntil: "domcontentloaded" }
+    );
+    await page.goto(START_URL, { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByTestId("ai-conversation-page")).toBeVisible();
+    await page.getByRole("button", { name: "Cancel" }).click();
+
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("view"))
+      .toBe("assistant");
+  });
+
   test("runs voice-first consent, transcription, autoplay fallback, replay, and stop flow", async ({
     page,
   }) => {
