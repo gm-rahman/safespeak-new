@@ -42,7 +42,7 @@ export function VoiceAvatarAnimation({
 
   const orbSize = size === "large"
     ? "clamp(176px, 28vw, 240px)"
-    : "58px";
+    : "74px";
 
   return (
     <div
