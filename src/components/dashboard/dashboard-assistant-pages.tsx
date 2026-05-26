@@ -168,18 +168,6 @@ function isActionableConversationTriage(response: {
   );
 }
 
-function getHumanPacedAssistantDelayMs(text: string): number {
-  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
-
-  return Math.min(1800, Math.max(650, 520 + wordCount * 42));
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
 function getAssistantDisplayContent(message: AssistantConversationMessage) {
   if (message.role !== "assistant") {
     return message.content;
@@ -1277,16 +1265,6 @@ function SafeSpeakAssistantConversationPage({
       conversation: AssistantConversationMessage[],
       options: { speakResponse?: boolean; continueVoiceSession?: boolean } = {}
     ) => {
-      const turnStartedAt = Date.now();
-      const paceAssistantResponse = async (text: string) => {
-        const remainingDelay =
-          getHumanPacedAssistantDelayMs(text) - (Date.now() - turnStartedAt);
-
-        if (remainingDelay > 0) {
-          await wait(remainingDelay);
-        }
-      };
-
       setIsSending(true);
       setError(null);
 
@@ -1361,17 +1339,13 @@ function SafeSpeakAssistantConversationPage({
           },
         };
 
-        await paceAssistantResponse(response.assistantMessage.content);
-
         if (options.speakResponse) {
+          setMessages((currentMessages) => [
+            ...currentMessages,
+            assistantMessage,
+          ]);
           void playAssistantSpeech(response.assistantMessage.content, {
             continueVoiceSession: options.continueVoiceSession,
-            revealAfterPlayback: () => {
-              setMessages((currentMessages) => [
-                ...currentMessages,
-                assistantMessage,
-              ]);
-            },
           });
         } else {
           setMessages((currentMessages) => [
@@ -1446,17 +1420,13 @@ function SafeSpeakAssistantConversationPage({
             },
           };
 
-          await paceAssistantResponse(assistantContent);
-
           if (options.speakResponse) {
+            setMessages((currentMessages) => [
+              ...currentMessages,
+              assistantMessage,
+            ]);
             void playAssistantSpeech(assistantContent, {
               continueVoiceSession: options.continueVoiceSession,
-              revealAfterPlayback: () => {
-                setMessages((currentMessages) => [
-                  ...currentMessages,
-                  assistantMessage,
-                ]);
-              },
             });
           } else {
             setMessages((currentMessages) => [
@@ -2554,7 +2524,7 @@ function SafeSpeakAssistantConversationPage({
                           className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
                             isVoiceSessionMuted
                               ? "bg-[#eef2f7] text-[#94a3b8]"
-                              : "border border-[#e3edf7] bg-[radial-gradient(circle_at_32%_30%,#6aa6e8_0%,#3f79bc_48%,#1f3f67_100%)] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.24),inset_0_-6px_12px_rgba(15,35,64,0.22),0_12px_24px_rgba(31,63,103,0.16)]"
+                              : "bg-[#196bb1] text-white"
                           }`}
                           aria-label={
                             isVoiceSessionMuted ? "Unmute voice mode" : "Mute voice mode"
@@ -2586,7 +2556,7 @@ function SafeSpeakAssistantConversationPage({
                           type="button"
                           onClick={startVoiceSession}
                           disabled={isSending || isTranscribing}
-                          className={`inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#e3edf7] bg-[radial-gradient(circle_at_32%_30%,#6aa6e8_0%,#3f79bc_48%,#1f3f67_100%)] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.24),inset_0_-6px_12px_rgba(15,35,64,0.22),0_12px_24px_rgba(31,63,103,0.16)] transition hover:brightness-[1.05] ${
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#196bb1] text-white transition hover:bg-[#196bb1] ${
                             isSending || isTranscribing
                               ? "cursor-not-allowed opacity-40"
                               : ""
