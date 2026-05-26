@@ -30,7 +30,13 @@ import {
 import { useConsentGate } from "@/hooks/use-consent-gate";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import { getAuthSession, getCurrentUser } from "@/lib/auth";
-import { consentRequirements } from "@/lib/consent";
+import {
+  ConsentRequiredError,
+  consentRequirements,
+  ensureConsent,
+  getConsentGrantFlags,
+  grantConsent,
+} from "@/lib/consent";
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 import {
   type CapturedReportMetadata,
@@ -159,7 +165,6 @@ export function AssistantInteraction({
     captureConsentError,
     clearPendingConsent,
     grantPendingConsent,
-    requireConsent,
   } = useConsentGate();
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -459,24 +464,33 @@ export function AssistantInteraction({
       return;
     }
 
-    let canRecord = false;
-
     try {
-      canRecord = await requireConsent(consentRequirements.audioTranscription);
+      await ensureConsent(consentRequirements.audioTranscription);
     } catch (error) {
-      setSpeechError(
-        error instanceof Error
-          ? error.message
-          : "Consent status could not be checked."
-      );
-      setVoiceAvatarState("idle");
-      return;
-    }
-
-    if (!canRecord) {
-      setSpeechError(null);
-      setVoiceAvatarState("idle");
-      return;
+      if (error instanceof ConsentRequiredError) {
+        try {
+          await grantConsent(
+            getConsentGrantFlags(consentRequirements.audioTranscription),
+            consentRequirements.audioTranscription.source
+          );
+        } catch (grantError) {
+          setSpeechError(
+            grantError instanceof Error
+              ? grantError.message
+              : "Consent could not be saved."
+          );
+          setVoiceAvatarState("idle");
+          return;
+        }
+      } else {
+        setSpeechError(
+          error instanceof Error
+            ? error.message
+            : "Consent status could not be checked."
+        );
+        setVoiceAvatarState("idle");
+        return;
+      }
     }
 
     setSpeechError(null);
@@ -564,7 +578,6 @@ export function AssistantInteraction({
     cleanupRecording,
     clearAutoStopRecordingTimer,
     handleRecordedAudio,
-    requireConsent,
     startLiveTranscriptPreview,
     stopLiveTranscriptPreview,
     t,

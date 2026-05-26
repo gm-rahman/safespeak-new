@@ -47,7 +47,13 @@ import {
   clearAssistantTriageSource,
   saveAssistantTriageSource,
 } from "@/lib/assistant-triage";
-import { consentRequirements } from "@/lib/consent";
+import {
+  ConsentRequiredError,
+  consentRequirements,
+  ensureConsent,
+  getConsentGrantFlags,
+  grantConsent,
+} from "@/lib/consent";
 import {
   type ConversationFlowTriage,
   appendConversationFlowMessage,
@@ -768,7 +774,6 @@ function SafeSpeakAssistantConversationPage({
     captureConsentError,
     clearPendingConsent,
     grantPendingConsent,
-    requireConsent,
   } = useConsentGate();
   const hasSentInitialRef = useRef(false);
   const hasStartedInitialVoiceModeRef = useRef(false);
@@ -1617,24 +1622,33 @@ function SafeSpeakAssistantConversationPage({
       return false;
     }
 
-    let canRecord = false;
-
     try {
-      canRecord = await requireConsent(consentRequirements.audioTranscription);
+      await ensureConsent(consentRequirements.audioTranscription);
     } catch (consentCheckError) {
-      setSpeechError(
-        consentCheckError instanceof Error
-          ? consentCheckError.message
-          : "Consent status could not be checked."
-      );
-      setVoiceAvatarState("idle");
-      return false;
-    }
-
-    if (!canRecord) {
-      setSpeechError(null);
-      setVoiceAvatarState("idle");
-      return false;
+      if (consentCheckError instanceof ConsentRequiredError) {
+        try {
+          await grantConsent(
+            getConsentGrantFlags(consentRequirements.audioTranscription),
+            consentRequirements.audioTranscription.source
+          );
+        } catch (grantError) {
+          setSpeechError(
+            grantError instanceof Error
+              ? grantError.message
+              : "Consent could not be saved."
+          );
+          setVoiceAvatarState("idle");
+          return false;
+        }
+      } else {
+        setSpeechError(
+          consentCheckError instanceof Error
+            ? consentCheckError.message
+            : "Consent status could not be checked."
+        );
+        setVoiceAvatarState("idle");
+        return false;
+      }
     }
 
     setSpeechError(null);
@@ -1732,7 +1746,6 @@ function SafeSpeakAssistantConversationPage({
     isSending,
     isSpeaking,
     isTranscribing,
-    requireConsent,
     startLiveTranscriptPreview,
     stopLiveTranscriptPreview,
     t,

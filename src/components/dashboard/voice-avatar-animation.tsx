@@ -15,6 +15,7 @@ type VoiceAvatarAnimationProps = {
   size?: "large" | "small";
   alt?: string;
   className?: string;
+  showAmbientEffects?: boolean;
 };
 
 const stateLabels: Record<VoiceAvatarState, string> = {
@@ -37,6 +38,7 @@ export function VoiceAvatarAnimation({
   size = "large",
   alt = "SafeSpeak assistant voice avatar",
   className = "",
+  showAmbientEffects = false,
 }: VoiceAvatarAnimationProps) {
   const wrapperClassName = [
     styles.avatar,
@@ -55,7 +57,7 @@ export function VoiceAvatarAnimation({
   return (
     <div
       role="img"
-      aria-label={stateLabels[state]}
+      aria-label={alt || stateLabels[state]}
       data-testid="voice-avatar-animation"
       data-voice-state={state}
       data-voice-size={size}
@@ -64,6 +66,7 @@ export function VoiceAvatarAnimation({
       <AIOrbAvatar
         size={orbSize}
         isVoiceActive={isActive}
+        showAmbientEffects={showAmbientEffects}
       />
     </div>
   );

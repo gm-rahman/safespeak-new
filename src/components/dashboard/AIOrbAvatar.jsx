@@ -429,7 +429,7 @@ function StardustParticles({ count = 400, audioIntensityRef }) {
   );
 }
 
-function OrbScene({ isVoiceActive }) {
+function OrbScene({ isVoiceActive, showAmbientEffects }) {
   const groupRef = useRef(null);
   const audioIntensityRef = useRef(0);
 
@@ -462,9 +462,13 @@ function OrbScene({ isVoiceActive }) {
       <ambientLight intensity={0.15} />
       <pointLight intensity={0.8} color="#8055ff" position={[2, 2, 3]} />
       <pointLight intensity={0.6} color="#ff3388" position={[-2, -1.5, 2.5]} />
-      <StardustParticles count={300} audioIntensityRef={audioIntensityRef} />
+      {showAmbientEffects ? (
+        <StardustParticles count={300} audioIntensityRef={audioIntensityRef} />
+      ) : null}
       <PlasmaCore audioIntensityRef={audioIntensityRef} />
-      <AtmosphericHalo audioIntensityRef={audioIntensityRef} />
+      {showAmbientEffects ? (
+        <AtmosphericHalo audioIntensityRef={audioIntensityRef} />
+      ) : null}
     </group>
   );
 }
@@ -473,11 +477,20 @@ function OrbScene({ isVoiceActive }) {
 // Main Exported Component
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * @param {object} props
+ * @param {string} [props.className]
+ * @param {string} [props.size]
+ * @param {boolean} [props.showControls]
+ * @param {boolean} [props.showAmbientEffects]
+ * @param {boolean} [props.isVoiceActive]
+ */
 export default function AIOrbAvatar({
   className = "",
   size = "clamp(200px, 42vw, 320px)",
   showControls = false,
-  isVoiceActive: externalVoiceActive,
+  showAmbientEffects = true,
+  isVoiceActive: externalVoiceActive = undefined,
 }) {
   const [internalVoiceActive, setInternalVoiceActive] = useState(false);
   const isVoiceActive = externalVoiceActive !== undefined ? externalVoiceActive : internalVoiceActive;
@@ -491,7 +504,7 @@ export default function AIOrbAvatar({
     >
       <Canvas
         dpr={[1, 2]}
-        camera={{ position: [0, 0, 2.95], fov: 45 }}
+        camera={{ position: [0, 0, 3.65], fov: 45 }}
         gl={{
           alpha: true,
           antialias: true,
@@ -500,7 +513,10 @@ export default function AIOrbAvatar({
         onCreated={({ gl }) => gl.setClearColor(0x000000, 0)}
         style={{ background: "transparent" }}
       >
-        <OrbScene isVoiceActive={isVoiceActive} />
+        <OrbScene
+          isVoiceActive={isVoiceActive}
+          showAmbientEffects={showAmbientEffects}
+        />
       </Canvas>
 
       {/* ── Voice simulation toggle (dev/demo overlay) ── */}

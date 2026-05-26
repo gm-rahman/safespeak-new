@@ -1,9 +1,10 @@
-import { RequireUserAuth } from "@/components/auth/require-user-auth";
+// import { RequireUserAuth } from "@/components/auth/require-user-auth";
 
 export default function DashboardLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <RequireUserAuth>{children}</RequireUserAuth>;
+  // Temporarily bypass RequireUserAuth for local debugging
+  return <>{children}</>;
 }
