@@ -302,10 +302,10 @@ function HomeDashboardPage() {
           className="absolute left-1/2 z-20 hidden -translate-x-1/2 overflow-hidden rounded-full [clip-path:circle(50%_at_50%_50%)] lg:top-[clamp(176px,18vw,195px)] lg:block lg:h-[clamp(184px,19vw,236px)] lg:w-[clamp(184px,19vw,220px)] xl:top-[245px] xl:h-[248px] xl:w-[248px] 2xl:top-[279px] 2xl:h-[270px] 2xl:w-[270px]"
           aria-label="Talk with SafeSpeak"
         >
-          <div className="flex h-full w-full items-center justify-center rounded-full bg-white p-[6px] shadow-[0_14px_30px_rgba(15,93,159,0.12)]">
-            <div className="relative flex h-full w-full items-center justify-center rounded-full bg-[#edf4fd]">
-              <div className="relative h-[76%] w-[76%] overflow-hidden rounded-full border-[2px] border-[#5d6675] bg-[#0a1220] shadow-[0_10px_22px_rgba(15,23,42,0.22)]">
-                <div className="absolute inset-[-14%]">
+          <div className="flex h-full w-full items-center justify-center rounded-full">
+            <div className="relative flex h-full w-full items-center justify-center rounded-full">
+              <div className="relative h-[100%] w-[100%] overflow-hidden rounded-full border border-[#7a8596] bg-[#073179] shadow-[0_6px_14px_rgba(15,23,42,0.16)]">
+                <div className="absolute inset-[-10%]">
                   <AIOrbAvatar
                     size="100%"
                     voiceState="idle"
