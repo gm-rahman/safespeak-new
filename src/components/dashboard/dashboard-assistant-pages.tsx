@@ -2280,7 +2280,7 @@ function SafeSpeakAssistantConversationPage({
         </div>
 
         <div className="mt-3 min-h-0 xl:flex-1">
-          <div className="relative flex min-h-[520px] flex-col overflow-hidden rounded-[22px] border border-[#d6e7f6] bg-[linear-gradient(180deg,#dff0fb_0%,#e8f5ff_100%)] p-4 shadow-[0_18px_40px_rgba(113,161,204,0.12)] xl:h-full xl:min-h-0">
+          <div className="relative flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-transparent p-4 xl:h-full xl:min-h-0">
             {pendingConsentRequirement ? (
               <div className="relative z-30 mb-3 max-w-[560px]">
                 <ConsentRequiredCard
@@ -2308,7 +2308,7 @@ function SafeSpeakAssistantConversationPage({
                   >
                     <div className="max-w-[min(88%,540px)]">
                       <div
-                        className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-2.5 text-[11px] leading-[1.55] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
+                        className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-2.5 text-[13px] leading-[1.6] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
                           message.role === "user"
                             ? "rounded-tr-[8px] text-[#314256]"
                             : "rounded-tl-[8px] text-[#5f6f86]"
