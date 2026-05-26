@@ -20,6 +20,7 @@ import {
   IconChevronLeft,
   IconLoader2,
   IconMicrophone,
+  IconMicrophoneOff,
   IconX,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
@@ -773,6 +774,7 @@ function SafeSpeakAssistantConversationPage({
   const [error, setError] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
+  const [isVoiceSessionMuted, setIsVoiceSessionMuted] = useState(false);
   const [isRecordingActive, setIsRecordingActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
@@ -916,6 +918,11 @@ function SafeSpeakAssistantConversationPage({
         return;
       }
 
+      if (isVoiceSessionMuted) {
+        setVoiceAvatarState("idle");
+        return;
+      }
+
       // Voice state: assistant finished and is preparing to listen again.
       setVoiceAvatarState("listening");
       restartListeningTimerRef.current = setTimeout(
@@ -942,7 +949,7 @@ function SafeSpeakAssistantConversationPage({
         attempt === 0 ? 350 : 250
       );
     },
-    [clearRestartListeningTimer]
+    [clearRestartListeningTimer, isVoiceSessionMuted]
   );
 
   const playAssistantSpeech = useCallback(
@@ -1895,6 +1902,7 @@ function SafeSpeakAssistantConversationPage({
 
     voiceSessionActiveRef.current = true;
     setIsVoiceSessionActive(true);
+    setIsVoiceSessionMuted(false);
     shouldContinueAfterPlaybackRef.current = false;
     setSpeechError(null);
     setSpeechPlaybackError(null);
@@ -1911,6 +1919,7 @@ function SafeSpeakAssistantConversationPage({
   const stopVoiceSession = useCallback(() => {
     voiceSessionActiveRef.current = false;
     setIsVoiceSessionActive(false);
+    setIsVoiceSessionMuted(false);
     shouldContinueAfterPlaybackRef.current = false;
     shouldProcessRecordingRef.current = false;
     clearAutoStopRecordingTimer();
@@ -1938,6 +1947,66 @@ function SafeSpeakAssistantConversationPage({
     clearAutoStopRecordingTimer,
     clearRestartListeningTimer,
     stopAssistantSpeech,
+    stopLiveTranscriptPreview,
+  ]);
+
+  const toggleVoiceSessionMute = useCallback(() => {
+    if (!voiceSessionActiveRef.current) {
+      return;
+    }
+
+    if (isVoiceSessionMuted) {
+      setIsVoiceSessionMuted(false);
+      setSpeechError(null);
+
+      if (
+        !isRecordingActive &&
+        !isTranscribing &&
+        !isGeneratingSpeech &&
+        !isSpeaking
+      ) {
+        void startVoiceRecording("conversation");
+      } else if (isGeneratingSpeech || isSpeaking) {
+        setVoiceAvatarState("aiSpeaking");
+      } else {
+        setVoiceAvatarState("listening");
+      }
+
+      return;
+    }
+
+    setIsVoiceSessionMuted(true);
+    shouldProcessRecordingRef.current = false;
+    shouldContinueAfterPlaybackRef.current = false;
+    clearAutoStopRecordingTimer();
+    clearRestartListeningTimer();
+    stopLiveTranscriptPreview();
+
+    const mediaRecorder = mediaRecorderRef.current;
+
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    } else {
+      cleanupRecording();
+    }
+
+    audioChunksRef.current = [];
+    setIsRecordingActive(false);
+    setIsTranscribing(false);
+    setActiveVoiceCaptureTarget(null);
+    setPendingVoiceReviewBlob(null);
+    setLiveTranscript("");
+    setVoiceAvatarState(isGeneratingSpeech || isSpeaking ? "aiSpeaking" : "idle");
+  }, [
+    cleanupRecording,
+    clearAutoStopRecordingTimer,
+    clearRestartListeningTimer,
+    isGeneratingSpeech,
+    isRecordingActive,
+    isSpeaking,
+    isTranscribing,
+    isVoiceSessionMuted,
+    startVoiceRecording,
     stopLiveTranscriptPreview,
   ]);
 
@@ -2097,6 +2166,7 @@ function SafeSpeakAssistantConversationPage({
     revealPendingSpeechResponse();
     voiceSessionActiveRef.current = false;
     setIsVoiceSessionActive(false);
+    setIsVoiceSessionMuted(false);
     shouldContinueAfterPlaybackRef.current = false;
     clearAutoStopRecordingTimer();
     clearRestartListeningTimer();
@@ -2388,29 +2458,29 @@ function SafeSpeakAssistantConversationPage({
                     placeholder={t("dashboard.assistant.typeYourResponse")}
                     className="h-11 flex-1 rounded-full border border-transparent bg-transparent px-3 text-sm text-[#1f2937] outline-none transition-[background-color,box-shadow,border-color] duration-150 placeholder:text-[#95a3b8] focus-visible:outline-none"
                   />
-                  <button
-                    type="button"
-                    onClick={toggleTranscriptionCapture}
-                    disabled={
-                      isVoiceSessionActive ||
-                      isGeneratingSpeech ||
-                      isSpeaking ||
-                      isSending ||
-                      isTranscribing
-                    }
-                    aria-label={t("dashboard.assistant.toggleMicrophone")}
-                    className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
-                      isVoiceSessionActive ||
-                      isGeneratingSpeech ||
-                      isSpeaking ||
-                      isSending ||
-                      isTranscribing
-                        ? "cursor-not-allowed opacity-40"
-                        : ""
-                    }`}
-                  >
-                    <IconMicrophone size={18} />
-                  </button>
+                  {!isVoiceSessionActive ? (
+                    <button
+                      type="button"
+                      onClick={toggleTranscriptionCapture}
+                      disabled={
+                        isGeneratingSpeech ||
+                        isSpeaking ||
+                        isSending ||
+                        isTranscribing
+                      }
+                      aria-label={t("dashboard.assistant.toggleMicrophone")}
+                      className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
+                        isGeneratingSpeech ||
+                        isSpeaking ||
+                        isSending ||
+                        isTranscribing
+                          ? "cursor-not-allowed opacity-40"
+                          : ""
+                      }`}
+                    >
+                      <IconMicrophone size={18} />
+                    </button>
+                  ) : null}
                   {shouldShowSendButton ? (
                     <button
                       type="submit"
@@ -2441,9 +2511,24 @@ function SafeSpeakAssistantConversationPage({
                     </button>
                   ) : isVoiceSessionActive ? (
                     <div className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-1.5 py-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
-                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#f3f4f6] text-[#111827]">
-                        <IconMicrophone size={18} />
-                      </span>
+                      <button
+                        type="button"
+                        onClick={toggleVoiceSessionMute}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
+                          isVoiceSessionMuted
+                            ? "bg-[#eef2f7] text-[#94a3b8]"
+                            : "bg-[#f3f4f6] text-[#111827]"
+                        }`}
+                        aria-label={
+                          isVoiceSessionMuted ? "Unmute voice mode" : "Mute voice mode"
+                        }
+                      >
+                        {isVoiceSessionMuted ? (
+                          <IconMicrophoneOff size={18} />
+                        ) : (
+                          <IconMicrophone size={18} />
+                        )}
+                      </button>
                       <button
                         type="button"
                         onClick={stopVoiceSession}
