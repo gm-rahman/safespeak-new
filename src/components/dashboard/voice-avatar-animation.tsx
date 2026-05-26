@@ -1,6 +1,6 @@
 "use client";
 
-import AssistantSphereAnimated from "@/components/dashboard/AssistantSphereAnimated";
+import AIOrbAvatar from "@/components/dashboard/AIOrbAvatar";
 
 import styles from "./voice-avatar-animation.module.css";
 
@@ -24,6 +24,14 @@ const stateLabels: Record<VoiceAvatarState, string> = {
   aiSpeaking: "SafeSpeak assistant responding",
 };
 
+/**
+ * Maps the voice state to a boolean for the 3D orb's audio reactivity.
+ * The orb uses this to drive its u_audio_intensity uniform.
+ */
+function isVoiceActiveFromState(state: VoiceAvatarState): boolean {
+  return state === "userSpeaking" || state === "aiSpeaking" || state === "listening";
+}
+
 export function VoiceAvatarAnimation({
   state,
   size = "large",
@@ -33,11 +41,16 @@ export function VoiceAvatarAnimation({
   const wrapperClassName = [
     styles.avatar,
     styles[size],
-    styles[state],
     className,
   ]
     .filter(Boolean)
     .join(" ");
+
+  const orbSize = size === "large"
+    ? "clamp(176px, 28vw, 240px)"
+    : "58px";
+
+  const isActive = isVoiceActiveFromState(state);
 
   return (
     <div
@@ -48,19 +61,9 @@ export function VoiceAvatarAnimation({
       data-voice-size={size}
       className={wrapperClassName}
     >
-      <span className={styles.halo} aria-hidden="true" />
-      <span className={`${styles.blob} ${styles.blobOne}`} aria-hidden="true" />
-      <span className={`${styles.blob} ${styles.blobTwo}`} aria-hidden="true" />
-      <span
-        className={`${styles.blob} ${styles.blobThree}`}
-        aria-hidden="true"
-      />
-
-      <AssistantSphereAnimated
-        alt={alt}
-        fillParent
-        particleCount={size === "large" ? (state === "idle" ? 760 : 1080) : 420}
-        className={styles.sphere}
+      <AIOrbAvatar
+        size={orbSize}
+        isVoiceActive={isActive}
       />
     </div>
   );
