@@ -1270,6 +1270,20 @@ function SafeSpeakAssistantConversationPage({
       setError(null);
 
       try {
+        try {
+          await ensureConsent(consentRequirements.aiAssistant);
+        } catch (consentError) {
+          if (consentError instanceof ConsentRequiredError) {
+            await grantConsent(
+              getConsentGrantFlags(consentRequirements.aiAssistant),
+              consentRequirements.aiAssistant.source
+            );
+            clearPendingConsent();
+          } else {
+            throw consentError;
+          }
+        }
+
         let resolvedSessionId = conversationSessionId;
 
         if (!resolvedSessionId) {
@@ -1469,6 +1483,7 @@ function SafeSpeakAssistantConversationPage({
       }
     },
     [
+      clearPendingConsent,
       captureConsentError,
       conversationSessionId,
       initialCategory,

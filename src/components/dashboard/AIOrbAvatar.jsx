@@ -429,32 +429,91 @@ function StardustParticles({ count = 400, audioIntensityRef }) {
   );
 }
 
-function OrbScene({ isVoiceActive, showAmbientEffects }) {
+const VOICE_MOTION_PROFILES = {
+  idle: {
+    hoverAmplitude: 0.026,
+    hoverSpeed: 0.92,
+    rotateYSpeed: 0.04,
+    rotateXAmplitude: 0.022,
+    rotateXSpeed: 0.24,
+    intensityBase: 0.06,
+    intensityAmplitude: 0.05,
+    intensitySpeed: 1.9,
+    intensityCadence: 1.05,
+    lerpFactor: 0.04,
+  },
+  listening: {
+    hoverAmplitude: 0.032,
+    hoverSpeed: 1.08,
+    rotateYSpeed: 0.05,
+    rotateXAmplitude: 0.026,
+    rotateXSpeed: 0.28,
+    intensityBase: 0.14,
+    intensityAmplitude: 0.1,
+    intensitySpeed: 2.2,
+    intensityCadence: 1.25,
+    lerpFactor: 0.058,
+  },
+  userSpeaking: {
+    hoverAmplitude: 0.046,
+    hoverSpeed: 1.55,
+    rotateYSpeed: 0.072,
+    rotateXAmplitude: 0.04,
+    rotateXSpeed: 0.42,
+    intensityBase: 0.42,
+    intensityAmplitude: 0.28,
+    intensitySpeed: 4.2,
+    intensityCadence: 2.8,
+    lerpFactor: 0.14,
+  },
+  aiSpeaking: {
+    hoverAmplitude: 0.042,
+    hoverSpeed: 1.32,
+    rotateYSpeed: 0.064,
+    rotateXAmplitude: 0.036,
+    rotateXSpeed: 0.36,
+    intensityBase: 0.34,
+    intensityAmplitude: 0.22,
+    intensitySpeed: 3.5,
+    intensityCadence: 2.2,
+    lerpFactor: 0.12,
+  },
+};
+
+function OrbScene({ voiceState, showAmbientEffects }) {
   const groupRef = useRef(null);
   const audioIntensityRef = useRef(0);
 
   useFrame(({ clock }) => {
     if (!groupRef.current) return;
     const t = clock.elapsedTime;
+    const profile =
+      VOICE_MOTION_PROFILES[voiceState] ?? VOICE_MOTION_PROFILES.idle;
 
     // ── Hover Physics (Sine Wave) ──
-    groupRef.current.position.y = Math.sin(t * 0.9) * 0.055;
+    groupRef.current.position.y =
+      Math.sin(t * profile.hoverSpeed) * profile.hoverAmplitude;
 
     // ── Continuous Elegant Drift ──
-    groupRef.current.rotation.y = t * 0.05;
-    groupRef.current.rotation.x = Math.sin(t * 0.22) * 0.04;
+    groupRef.current.rotation.y = t * profile.rotateYSpeed;
+    groupRef.current.rotation.x =
+      Math.sin(t * profile.rotateXSpeed) * profile.rotateXAmplitude;
 
-    // ── Voice Intensity Interpolation (LERP) ──
-    // Simulated speech oscillations (random fast cadence when speaking)
-    const targetIntensity = isVoiceActive
-      ? 0.45 + 0.55 * Math.sin(t * 4.0) * Math.abs(Math.sin(t * 2.2))
-      : 0;
+    const pulse =
+      (Math.sin(t * profile.intensitySpeed) * 0.5 + 0.5) *
+      (0.72 + 0.28 * Math.abs(Math.sin(t * profile.intensityCadence)));
+    const targetIntensity =
+      profile.intensityBase + profile.intensityAmplitude * pulse;
 
     audioIntensityRef.current = THREE.MathUtils.lerp(
       audioIntensityRef.current,
       targetIntensity,
-      isVoiceActive ? 0.095 : 0.045
+      profile.lerpFactor
     );
+
+    const visiblePulse =
+      1 + audioIntensityRef.current * 0.1 + Math.sin(t * (profile.hoverSpeed * 1.8)) * 0.008;
+    groupRef.current.scale.setScalar(visiblePulse);
   });
 
   return (
@@ -483,17 +542,26 @@ function OrbScene({ isVoiceActive, showAmbientEffects }) {
  * @param {string} [props.size]
  * @param {boolean} [props.showControls]
  * @param {boolean} [props.showAmbientEffects]
- * @param {boolean} [props.isVoiceActive]
+ * @param {"idle"|"listening"|"userSpeaking"|"aiSpeaking"} [props.voiceState]
  */
 export default function AIOrbAvatar({
   className = "",
   size = "clamp(200px, 42vw, 320px)",
   showControls = false,
   showAmbientEffects = true,
-  isVoiceActive: externalVoiceActive = undefined,
+  voiceState: externalVoiceState = undefined,
 }) {
   const [internalVoiceActive, setInternalVoiceActive] = useState(false);
-  const isVoiceActive = externalVoiceActive !== undefined ? externalVoiceActive : internalVoiceActive;
+  const voiceState =
+    externalVoiceState !== undefined
+      ? externalVoiceState
+      : internalVoiceActive
+        ? "userSpeaking"
+        : "idle";
+  const isVoiceActive =
+    voiceState === "listening" ||
+    voiceState === "userSpeaking" ||
+    voiceState === "aiSpeaking";
 
   return (
     <div
@@ -514,7 +582,7 @@ export default function AIOrbAvatar({
         style={{ background: "transparent" }}
       >
         <OrbScene
-          isVoiceActive={isVoiceActive}
+          voiceState={voiceState}
           showAmbientEffects={showAmbientEffects}
         />
       </Canvas>

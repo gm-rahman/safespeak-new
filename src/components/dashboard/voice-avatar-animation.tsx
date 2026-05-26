@@ -25,14 +25,6 @@ const stateLabels: Record<VoiceAvatarState, string> = {
   aiSpeaking: "SafeSpeak assistant responding",
 };
 
-/**
- * Maps the voice state to a boolean for the 3D orb's audio reactivity.
- * The orb uses this to drive its u_audio_intensity uniform.
- */
-function isVoiceActiveFromState(state: VoiceAvatarState): boolean {
-  return state === "userSpeaking" || state === "aiSpeaking" || state === "listening";
-}
-
 export function VoiceAvatarAnimation({
   state,
   size = "large",
@@ -52,8 +44,6 @@ export function VoiceAvatarAnimation({
     ? "clamp(176px, 28vw, 240px)"
     : "58px";
 
-  const isActive = isVoiceActiveFromState(state);
-
   return (
     <div
       role="img"
@@ -65,7 +55,7 @@ export function VoiceAvatarAnimation({
     >
       <AIOrbAvatar
         size={orbSize}
-        isVoiceActive={isActive}
+        voiceState={state}
         showAmbientEffects={showAmbientEffects}
       />
     </div>
