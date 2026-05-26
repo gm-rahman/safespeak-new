@@ -538,8 +538,7 @@ export function AssistantInteraction({
           setVoiceAvatarState("listening");
           setIsTranscribing(true);
           void handleRecordedAudio(
-            mediaRecorder.mimeType || mimeType || "audio/webm",
-            target
+            mediaRecorder.mimeType || mimeType || "audio/webm"
           );
         };
 

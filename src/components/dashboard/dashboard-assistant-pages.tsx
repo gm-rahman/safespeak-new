@@ -696,6 +696,7 @@ function SafeSpeakAssistantConversationPage({
   startVoiceMode?: boolean;
 }) {
   const { t, i18n } = useTranslation();
+  const router = useRouter();
   type ConversationUiMessage = AssistantConversationMessage & {
     responseMeta?: {
       disclaimer?: string;
@@ -1972,12 +1973,12 @@ function SafeSpeakAssistantConversationPage({
       return;
     }
 
-    router.push(assistantEntryHref);
+    router.push(assistantEntryHrefString as Parameters<typeof router.push>[0]);
   }, [
     assistantEntryHrefString,
-    assistantEntryHref,
     initialCategory,
     initialTopic,
+    router,
     stopVoiceSession,
   ]);
 
