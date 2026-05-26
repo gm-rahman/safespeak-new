@@ -2485,7 +2485,7 @@ function SafeSpeakAssistantConversationPage({
                   </button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 rounded-[28px] border border-[#dbe6f2] bg-white/96 px-3 py-2 shadow-[0_10px_30px_rgba(148,163,184,0.18)] backdrop-blur">
+                  <div className="flex items-center gap-2 rounded-[28px] border border-[#cfe0f1] bg-[#f4f9ff]/96 px-3 py-2 shadow-[0_10px_30px_rgba(148,163,184,0.14)] backdrop-blur">
                     <input
                       type="text"
                       value={input}
@@ -2518,7 +2518,7 @@ function SafeSpeakAssistantConversationPage({
                       </button>
                     ) : null}
                     {shouldShowSendButton ? (
-                      <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-[#d7e5f3] bg-[#fbfdff] p-1 shadow-[0_6px_18px_rgba(148,163,184,0.12)]">
                         <button
                           type="submit"
                           data-testid="ai-conversation-send"
@@ -2548,7 +2548,7 @@ function SafeSpeakAssistantConversationPage({
                         </button>
                       </span>
                     ) : isVoiceSessionActive ? (
-                      <div className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-1.5 py-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-[#d7e5f3] bg-[#fbfdff] px-1.5 py-1 shadow-[0_6px_18px_rgba(148,163,184,0.12)]">
                         <button
                           type="button"
                           onClick={toggleVoiceSessionMute}
@@ -2582,7 +2582,7 @@ function SafeSpeakAssistantConversationPage({
                         </button>
                       </div>
                     ) : (
-                      <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                      <span className="inline-flex items-center rounded-full border border-[#d7e5f3] bg-[#fbfdff] p-1 shadow-[0_6px_18px_rgba(148,163,184,0.12)]">
                         <button
                           type="button"
                           onClick={startVoiceSession}
