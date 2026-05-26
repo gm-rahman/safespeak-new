@@ -88,6 +88,17 @@ const harmfulActivityPatterns = [
   /\b(hijab|hijub|headscarf)\b.{0,24}\b(grabbed|grab|pulled|pull)\b/i,
 ];
 
+function AvatarVoiceControlGlyph() {
+  return (
+    <span className="inline-flex h-4 items-end gap-[2px]" aria-hidden="true">
+      <span className="h-[7px] w-[2px] rounded-full bg-current opacity-70" />
+      <span className="h-[11px] w-[2px] rounded-full bg-current" />
+      <span className="h-[15px] w-[2px] rounded-full bg-current opacity-90" />
+      <span className="h-[10px] w-[2px] rounded-full bg-current opacity-80" />
+    </span>
+  );
+}
+
 function buildAssistantBubbleContent(
   assistantMessage: string,
   nextQuestion: string
@@ -2428,33 +2439,40 @@ function SafeSpeakAssistantConversationPage({
                       )}
                     </button>
                   ) : isVoiceSessionActive ? (
-                    <button
-                      type="button"
-                      onClick={stopVoiceSession}
-                      className="inline-flex h-10 shrink-0 items-center rounded-full bg-[#0f5d9f] px-4 text-[11px] font-bold text-white"
-                      aria-label="End voice mode"
-                    >
-                      End
-                    </button>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-1.5 py-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#f3f4f6] text-[#111827]">
+                        <IconMicrophone size={16} />
+                      </span>
+                      <button
+                        type="button"
+                        onClick={stopVoiceSession}
+                        className="inline-flex h-9 shrink-0 items-center rounded-full bg-[#1f8cff] px-4 text-[11px] font-bold text-white transition hover:bg-[#137cf0]"
+                        aria-label="End voice mode"
+                      >
+                        <span className="mr-2 inline-flex items-center gap-[2px]" aria-hidden="true">
+                          <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
+                          <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
+                          <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
+                        </span>
+                        End
+                      </button>
+                    </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={startVoiceSession}
-                      disabled={isSending || isTranscribing}
-                      className={`inline-flex h-10 items-center gap-2 rounded-full bg-white px-2.5 text-[#0f5d9f] ring-1 ring-[#dbe6f2] transition hover:bg-[#f8fbff] ${
-                        isSending || isTranscribing
-                          ? "cursor-not-allowed opacity-40"
-                          : ""
-                      }`}
-                      aria-label="Start avatar voice mode"
-                    >
-                      <VoiceAvatarAnimation
-                        state="idle"
-                        size="small"
-                        alt="Start avatar voice mode"
-                        className="scale-[0.82]"
-                      />
-                    </button>
+                    <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                      <button
+                        type="button"
+                        onClick={startVoiceSession}
+                        disabled={isSending || isTranscribing}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#111827] text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition hover:bg-[#0b1220] ${
+                          isSending || isTranscribing
+                            ? "cursor-not-allowed opacity-40"
+                            : ""
+                        }`}
+                        aria-label="Start avatar voice mode"
+                      >
+                        <AvatarVoiceControlGlyph />
+                      </button>
+                    </span>
                   )}
                 </div>
               )}

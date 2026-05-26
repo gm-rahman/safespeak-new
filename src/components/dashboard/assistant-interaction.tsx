@@ -97,6 +97,18 @@ const VOICE_RECORDING_TIMEOUT_MS = 8000;
 
 type VoiceCaptureTarget = "recording";
 
+function AvatarVoiceControlGlyph() {
+  return (
+    <span className="inline-flex items-center gap-[2px]" aria-hidden="true">
+      <span className="h-[4px] w-[4px] rounded-full bg-current opacity-95" />
+      <span className="h-[10px] w-[2.5px] rounded-full bg-current" />
+      <span className="h-[14px] w-[2.5px] rounded-full bg-current" />
+      <span className="h-[10px] w-[2.5px] rounded-full bg-current" />
+      <span className="h-[4px] w-[4px] rounded-full bg-current opacity-95" />
+    </span>
+  );
+}
+
 function getRecordingErrorMessage(
   errorCode: RecordingErrorCode,
   t: (key: string) => string
@@ -936,22 +948,19 @@ export function AssistantInteraction({
                   />
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={startAvatarVoiceMode}
-                  disabled={isTranscribing}
-                  aria-label="Start avatar voice mode"
-                  className={`inline-flex h-11 items-center gap-2 rounded-full bg-white px-2.5 text-[#0f5d9f] ring-1 ring-[#dbe6f2] transition hover:bg-[#f8fbff] ${
-                    isTranscribing ? "cursor-not-allowed opacity-40" : ""
-                  }`}
-                >
-                  <VoiceAvatarAnimation
-                    state="idle"
-                    size="small"
-                    alt="Start avatar voice mode"
-                    className="scale-[0.82]"
-                  />
-                </button>
+                <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
+                  <button
+                    type="button"
+                    onClick={startAvatarVoiceMode}
+                    disabled={isTranscribing}
+                    aria-label="Start avatar voice mode"
+                    className={`inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#111827] text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition hover:bg-[#0b1220] ${
+                      isTranscribing ? "cursor-not-allowed opacity-40" : ""
+                    }`}
+                  >
+                    <AvatarVoiceControlGlyph />
+                  </button>
+                </span>
               )}
             </div>
           )}
