@@ -1983,13 +1983,12 @@ function SafeSpeakAssistantConversationPage({
       ? "aiSpeaking"
       : liveTranscript
         ? "userSpeaking"
-        : isRecordingActive ||
-            isTranscribing ||
-            voiceAvatarState === "listening" ||
-            voiceAvatarState === "userSpeaking"
+        : isRecordingActive
           ? voiceAvatarState === "userSpeaking"
             ? "userSpeaking"
             : "listening"
+          : isTranscribing
+            ? "listening"
           : "idle";
 
   return (

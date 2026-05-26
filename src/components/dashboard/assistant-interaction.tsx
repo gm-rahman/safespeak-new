@@ -744,7 +744,11 @@ export function AssistantInteraction({
     ? "listening"
     : liveTranscript
       ? "userSpeaking"
-      : voiceAvatarState;
+      : isRecordingActive
+        ? voiceAvatarState === "userSpeaking"
+          ? "userSpeaking"
+          : "listening"
+        : "idle";
 
   return (
     <div className="flex flex-1 flex-col items-center px-2 pb-2 pt-4 sm:px-4 sm:pb-4 sm:pt-5">
