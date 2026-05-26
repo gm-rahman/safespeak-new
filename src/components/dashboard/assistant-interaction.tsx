@@ -853,7 +853,7 @@ export function AssistantInteraction({
           action="/dashboard"
           method="get"
           onSubmit={handleSubmit}
-          className="rounded-[20px] border border-[#dbe6f2] bg-white p-2"
+          className="w-full"
         >
           <input type="hidden" name="view" value="assistantconversation" />
           {initialCategory ? (
