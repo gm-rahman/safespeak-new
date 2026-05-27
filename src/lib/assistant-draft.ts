@@ -18,6 +18,7 @@ export type AssistantConversationDraft = {
   timeline: AssistantTimeline;
   timelineFieldOrder: string[];
   triageCtaVisible?: boolean;
+  voiceSessionActive?: boolean;
   incidentCategory?: AssistantIncidentCategory;
   topic?: DashboardCardFlowId;
   updatedAt: string;

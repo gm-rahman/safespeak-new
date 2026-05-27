@@ -718,6 +718,11 @@ function SafeSpeakAssistantConversationPage({
     topic: initialTopic,
     incidentCategory: initialCategory,
   });
+  const shouldRestoreVoiceMode = Boolean(
+    startVoiceMode && existingDraft?.voiceSessionActive
+  );
+  const shouldAutoStartVoiceMode =
+    shouldRestoreVoiceMode || (!existingDraft && startVoiceMode);
   const initialDraftMessages = existingDraft?.messages.filter(
     (message, index) =>
       !(
@@ -752,7 +757,9 @@ function SafeSpeakAssistantConversationPage({
   );
   const [error, setError] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
+  const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(
+    shouldRestoreVoiceMode
+  );
   const [isVoiceSessionMuted, setIsVoiceSessionMuted] = useState(false);
   const [isRecordingActive, setIsRecordingActive] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -798,6 +805,7 @@ function SafeSpeakAssistantConversationPage({
   const restartListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
+  const speechErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startVoiceRecordingRef = useRef<() => Promise<boolean>>(
     async () => false
   );
@@ -839,9 +847,7 @@ function SafeSpeakAssistantConversationPage({
   }, [messages]);
 
   useEffect(() => {
-    if (isVoiceSessionActive) {
-      voiceSessionActiveRef.current = true;
-    }
+    voiceSessionActiveRef.current = isVoiceSessionActive;
   }, [isVoiceSessionActive]);
 
   const clearAutoStopRecordingTimer = useCallback(() => {
@@ -858,6 +864,30 @@ function SafeSpeakAssistantConversationPage({
     }
   }, []);
 
+  const clearSpeechErrorTimer = useCallback(() => {
+    if (speechErrorTimerRef.current) {
+      clearTimeout(speechErrorTimerRef.current);
+      speechErrorTimerRef.current = null;
+    }
+  }, []);
+
+  const dismissSpeechError = useCallback(() => {
+    clearSpeechErrorTimer();
+    setSpeechError(null);
+  }, [clearSpeechErrorTimer]);
+
+  const showTransientSpeechError = useCallback(
+    (message: string, durationMs = 3500) => {
+      clearSpeechErrorTimer();
+      setSpeechError(message);
+      speechErrorTimerRef.current = setTimeout(() => {
+        setSpeechError(null);
+        speechErrorTimerRef.current = null;
+      }, durationMs);
+    },
+    [clearSpeechErrorTimer]
+  );
+
   const cleanupRecording = useCallback(() => {
     clearAutoStopRecordingTimer();
     recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -866,6 +896,10 @@ function SafeSpeakAssistantConversationPage({
   }, [clearAutoStopRecordingTimer]);
 
   const cleanupSpeechAudio = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+
     speechAudioRef.current?.pause();
     speechAudioRef.current = null;
 
@@ -963,6 +997,53 @@ function SafeSpeakAssistantConversationPage({
       setVoiceAvatarState("aiSpeaking");
 
       try {
+        if (
+          typeof window !== "undefined" &&
+          "speechSynthesis" in window &&
+          typeof SpeechSynthesisUtterance !== "undefined"
+        ) {
+          const utterance = new SpeechSynthesisUtterance(speechText);
+          utterance.lang = livePreviewLanguage;
+          utterance.rate = 1.04;
+          utterance.pitch = 1;
+          utterance.volume = 1;
+
+          utterance.onend = () => {
+            const shouldContinue = shouldContinueAfterPlaybackRef.current;
+
+            speechPlaybackActiveRef.current = false;
+            shouldContinueAfterPlaybackRef.current = false;
+            setIsSpeaking(false);
+            revealPendingSpeechResponse();
+            setVoiceAvatarState(shouldContinue ? "listening" : "idle");
+
+            if (shouldContinue) {
+              scheduleNextVoiceTurn();
+            }
+          };
+
+          utterance.onerror = () => {
+            const shouldContinue = shouldContinueAfterPlaybackRef.current;
+
+            speechPlaybackActiveRef.current = false;
+            shouldContinueAfterPlaybackRef.current = false;
+            setIsSpeaking(false);
+            setSpeechPlaybackError(t("dashboard.assistant.voicePlaybackFailed"));
+            revealPendingSpeechResponse();
+            setVoiceAvatarState(shouldContinue ? "listening" : "idle");
+
+            if (shouldContinue) {
+              scheduleNextVoiceTurn();
+            }
+          };
+
+          setIsGeneratingSpeech(false);
+          setIsSpeaking(true);
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utterance);
+          return;
+        }
+
         const voice = await synthesizeAssistantVoice(
           speechText,
           transcriptionLanguage
@@ -1045,6 +1126,7 @@ function SafeSpeakAssistantConversationPage({
     [
       captureConsentError,
       cleanupSpeechAudio,
+      livePreviewLanguage,
       revealPendingSpeechResponse,
       scheduleNextVoiceTurn,
       t,
@@ -1198,6 +1280,7 @@ function SafeSpeakAssistantConversationPage({
         timeline,
         timelineFieldOrder,
         triageCtaVisible: showTriageCta,
+        voiceSessionActive: isVoiceSessionActive,
         incidentCategory: initialCategory,
         topic: initialTopic,
       },
@@ -1211,6 +1294,7 @@ function SafeSpeakAssistantConversationPage({
     initialCategory,
     initialTopic,
     conversationSessionId,
+    isVoiceSessionActive,
     timeline,
     timelineFieldOrder,
     showTriageCta,
@@ -1502,11 +1586,13 @@ function SafeSpeakAssistantConversationPage({
 
   const transcribeVoiceBlobToInput = useCallback(
     async (audioBlob: Blob) => {
-      const transcription = await transcribeAssistantVoice(
-        audioBlob,
-        transcriptionLanguage
-      );
-      const transcript = transcription.transcript.trim();
+      const fastTranscript =
+        liveFinalTranscriptRef.current.trim() || liveTranscript.trim();
+      const transcript = fastTranscript
+        ? fastTranscript
+        : (
+            await transcribeAssistantVoice(audioBlob, transcriptionLanguage)
+          ).transcript.trim();
 
       if (!transcript) {
         throw new Error(getRecordingErrorMessage("no-speech", t));
@@ -1516,7 +1602,7 @@ function SafeSpeakAssistantConversationPage({
         [currentInput.trim(), transcript].filter(Boolean).join(" ")
       );
     },
-    [t, transcriptionLanguage]
+    [liveTranscript, t, transcriptionLanguage]
   );
 
   const processVoiceAudioBlob = useCallback(
@@ -1526,7 +1612,7 @@ function SafeSpeakAssistantConversationPage({
     ) => {
       if (!audioBlob.size) {
         setIsTranscribing(false);
-        setSpeechError(getRecordingErrorMessage("no-speech", t));
+        showTransientSpeechError(getRecordingErrorMessage("no-speech", t));
         if (voiceSessionActiveRef.current) {
           scheduleNextVoiceTurn();
         } else {
@@ -1536,14 +1622,16 @@ function SafeSpeakAssistantConversationPage({
       }
 
       try {
-        const transcription = await transcribeAssistantVoice(
-          audioBlob,
-          transcriptionLanguage
-        );
-        const transcript = transcription.transcript.trim();
+        const fastTranscript =
+          liveFinalTranscriptRef.current.trim() || liveTranscript.trim();
+        const transcript = fastTranscript
+          ? fastTranscript
+          : (
+              await transcribeAssistantVoice(audioBlob, transcriptionLanguage)
+            ).transcript.trim();
 
         if (!transcript) {
-          setSpeechError(getRecordingErrorMessage("no-speech", t));
+          showTransientSpeechError(getRecordingErrorMessage("no-speech", t));
           if (voiceSessionActiveRef.current) {
             scheduleNextVoiceTurn();
           } else {
@@ -1578,7 +1666,7 @@ function SafeSpeakAssistantConversationPage({
         }
 
         if (isNoSpeechTranscriptionError(recordingError)) {
-          setSpeechError(getRecordingErrorMessage("no-speech", t));
+          showTransientSpeechError(getRecordingErrorMessage("no-speech", t));
           if (voiceSessionActiveRef.current) {
             scheduleNextVoiceTurn();
           } else {
@@ -1590,19 +1678,22 @@ function SafeSpeakAssistantConversationPage({
         voiceSessionActiveRef.current = false;
         setIsVoiceSessionActive(false);
         setVoiceAvatarState("idle");
-        setSpeechError(
+        showTransientSpeechError(
           recordingError instanceof Error
             ? recordingError.message
-            : getRecordingErrorMessage("network", t)
+            : getRecordingErrorMessage("network", t),
+          4500
         );
       } finally {
         setIsTranscribing(false);
+        liveFinalTranscriptRef.current = "";
         setLiveTranscript("");
       }
     },
     [
       captureConsentError,
       input,
+      liveTranscript,
       requestAssistantTurn,
       scheduleNextVoiceTurn,
       t,
@@ -1653,7 +1744,7 @@ function SafeSpeakAssistantConversationPage({
       if (target === "transcription") {
         try {
           if (!audioBlob.size) {
-            setSpeechError(getRecordingErrorMessage("no-speech", t));
+            showTransientSpeechError(getRecordingErrorMessage("no-speech", t));
             setVoiceAvatarState("idle");
             return;
           }
@@ -1669,10 +1760,11 @@ function SafeSpeakAssistantConversationPage({
           }
         } catch (recordingError) {
           setVoiceAvatarState("idle");
-          setSpeechError(
+          showTransientSpeechError(
             recordingError instanceof Error
               ? recordingError.message
-              : getRecordingErrorMessage("network", t)
+              : getRecordingErrorMessage("network", t),
+            4500
           );
         } finally {
           setIsTranscribing(false);
@@ -1707,7 +1799,10 @@ function SafeSpeakAssistantConversationPage({
       typeof MediaRecorder === "undefined"
     ) {
       setVoiceAvatarState("idle");
-      setSpeechError(t("dashboard.assistant.speechErrors.unsupported"));
+      showTransientSpeechError(
+        t("dashboard.assistant.speechErrors.unsupported"),
+        4500
+      );
       return false;
     }
 
@@ -1721,19 +1816,21 @@ function SafeSpeakAssistantConversationPage({
             consentRequirements.audioTranscription.source
           );
         } catch (grantError) {
-          setSpeechError(
+          showTransientSpeechError(
             grantError instanceof Error
               ? grantError.message
-              : "Consent could not be saved."
+              : "Consent could not be saved.",
+            4500
           );
           setVoiceAvatarState("idle");
           return false;
         }
       } else {
-        setSpeechError(
+        showTransientSpeechError(
           consentCheckError instanceof Error
             ? consentCheckError.message
-            : "Consent status could not be checked."
+            : "Consent status could not be checked.",
+          4500
         );
         setVoiceAvatarState("idle");
         return false;
@@ -1774,7 +1871,10 @@ function SafeSpeakAssistantConversationPage({
         setActiveVoiceCaptureTarget(null);
         setVoiceAvatarState("idle");
         cleanupRecording();
-        setSpeechError(getRecordingErrorMessage("audio-capture", t));
+        showTransientSpeechError(
+          getRecordingErrorMessage("audio-capture", t),
+          4500
+        );
       };
 
       mediaRecorder.onstop = () => {
@@ -1829,7 +1929,7 @@ function SafeSpeakAssistantConversationPage({
         recordingError.name === "NotAllowedError"
           ? "not-allowed"
           : "audio-capture";
-      setSpeechError(getRecordingErrorMessage(errorCode, t));
+      showTransientSpeechError(getRecordingErrorMessage(errorCode, t), 4500);
       return false;
     }
   }, [
@@ -1842,6 +1942,7 @@ function SafeSpeakAssistantConversationPage({
     isTranscribing,
     startLiveTranscriptPreview,
     stopLiveTranscriptPreview,
+    showTransientSpeechError,
     t,
   ]);
 
@@ -2055,10 +2156,11 @@ function SafeSpeakAssistantConversationPage({
       setVoiceAvatarState("idle");
     } catch (error) {
       setVoiceAvatarState("idle");
-      setSpeechError(
+      showTransientSpeechError(
         error instanceof Error
           ? error.message
-          : getRecordingErrorMessage("network", t)
+          : getRecordingErrorMessage("network", t),
+        4500
       );
     } finally {
       setIsTranscribing(false);
@@ -2101,7 +2203,7 @@ function SafeSpeakAssistantConversationPage({
 
   useEffect(() => {
     if (
-      !startVoiceMode ||
+      !shouldAutoStartVoiceMode ||
       seededMessage ||
       hasStartedInitialVoiceModeRef.current
     ) {
@@ -2109,8 +2211,9 @@ function SafeSpeakAssistantConversationPage({
     }
 
     hasStartedInitialVoiceModeRef.current = true;
+    voiceSessionActiveRef.current = false;
     void startVoiceSession();
-  }, [seededMessage, startVoiceMode, startVoiceSession]);
+  }, [seededMessage, shouldAutoStartVoiceMode, startVoiceSession]);
 
   const handleAllowPendingConsent = async () => {
     const requirement = pendingConsentRequirement;
@@ -2179,6 +2282,11 @@ function SafeSpeakAssistantConversationPage({
 
     const message = input.trim();
 
+    dismissSpeechError();
+    setSpeechPlaybackError(null);
+    setLiveTranscript("");
+    liveFinalTranscriptRef.current = "";
+
     if (
       !message ||
       isSending ||
@@ -2205,6 +2313,9 @@ function SafeSpeakAssistantConversationPage({
   };
 
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (speechError) {
+      dismissSpeechError();
+    }
     setInput(event.target.value);
   };
 
