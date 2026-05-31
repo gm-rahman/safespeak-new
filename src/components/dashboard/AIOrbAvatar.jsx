@@ -91,8 +91,7 @@ varying vec3 vWorldPos;
 varying float vNoise;
 
 void main() {
-  float speed = 0.16 + u_audio_intensity * 0.32;
-  float t = u_time * speed;
+  float t = u_time * 0.16;
 
   // Multi-frequency surface displacement (fBM)
   vec3 noiseCoord = position * 1.8 + vec3(0.0, t * 0.8, t * 0.5);
@@ -142,8 +141,7 @@ void main() {
   float edgeFade = smoothstep(0.0, 0.08, ndotv);
 
   // ── Multi-octave Volumetric Plasma Noise ──
-  float speed = 0.16 + u_audio_intensity * 0.32;
-  float t = u_time * speed;
+  float t = u_time * 0.16;
   vec3 p1 = vWorldPos * 2.5 + vec3(0.0, t * 0.6, t * 0.3);
   float l1 = fbm(p1);
   vec3 p2 = vWorldPos * 4.2 - vec3(t * 0.3, t * 0.5, 0.0);
@@ -233,7 +231,7 @@ varying float vSeed;
 
 void main() {
   vec3 p = position;
-  float speed = 0.16 + aSeed * 0.22 + u_audio_intensity * 0.12;
+  float speed = 0.16 + aSeed * 0.22;
   float t = u_time * speed;
 
   // Elegant orbital rotational currents
@@ -291,6 +289,7 @@ void main() {
 
 function PlasmaCore({ audioIntensityRef }) {
   const matRef = useRef(null);
+  const accumulatedTimeRef = useRef(0);
 
   const uniforms = useMemo(
     () => ({
@@ -304,9 +303,11 @@ function PlasmaCore({ audioIntensityRef }) {
     []
   );
 
-  useFrame(({ clock }) => {
+  useFrame((_, delta) => {
     if (matRef.current) {
-      matRef.current.uniforms.u_time.value = clock.elapsedTime;
+      // Accumulate time using delta to prevent speed compounding over elapsed time
+      accumulatedTimeRef.current += delta;
+      matRef.current.uniforms.u_time.value = accumulatedTimeRef.current;
       matRef.current.uniforms.u_audio_intensity.value = audioIntensityRef.current;
     }
   });
@@ -364,6 +365,7 @@ function AtmosphericHalo({ audioIntensityRef }) {
 
 function StardustParticles({ count = 400, audioIntensityRef }) {
   const matRef = useRef(null);
+  const accumulatedTimeRef = useRef(0);
 
   // Spawns particles strictly within a sphere mathematically
   const { positions, seeds, scales } = useMemo(() => {
@@ -401,9 +403,11 @@ function StardustParticles({ count = 400, audioIntensityRef }) {
     []
   );
 
-  useFrame(({ clock }) => {
+  useFrame((_, delta) => {
     if (matRef.current) {
-      matRef.current.uniforms.u_time.value = clock.elapsedTime;
+      // Accumulate time using delta to prevent speed compounding over elapsed time
+      accumulatedTimeRef.current += delta;
+      matRef.current.uniforms.u_time.value = accumulatedTimeRef.current;
       matRef.current.uniforms.u_audio_intensity.value = audioIntensityRef.current;
     }
   });
@@ -484,7 +488,7 @@ function OrbScene({ voiceState, showAmbientEffects }) {
   const groupRef = useRef(null);
   const audioIntensityRef = useRef(0);
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, delta) => {
     if (!groupRef.current) return;
     const t = clock.elapsedTime;
     const profile =
@@ -494,8 +498,8 @@ function OrbScene({ voiceState, showAmbientEffects }) {
     groupRef.current.position.y =
       Math.sin(t * profile.hoverSpeed) * profile.hoverAmplitude;
 
-    // ── Continuous Elegant Drift ──
-    groupRef.current.rotation.y = t * profile.rotateYSpeed;
+    // ── Continuous Elegant Drift (delta-accumulated to prevent speed changes from compounding) ──
+    groupRef.current.rotation.y += delta * profile.rotateYSpeed;
     groupRef.current.rotation.x =
       Math.sin(t * profile.rotateXSpeed) * profile.rotateXAmplitude;
 
