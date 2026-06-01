@@ -90,6 +90,19 @@ const harmfulActivityPatterns = [
   /\b(hijab|hijub|headscarf)\b.{0,24}\b(grabbed|grab|pulled|pull)\b/i,
 ];
 
+type ConversationCitation = {
+  sourceId?: string;
+  title: string;
+  publisher?: string;
+  url?: string;
+  jurisdiction?: string;
+  sourceCategory?: string;
+  sourceType?: string;
+  topic?: string;
+  sectionRef?: string;
+  lastUpdated?: string;
+};
+
 function AvatarVoiceControlGlyph() {
   return (
     <span className="inline-flex items-center gap-[2px]" aria-hidden="true">
@@ -181,11 +194,157 @@ function getAssistantDisplayContent(message: AssistantConversationMessage) {
     /\s*It does not constitute legal advice\.?/gi,
   ]
     .reduce((content, pattern) => content.replace(pattern, ""), message.content)
-    .replace(/\s+([?.!,])/g, "$1")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((paragraph) =>
+      paragraph.replace(/\s+([?.!,])/g, "$1").replace(/[ \t]{2,}/g, " ").trim(),
+    )
+    .filter(Boolean)
+    .join("\n\n");
 
   return cleanedContent || "I'm here with you.";
+}
+
+function formatConversationCitationDate(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleDateString("en-AU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatConversationSectionRef(sectionRef?: string) {
+  if (!sectionRef) {
+    return "";
+  }
+
+  return sectionRef.replace(/^Section\s+/i, "section ");
+}
+
+function buildConversationCitationSummary(citation: ConversationCitation) {
+  const sectionRef = formatConversationSectionRef(citation.sectionRef);
+  return [citation.title, sectionRef].filter(Boolean).join(", ");
+}
+
+function dedupeConversationCitations(citations: ConversationCitation[]) {
+  const seen = new Set<string>();
+
+  return citations.filter((citation) => {
+    const key = `${buildConversationCitationSummary(citation)}|${citation.url ?? ""}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function AssistantResponseCitations({
+  citations,
+}: {
+  citations: ConversationCitation[];
+}) {
+  if (!citations.length) {
+    return null;
+  }
+
+  const dedupedCitations = dedupeConversationCitations(citations);
+  const compactCitations = dedupedCitations.slice(0, 2);
+  const showDetailsToggle =
+    dedupedCitations.length > compactCitations.length ||
+    dedupedCitations.some((citation) =>
+      Boolean(
+        citation.publisher ||
+          citation.jurisdiction ||
+          citation.sourceType ||
+          citation.lastUpdated,
+      ),
+    );
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      <p className="text-[11px] leading-[1.55] text-[#7d8ea5]">
+        <span className="font-semibold text-[#6a7a92]">
+          {compactCitations.length > 1 ? "Sources:" : "Source:"}
+        </span>{" "}
+        {compactCitations.map((citation, index) => {
+          const citationKey =
+            citation.sourceId ??
+            `${citation.title}-${citation.url ?? ""}-${citation.sectionRef ?? ""}`;
+          const summary = buildConversationCitationSummary(citation);
+
+          return (
+            <span key={citationKey}>
+              {index > 0 ? "; " : null}
+              {citation.url ? (
+                <a
+                  href={citation.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-[#c6d4e6] underline-offset-2 hover:text-[#52657d]"
+                >
+                  {summary}
+                </a>
+              ) : (
+                <span>{summary}</span>
+              )}
+            </span>
+          );
+        })}
+      </p>
+      {showDetailsToggle ? (
+        <details className="text-[10px] leading-[1.5] text-[#8b98ab]">
+          <summary className="cursor-pointer select-none text-[#6f8098] marker:text-[#9fb0c3]">
+            View details
+          </summary>
+          <div className="mt-1.5 space-y-1.5">
+            {dedupedCitations.map((citation) => {
+              const citationKey =
+                citation.sourceId ??
+                `${citation.title}-${citation.url ?? ""}-${citation.sectionRef ?? ""}`;
+              const details = [
+                citation.publisher,
+                citation.jurisdiction,
+                citation.sourceType,
+                formatConversationCitationDate(citation.lastUpdated),
+              ].filter(Boolean);
+              const summary = buildConversationCitationSummary(citation);
+
+              return (
+                <p key={citationKey}>
+                  {citation.url ? (
+                    <a
+                      href={citation.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline decoration-[#d4deea] underline-offset-2 hover:text-[#52657d]"
+                    >
+                      {summary}
+                    </a>
+                  ) : (
+                    <span>{summary}</span>
+                  )}
+                  {details.length ? ` — ${details.join(" | ")}` : ""}
+                </p>
+              );
+            })}
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
 }
 
 type RecordingErrorCode =
@@ -688,18 +847,7 @@ function SafeSpeakAssistantConversationPage({
   type ConversationUiMessage = AssistantConversationMessage & {
     responseMeta?: {
       disclaimer?: string;
-      citations?: Array<{
-        sourceId?: string;
-        title: string;
-        publisher?: string;
-        url?: string;
-        jurisdiction?: string;
-        sourceCategory?: string;
-        sourceType?: string;
-        topic?: string;
-        sectionRef?: string;
-        lastUpdated?: string;
-      }>;
+      citations?: ConversationCitation[];
       confidence?: string;
       reviewStatus?: string;
       ragUnavailable?: boolean;
@@ -2389,7 +2537,7 @@ function SafeSpeakAssistantConversationPage({
                     >
                       <div className="max-w-[min(88%,540px)]">
                         <div
-                          className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-2.5 text-[13px] leading-[1.6] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
+                          className={`inline-flex max-w-full whitespace-pre-wrap rounded-[20px] bg-white px-4 py-2.5 text-[13px] leading-[1.6] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
                             message.role === "user"
                               ? "rounded-tr-[8px] text-[#314256]"
                               : "rounded-tl-[8px] text-[#5f6f86]"
@@ -2397,6 +2545,11 @@ function SafeSpeakAssistantConversationPage({
                         >
                           {getAssistantDisplayContent(message)}
                         </div>
+                        {message.role === "assistant" ? (
+                          <AssistantResponseCitations
+                            citations={message.responseMeta?.citations ?? []}
+                          />
+                        ) : null}
                       </div>
                     </div>
                   ))}

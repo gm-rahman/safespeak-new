@@ -1,0 +1,24 @@
+
+> next-start@0.1.0 dev
+> node scripts/start-next-dev.mjs --port 3000 --dist .next-dev
+
+   ▲ Next.js 15.5.7 (Turbopack)
+   - Local:        http://localhost:3000
+   - Network:      http://10.10.20.32:3000
+   - Environments: .env
+
+ ✓ Starting...
+Creating turbopack project {
+  dir: 'D:\\RAJUAN-PERSONAL\\VSCODE\\safespeak\\safespeak-frontend',
+  testMode: true
+}
+ ✓ Ready in 1536ms
+ ○ Compiling / ...
+ ✓ Compiled / in 7s
+🌐 i18next is maintained with support from Locize — consider powering your project with managed localization (AI, CDN, integrations): https://locize.com 💙
+ GET / 200 in 7580ms
+ GET / 200 in 207ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 2.3s
+ GET /dashboard?view=assistantconversation&topic=general_assistant&message=According%20to%20the%20uploaded%20Privacy%20Act%201988%2C%20what%20section%20deals%20with%20serious%20interference%20with%20privacy%3F 200 in 2633ms
+ GET /dashboard?view=assistantconversation&topic=general_assistant&message=What+is+personal+information+under+the+Privacy+Act+1988%3F 200 in 527ms
