@@ -65,6 +65,20 @@ function getUrlIncidentCategory() {
   return isAssistantIncidentCategory(category) ? category : undefined;
 }
 
+function shouldShowTriageDebug() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+
+  return (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    params.get("triageDebug") === "1"
+  );
+}
+
 function buildFallbackTriage(): ConversationFlowTriage {
   const source = getAssistantTriageSource();
   const incidentCategory = source?.incidentCategory ?? getUrlIncidentCategory();
@@ -86,6 +100,7 @@ function buildFallbackTriage(): ConversationFlowTriage {
     missingInformation: ["more_context"],
     canProceedToRecommendations: category !== "general_support",
     matchedResourceTypes: ["government", "mental_health", "evidence_guidance"],
+    relatedIssueTypes: [category],
     disclaimer: "This is information only, not legal advice.",
   };
 }
@@ -133,6 +148,9 @@ function buildTriageSearchText(triage: ConversationFlowTriage | null): string {
     triage.likelyCategory,
     triage.likelyCategoryLabel,
     triage.reasoningSummary,
+    ...(triage.structuredFacts?.matchedFacts ?? []),
+    ...(triage.structuredFacts?.organisations ?? []),
+    ...(triage.structuredFacts?.platforms ?? []),
     ...triage.matchedResourceTypes,
     ...triage.missingInformation,
     ...triage.matchedKnowledgeSources.flatMap((source) => [
@@ -172,6 +190,7 @@ function getViolenceMicroCardProfile(
     return null;
   }
 
+  const structuredFacts = triage.structuredFacts ?? {};
   const searchText = buildTriageSearchText(triage);
   let preferredChips: MicroEducationChip[] = [
     "harassment",
@@ -212,7 +231,65 @@ function getViolenceMicroCardProfile(
   let excludedPatterns: RegExp[] = [];
   let minimumScore = 18;
 
-  if (triage.likelyCategory === "domestic_violence") {
+  if (
+    structuredFacts.privacyDataBreach ||
+    structuredFacts.identityTheftRisk ||
+    structuredFacts.scamFraud ||
+    structuredFacts.imageBasedAbuse ||
+    structuredFacts.onlineThreatBlackmail ||
+    structuredFacts.employerHealthPrivacy
+  ) {
+    preferredChips = ["safety", "rights", "harassment", "mentalHealth"];
+    label = "Privacy, identity risk, and online threats";
+    keywords = [
+      "privacy",
+      "data breach",
+      "identity",
+      "scam",
+      "bank",
+      "photo",
+      "image",
+      "blackmail",
+      "evidence",
+      "health information",
+    ];
+    anchorPatterns = [
+      /\bprivacy\b/i,
+      /\bdata breach\b/i,
+      /\bidentity\b/i,
+      /\bscam\b/i,
+      /\bbank\b/i,
+      /\bimage-based\b/i,
+      /\bprivate photos?\b/i,
+      /\bblackmail\b/i,
+      /\bhealth information\b/i,
+      /\bevidence\b/i,
+    ];
+    bridgePatterns = [
+      /\bonline safety\b/i,
+      /\besafety\b/i,
+      /\bcomplaint\b/i,
+      /\bprivacy complaint\b/i,
+      /\bevidence\b/i,
+      /\bscreenshot\b/i,
+      /\bmessages?\b/i,
+    ];
+    protectedPatterns = [
+      /\blegal aid\b/i,
+      /\bevidence\b/i,
+      /\bprivacy\b/i,
+      /\bidentity\b/i,
+      /\bonline safety\b/i,
+    ];
+    excludedPatterns = [
+      /\bmigrant\b/i,
+      /\bstudent\b/i,
+      /\bdiscrimination\b/i,
+      /\bracial\b/i,
+      /\bbullying\b/i,
+    ];
+    minimumScore = 18;
+  } else if (triage.likelyCategory === "domestic_violence") {
     preferredChips = ["safety", "mentalHealth", "harassment", "rights"];
     label = "Domestic or family violence";
     keywords = [
@@ -427,12 +504,22 @@ type TriagePresentation = {
   thirdBody: string;
   thirdActionLabel: string;
   thirdActionHref: Route;
+  stepReasons?: string[];
+  microCardSummary?: string;
 };
 
 function buildTriagePresentation(
   triage: ConversationFlowTriage | null,
   isLoading: boolean
 ): TriagePresentation {
+  if (!isLoading && triage?.presentation) {
+    return {
+      ...triage.presentation,
+      secondActionHref: triage.presentation.secondActionHref as Route,
+      thirdActionHref: triage.presentation.thirdActionHref as Route,
+    };
+  }
+
   if (isLoading) {
     return {
       title: "Reviewing your situation",
@@ -453,6 +540,8 @@ function buildTriagePresentation(
         "You can talk with a support service if this feels overwhelming.",
       thirdActionLabel: "Find support",
       thirdActionHref: "/dashboard/explorer",
+      stepReasons: [],
+      microCardSummary: "",
     };
   }
 
@@ -484,6 +573,8 @@ function buildTriagePresentation(
       "You can speak with a support service if this feels stressful, upsetting, or unsafe.",
     thirdActionLabel: "Find support",
     thirdActionHref: "/dashboard/explorer" as Route,
+    stepReasons: [],
+    microCardSummary: "",
   };
 
   if (category === "domestic_violence") {
@@ -716,8 +807,13 @@ function getSuggestedMicroCards(
   profile: ViolenceMicroCardProfile | null,
   preferredIds: string[] = []
 ): MicroEducationItem[] {
+  const cardsById = new Map(cards.map((card) => [card.id, card]));
+  const preferredCards = preferredIds
+    .map((id) => cardsById.get(id))
+    .filter((card): card is MicroEducationItem => Boolean(card));
+
   if (!profile) {
-    return [];
+    return preferredCards.slice(0, 8);
   }
 
   const suggestedCards = cards
@@ -736,20 +832,16 @@ function getSuggestedMicroCards(
     .map((item) => item.card)
     .slice(0, 8);
 
-  if (preferredIds.length === 0) {
+  if (preferredCards.length === 0) {
     return suggestedCards;
   }
 
-  const preferredIdSet = new Set(preferredIds);
-  const cardsById = new Map(suggestedCards.map((card) => [card.id, card]));
-  const orderedCards = preferredIds
-    .map((id) => cardsById.get(id))
-    .filter((card): card is MicroEducationItem => Boolean(card));
+  const preferredIdSet = new Set(preferredCards.map((card) => card.id));
   const remainingCards = suggestedCards.filter(
     (card) => !preferredIdSet.has(card.id)
   );
 
-  return [...orderedCards, ...remainingCards].slice(0, 8);
+  return [...preferredCards, ...remainingCards].slice(0, 8);
 }
 
 function SectionTitle({
@@ -1548,10 +1640,8 @@ function ReportSubmissionSupportPage() {
                           AI suggested micro-cards
                         </p>
                         <p className="mt-1 text-sm leading-5 text-[#64748B]">
-                          Matched to{" "}
-                          {violenceMicroCardProfile.label.toLowerCase()} and{" "}
-                          {violenceMicroCardProfile.safetyRiskLevel} safety
-                          risk.
+                          {triagePresentation.microCardSummary ||
+                            `Matched to ${violenceMicroCardProfile.label.toLowerCase()} and ${violenceMicroCardProfile.safetyRiskLevel} safety risk.`}
                         </p>
                       </div>
                       <Link
@@ -1663,6 +1753,61 @@ function ReportSubmissionSupportPage() {
                   />
                 </div>
               </section>
+
+              {shouldShowTriageDebug() && triage ? (
+                <section>
+                  <details className="rounded-[20px] border border-dashed border-[#D8E3F0] bg-[#F8FAFC] p-5">
+                    <summary className="cursor-pointer text-sm font-extrabold text-[#0F172A]">
+                      Triage debug
+                    </summary>
+                    <div className="mt-4 grid gap-4 text-sm leading-6 text-[#475569] md:grid-cols-2">
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                          Selected category
+                        </p>
+                        <p className="mt-1">
+                          {triage.likelyCategoryLabel || triage.likelyCategory}
+                        </p>
+                        <p className="text-xs text-[#94A3B8]">
+                          Related issue types:{" "}
+                          {(triage.relatedIssueTypes ?? []).join(", ") || "none"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                          Matched facts
+                        </p>
+                        <p className="mt-1">
+                          {(triage.structuredFacts?.matchedFacts ?? []).join("; ") ||
+                            "none"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                          Recommended step reasons
+                        </p>
+                        <p className="mt-1">
+                          {(triagePresentation.stepReasons ?? []).join("; ") ||
+                            "none"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                          Card selection reasons
+                        </p>
+                        <p className="mt-1">
+                          {triagePresentation.microCardSummary || "none"}
+                        </p>
+                        <p className="text-xs text-[#94A3B8]">
+                          Suggested cards:{" "}
+                          {suggestedMicroCards.map((card) => card.title).join(", ") ||
+                            "none"}
+                        </p>
+                      </div>
+                    </div>
+                  </details>
+                </section>
+              ) : null}
 
               <footer className="border-t border-[#F3F4F6] pt-8">
                 <p className="mx-auto max-w-[672px] text-center text-xs leading-5 text-[#9CA3AF]">

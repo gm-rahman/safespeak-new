@@ -56,6 +56,45 @@ export type ConversationFlowTriage = {
   confidenceLabel?: string;
   safetyRiskLevel: "low" | "medium" | "high" | "immediate";
   reasoningSummary: string;
+  structuredFacts?: {
+    privacyDataBreach?: boolean;
+    identityTheftRisk?: boolean;
+    scamFraud?: boolean;
+    imageBasedAbuse?: boolean;
+    onlineThreatBlackmail?: boolean;
+    employerHealthPrivacy?: boolean;
+    workplaceBullying?: boolean;
+    workplaceContext?: boolean;
+    racismDiscrimination?: boolean;
+    domesticViolence?: boolean;
+    physicalViolence?: boolean;
+    threatsPresent?: boolean;
+    immediateDanger?: boolean;
+    evidenceAvailable?: boolean;
+    matchedFacts?: string[];
+    organisations?: string[];
+    platforms?: string[];
+    jurisdiction?: string;
+  };
+  relatedIssueTypes?: string[];
+  presentation?: {
+    title: string;
+    body: string;
+    assessmentNote: string;
+    primaryStepTitle: string;
+    primaryStepBody: string;
+    immediateDangerBody: string;
+    secondTitle: string;
+    secondBody: string;
+    secondActionLabel: string;
+    secondActionHref: string;
+    thirdTitle: string;
+    thirdBody: string;
+    thirdActionLabel: string;
+    thirdActionHref: string;
+    stepReasons?: string[];
+    microCardSummary?: string;
+  };
   matchedLegislationIds: string[];
   matchedKnowledgeSources: Array<{
     id?: string;
