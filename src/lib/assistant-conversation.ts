@@ -45,6 +45,15 @@ export type TimelineAssistantResponse = {
   readyForSubmission: boolean;
   confidence: "low" | "medium" | "high";
   disclaimer?: string;
+  triageReady?: boolean;
+  nextAction?: string;
+  showSources?: boolean;
+  sourceDisplayReason?:
+    | "legal_lookup"
+    | "explicit_citation_request"
+    | "hidden_support_reply"
+    | "triage_handoff"
+    | "not_directly_grounded";
   citations: Array<{
     sourceId?: string;
     title: string;

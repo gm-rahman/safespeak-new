@@ -1,7 +1,6 @@
 "use client";
 
 import { ApiRequestError, apiRequest, type ApiEnvelope } from "@/lib/api";
-import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import { consentRequirements, ensureConsent } from "@/lib/consent";
 import {
   clearAnonymousSession,
@@ -67,6 +66,25 @@ export type ConversationFlowTriage = {
     workplaceContext?: boolean;
     racismDiscrimination?: boolean;
     domesticViolence?: boolean;
+    domesticFamilyContext?: boolean;
+    coerciveControl?: boolean;
+    blackmailOrExtortion?: boolean;
+    privatePhotosOrMessages?: boolean;
+    personalDataLeak?: boolean;
+    companyOrOrganisationInvolved?: boolean;
+    employerInvolved?: boolean;
+    healthInformation?: boolean;
+    identityDocumentsExposed?: boolean;
+    bankDetailsExposed?: boolean;
+    moneyLost?: boolean;
+    protectedAttribute?: boolean;
+    schoolContext?: boolean;
+    workplaceDiscrimination?: boolean;
+    housingOrServiceContext?: boolean;
+    elderOrVulnerablePerson?: boolean;
+    migrationOrVisaThreat?: boolean;
+    languageOrInterpreterNeed?: boolean;
+    selfHarmOrSuicidal?: boolean;
     physicalViolence?: boolean;
     threatsPresent?: boolean;
     immediateDanger?: boolean;
@@ -74,6 +92,7 @@ export type ConversationFlowTriage = {
     matchedFacts?: string[];
     organisations?: string[];
     platforms?: string[];
+    protectedAttributes?: string[];
     jurisdiction?: string;
   };
   relatedIssueTypes?: string[];
@@ -131,11 +150,21 @@ export type ConversationFlowRecommendation = {
 };
 
 export type ConversationFlowSupportAction = {
-  slot: "immediateDanger" | "esafety" | "counselling";
+  slot:
+    | "immediateDanger"
+    | "primarySupport"
+    | "secondarySupport"
+    | "additional";
   serviceId?: string;
   resourceType?: string;
+  title: string;
+  description: string;
+  whySuggested: string;
   ctaLabel?: string;
   phone?: string;
+  href: string;
+  actionKind: "call" | "external_link";
+  consentNote: string;
   websiteUrl?: string;
 };
 
@@ -187,6 +216,16 @@ type ConversationTurnResponse = {
   responseMeta?: {
     confidence?: string;
     disclaimer?: string;
+    triageReady?: boolean;
+    nextAction?: string;
+    conversationSessionId?: string;
+    showSources?: boolean;
+    sourceDisplayReason?:
+      | "legal_lookup"
+      | "explicit_citation_request"
+      | "hidden_support_reply"
+      | "triage_handoff"
+      | "not_directly_grounded";
     citations?: Array<{
       sourceId?: string;
       title: string;
@@ -361,19 +400,3 @@ export async function fetchConversationFlowDetails(
   return response.data;
 }
 
-export function buildMockConversationCategory(
-  incidentCategory?: AssistantIncidentCategory
-): string {
-  switch (incidentCategory) {
-    case "domestic_violence":
-      return "domestic_violence";
-    case "racial_abuse":
-      return "racism_discrimination";
-    case "cyber_scam":
-      return "scam_fraud";
-    case "migrant_challenges":
-      return "harassment";
-    default:
-      return "general_support";
-  }
-}

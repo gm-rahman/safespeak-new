@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -169,7 +170,18 @@ function detectHarmfulActivity(input: {
 function isActionableConversationTriage(response: {
   transition: { offerTriage: boolean };
   triage?: ConversationFlowTriage | null;
+  responseMeta?: {
+    triageReady?: boolean;
+    nextAction?: string;
+  };
 }): boolean {
+  if (
+    response.responseMeta?.triageReady ||
+    response.responseMeta?.nextAction === "show_triage_button"
+  ) {
+    return true;
+  }
+
   const triage = response.triage;
 
   return Boolean(
@@ -205,24 +217,6 @@ function getAssistantDisplayContent(message: AssistantConversationMessage) {
   return cleanedContent || "I'm here with you.";
 }
 
-function formatConversationCitationDate(value?: string) {
-  if (!value) {
-    return "";
-  }
-
-  const parsed = new Date(value);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return parsed.toLocaleDateString("en-AU", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 function formatConversationSectionRef(sectionRef?: string) {
   if (!sectionRef) {
     return "";
@@ -236,11 +230,15 @@ function buildConversationCitationSummary(citation: ConversationCitation) {
   return [citation.title, sectionRef].filter(Boolean).join(", ");
 }
 
+function buildConversationCitationIdentity(citation: ConversationCitation) {
+  return buildConversationCitationSummary(citation);
+}
+
 function dedupeConversationCitations(citations: ConversationCitation[]) {
   const seen = new Set<string>();
 
   return citations.filter((citation) => {
-    const key = `${buildConversationCitationSummary(citation)}|${citation.url ?? ""}`;
+    const key = buildConversationCitationIdentity(citation);
 
     if (seen.has(key)) {
       return false;
@@ -253,36 +251,45 @@ function dedupeConversationCitations(citations: ConversationCitation[]) {
 
 function AssistantResponseCitations({
   citations,
+  showSources,
+  answerText,
 }: {
   citations: ConversationCitation[];
+  showSources: boolean;
+  answerText: string;
 }) {
-  if (!citations.length) {
+  if (!showSources || !citations.length) {
     return null;
   }
 
   const dedupedCitations = dedupeConversationCitations(citations);
-  const compactCitations = dedupedCitations.slice(0, 2);
-  const showDetailsToggle =
-    dedupedCitations.length > compactCitations.length ||
-    dedupedCitations.some((citation) =>
-      Boolean(
-        citation.publisher ||
-          citation.jurisdiction ||
-          citation.sourceType ||
-          citation.lastUpdated,
-      ),
-    );
+  const normalizedAnswer = answerText.toLowerCase();
+  const directReferenceCount = dedupedCitations.filter((citation) => {
+    const sectionRef = formatConversationSectionRef(citation.sectionRef)
+      .trim()
+      .toLowerCase();
+
+    if (sectionRef) {
+      return normalizedAnswer.includes(sectionRef);
+    }
+
+    return citation.title.trim().length
+      ? normalizedAnswer.includes(citation.title.trim().toLowerCase())
+      : false;
+  }).length;
+  const compactCitations = dedupedCitations.slice(
+    0,
+    directReferenceCount > 1 ? 2 : 1
+  );
 
   return (
-    <div className="mt-2 space-y-1.5">
+    <div className="mt-2">
       <p className="text-[11px] leading-[1.55] text-[#7d8ea5]">
         <span className="font-semibold text-[#6a7a92]">
           {compactCitations.length > 1 ? "Sources:" : "Source:"}
         </span>{" "}
         {compactCitations.map((citation, index) => {
-          const citationKey =
-            citation.sourceId ??
-            `${citation.title}-${citation.url ?? ""}-${citation.sectionRef ?? ""}`;
+          const citationKey = buildConversationCitationIdentity(citation);
           const summary = buildConversationCitationSummary(citation);
 
           return (
@@ -304,45 +311,6 @@ function AssistantResponseCitations({
           );
         })}
       </p>
-      {showDetailsToggle ? (
-        <details className="text-[10px] leading-[1.5] text-[#8b98ab]">
-          <summary className="cursor-pointer select-none text-[#6f8098] marker:text-[#9fb0c3]">
-            View details
-          </summary>
-          <div className="mt-1.5 space-y-1.5">
-            {dedupedCitations.map((citation) => {
-              const citationKey =
-                citation.sourceId ??
-                `${citation.title}-${citation.url ?? ""}-${citation.sectionRef ?? ""}`;
-              const details = [
-                citation.publisher,
-                citation.jurisdiction,
-                citation.sourceType,
-                formatConversationCitationDate(citation.lastUpdated),
-              ].filter(Boolean);
-              const summary = buildConversationCitationSummary(citation);
-
-              return (
-                <p key={citationKey}>
-                  {citation.url ? (
-                    <a
-                      href={citation.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline decoration-[#d4deea] underline-offset-2 hover:text-[#52657d]"
-                    >
-                      {summary}
-                    </a>
-                  ) : (
-                    <span>{summary}</span>
-                  )}
-                  {details.length ? ` — ${details.join(" | ")}` : ""}
-                </p>
-              );
-            })}
-          </div>
-        </details>
-      ) : null}
     </div>
   );
 }
@@ -444,24 +412,26 @@ function isNoSpeechTranscriptionError(error: unknown): boolean {
 }
 
 function getContinueReportSubmissionHref(
-  incidentCategory?: AssistantIncidentCategory
+  incidentCategory?: AssistantIncidentCategory,
+  conversationSessionId?: string
 ) {
-  if (incidentCategory) {
-    return {
-      pathname: "/dashboard",
-      query: {
-        view: "reportsubmissionsupport",
-        category: incidentCategory,
-      },
-    } as const;
-  }
-
   return {
     pathname: "/dashboard",
     query: {
       view: "reportsubmissionsupport",
+      category: incidentCategory,
+      conversationSessionId,
     },
   } as const;
+}
+
+function getContinueReportSubmissionPath(
+  incidentCategory?: AssistantIncidentCategory,
+  conversationSessionId?: string
+) {
+  return getDashboardHrefString(
+    getContinueReportSubmissionHref(incidentCategory, conversationSessionId)
+  );
 }
 
 function getAssistantEntryHref(
@@ -849,6 +819,16 @@ function SafeSpeakAssistantConversationPage({
       disclaimer?: string;
       citations?: ConversationCitation[];
       confidence?: string;
+      triageReady?: boolean;
+      nextAction?: string;
+      conversationSessionId?: string;
+      showSources?: boolean;
+      sourceDisplayReason?:
+        | "legal_lookup"
+        | "explicit_citation_request"
+        | "hidden_support_reply"
+        | "triage_handoff"
+        | "not_directly_grounded";
       reviewStatus?: string;
       ragUnavailable?: boolean;
       pendingHumanReview?: boolean;
@@ -971,8 +951,10 @@ function SafeSpeakAssistantConversationPage({
   const [showTriageCta, setShowTriageCta] = useState(
     Boolean(existingDraft?.triageCtaVisible)
   );
-  const continueReportSubmissionHref =
-    getContinueReportSubmissionHref(initialCategory);
+  const continueReportSubmissionPath = getContinueReportSubmissionPath(
+    initialCategory,
+    conversationSessionId ?? undefined
+  );
   const assistantEntryHref = getAssistantEntryHref(
     initialTopic,
     initialCategory
@@ -1499,6 +1481,7 @@ function SafeSpeakAssistantConversationPage({
     ) => {
       setIsSending(true);
       setError(null);
+      let resolvedSessionId = conversationSessionId;
 
       try {
         try {
@@ -1514,8 +1497,6 @@ function SafeSpeakAssistantConversationPage({
             throw consentError;
           }
         }
-
-        let resolvedSessionId = conversationSessionId;
 
         if (!resolvedSessionId) {
           const session = await createConversationFlowSession({
@@ -1533,6 +1514,13 @@ function SafeSpeakAssistantConversationPage({
           language: transcriptionLanguage,
         });
         const nextTimeline = response.factExtraction.timeline ?? {};
+        const responseSessionId =
+          response.responseMeta?.conversationSessionId ?? resolvedSessionId;
+
+        if (responseSessionId && responseSessionId !== conversationSessionId) {
+          setConversationSessionId(responseSessionId);
+          resolvedSessionId = responseSessionId;
+        }
 
         setTimeline((currentTimeline) => {
           const nextKeys = Object.entries(nextTimeline)
@@ -1563,6 +1551,11 @@ function SafeSpeakAssistantConversationPage({
           responseMeta: {
             citations: response.responseMeta?.citations,
             confidence: response.responseMeta?.confidence,
+            triageReady: response.responseMeta?.triageReady,
+            nextAction: response.responseMeta?.nextAction,
+            conversationSessionId: responseSessionId,
+            showSources: response.responseMeta?.showSources,
+            sourceDisplayReason: response.responseMeta?.sourceDisplayReason,
             reviewStatus: response.responseMeta?.reviewStatus,
             ragUnavailable: response.responseMeta?.rag?.unavailable,
             pendingHumanReview: Boolean(
@@ -1644,6 +1637,11 @@ function SafeSpeakAssistantConversationPage({
             responseMeta: {
               citations: response.citations,
               confidence: response.confidence,
+              triageReady: response.triageReady,
+              nextAction: response.nextAction,
+              conversationSessionId: resolvedSessionId ?? undefined,
+              showSources: response.showSources,
+              sourceDisplayReason: response.sourceDisplayReason,
               reviewStatus: response.reviewStatus,
               ragUnavailable: response.rag?.unavailable,
               pendingHumanReview:
@@ -1668,15 +1666,17 @@ function SafeSpeakAssistantConversationPage({
           }
 
           if (
-            response.readyForSubmission &&
-            detectHarmfulActivity({
-              incidentCategory: initialCategory,
-              timeline: response.timeline,
-              conversation: [
-                ...conversation,
-                { role: "user", content: message },
-              ],
-            })
+            response.triageReady ||
+            response.nextAction === "show_triage_button" ||
+            (response.readyForSubmission &&
+              detectHarmfulActivity({
+                incidentCategory: initialCategory,
+                timeline: response.timeline,
+                conversation: [
+                  ...conversation,
+                  { role: "user", content: message },
+                ],
+              }))
           ) {
             setShowTriageCta(true);
           }
@@ -2527,43 +2527,54 @@ function SafeSpeakAssistantConversationPage({
                 className="conversation-scrollbar h-full overflow-y-auto"
               >
                 <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 px-2 pb-40">
-                  {messages.map((message, index) => (
-                    <div
-                      key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
-                      data-testid={`ai-conversation-message-${message.role}`}
-                      className={
-                        message.role === "user" ? "flex justify-end" : ""
-                      }
-                    >
-                      <div className="max-w-[min(88%,540px)]">
-                        <div
-                          className={`inline-flex max-w-full whitespace-pre-wrap rounded-[20px] bg-white px-4 py-2.5 text-[13px] leading-[1.6] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
-                            message.role === "user"
-                              ? "rounded-tr-[8px] text-[#314256]"
-                              : "rounded-tl-[8px] text-[#5f6f86]"
-                          }`}
-                        >
-                          {getAssistantDisplayContent(message)}
+                  {messages.map((message, index) => {
+                    const displayContent = getAssistantDisplayContent(message);
+
+                    return (
+                      <div
+                        key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
+                        data-testid={`ai-conversation-message-${message.role}`}
+                        className={
+                          message.role === "user" ? "flex justify-end" : ""
+                        }
+                      >
+                        <div className="max-w-[min(88%,540px)]">
+                          <div
+                            className={`inline-flex max-w-full whitespace-pre-wrap rounded-[20px] bg-white px-4 py-2.5 text-[13px] leading-[1.6] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
+                              message.role === "user"
+                                ? "rounded-tr-[8px] text-[#314256]"
+                                : "rounded-tl-[8px] text-[#5f6f86]"
+                            }`}
+                          >
+                            {displayContent}
+                          </div>
+                          {message.role === "assistant" ? (
+                            <AssistantResponseCitations
+                              citations={message.responseMeta?.citations ?? []}
+                              showSources={Boolean(
+                                message.responseMeta?.showSources
+                              )}
+                              answerText={displayContent}
+                            />
+                          ) : null}
                         </div>
-                        {message.role === "assistant" ? (
-                          <AssistantResponseCitations
-                            citations={message.responseMeta?.citations ?? []}
-                          />
-                        ) : null}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {showTriageCta ? (
                     <div className="flex justify-center py-2">
-                      <Link
-                        href={continueReportSubmissionHref}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          router.push(continueReportSubmissionPath as Route);
+                        }}
                         data-testid="ai-conversation-triage-button"
                         className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_12px_28px_rgba(15,93,159,0.26)] transition hover:bg-[#0b528d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f5d9f]"
                       >
                         Continue to Triage
                         <IconArrowRight size={14} />
-                      </Link>
+                      </button>
                     </div>
                   ) : null}
 

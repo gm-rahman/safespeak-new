@@ -15,479 +15,41 @@ import {
   IconBook2,
   IconChevronLeft,
   IconClock,
+  IconExternalLink,
   IconFirstAidKit,
   IconGavel,
   IconHeadphones,
   IconHeartbeat,
-  IconLifebuoy,
   IconPhoneCall,
   IconPhoneFilled,
   IconShieldCheckFilled,
   IconShieldFilled,
-  IconUsersGroup,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { useConsentGate } from "@/hooks/use-consent-gate";
-import { isAssistantIncidentCategory } from "@/lib/assistant-categories";
 import { getAssistantTriageSource } from "@/lib/assistant-triage";
 import {
+  type ConversationFlowSupportAction,
+  type ConversationFlowSupportBundle,
   type ConversationFlowTriage,
-  buildMockConversationCategory,
   fetchConversationFlowSupport,
   fetchConversationFlowTriage,
 } from "@/lib/conversation-flow";
 import {
-  type MicroEducationChip,
   type MicroEducationItem,
   listPublishedMicroEducation,
 } from "@/lib/microeducation";
 import { EMERGENCY_NUMBER } from "@/lib/safety";
 
-function toLabel(value: string): string {
-  return value
-    .replace(/[_-]+/g, " ")
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function getUrlIncidentCategory() {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-
-  const category =
-    new URLSearchParams(window.location.search).get("category") ?? undefined;
-
-  return isAssistantIncidentCategory(category) ? category : undefined;
-}
-
-function shouldShowTriageDebug() {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  const params = new URLSearchParams(window.location.search);
-
-  return (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1" ||
-    params.get("triageDebug") === "1"
-  );
-}
-
-function buildFallbackTriage(): ConversationFlowTriage {
-  const source = getAssistantTriageSource();
-  const incidentCategory = source?.incidentCategory ?? getUrlIncidentCategory();
-  const category = buildMockConversationCategory(incidentCategory);
-
-  return {
-    likelyCategory: category,
-    likelyCategoryLabel: toLabel(category),
-    confidenceScore: category === "general_support" ? 0.25 : 0.48,
-    confidenceLabel: category === "general_support" ? "low" : "medium",
-    safetyRiskLevel: "low",
-    reasoningSummary:
-      category === "general_support"
-        ? "The conversation needs more verified detail before SafeSpeak can classify this into a harm or safety pathway."
-        : "This is a fallback triage view based on the selected entry context and conversation draft.",
-    matchedLegislationIds: [],
-    matchedKnowledgeSources: [],
-    humanReviewRecommended: true,
-    missingInformation: ["more_context"],
-    canProceedToRecommendations: category !== "general_support",
-    matchedResourceTypes: ["government", "mental_health", "evidence_guidance"],
-    relatedIssueTypes: [category],
-    disclaimer: "This is information only, not legal advice.",
-  };
-}
-
-type ViolenceMicroCardProfile = {
-  label: string;
-  category: string;
-  safetyRiskLevel: ConversationFlowTriage["safetyRiskLevel"];
-  preferredChips: MicroEducationChip[];
-  keywords: string[];
-  anchorPatterns: RegExp[];
-  bridgePatterns: RegExp[];
-  protectedPatterns: RegExp[];
-  excludedPatterns: RegExp[];
-  minimumScore: number;
+const EMPTY_SUPPORT_BUNDLE: ConversationFlowSupportBundle = {
+  suggestedMicroCardIds: [],
+  recommendedActions: [],
+  additionalResources: [],
+  matchedSupportServices: [],
+  fallbackUsed: false,
 };
-
-const VIOLENCE_TERMS = [
-  "abuse",
-  "assault",
-  "bullying",
-  "coercive",
-  "domestic",
-  "discrimination",
-  "family violence",
-  "harassment",
-  "harm",
-  "intimidation",
-  "racial",
-  "racial abuse",
-  "racism",
-  "sexual violence",
-  "stalking",
-  "threat",
-  "violence",
-  "workplace bullying",
-];
-
-function buildTriageSearchText(triage: ConversationFlowTriage | null): string {
-  if (!triage) {
-    return "";
-  }
-
-  return [
-    triage.likelyCategory,
-    triage.likelyCategoryLabel,
-    triage.reasoningSummary,
-    ...(triage.structuredFacts?.matchedFacts ?? []),
-    ...(triage.structuredFacts?.organisations ?? []),
-    ...(triage.structuredFacts?.platforms ?? []),
-    ...triage.matchedResourceTypes,
-    ...triage.missingInformation,
-    ...triage.matchedKnowledgeSources.flatMap((source) => [
-      source.title,
-      source.summary,
-      source.sourceCategory,
-      source.sourceType,
-    ]),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-}
-
-function reorderRiskFirst(
-  chips: MicroEducationChip[],
-  safetyRiskLevel: ConversationFlowTriage["safetyRiskLevel"]
-): MicroEducationChip[] {
-  if (safetyRiskLevel !== "high" && safetyRiskLevel !== "immediate") {
-    return chips;
-  }
-
-  const urgentOrder: MicroEducationChip[] = [
-    "safety",
-    "mentalHealth",
-    "harassment",
-    "rights",
-  ];
-
-  return urgentOrder.filter((chip) => chips.includes(chip));
-}
-
-function getViolenceMicroCardProfile(
-  triage: ConversationFlowTriage | null
-): ViolenceMicroCardProfile | null {
-  if (!triage) {
-    return null;
-  }
-
-  const structuredFacts = triage.structuredFacts ?? {};
-  const searchText = buildTriageSearchText(triage);
-  let preferredChips: MicroEducationChip[] = [
-    "harassment",
-    "safety",
-    "rights",
-    "mentalHealth",
-  ];
-  let label = triage.likelyCategoryLabel || toLabel(triage.likelyCategory);
-  let keywords = [
-    "abuse",
-    "bullying",
-    "harassment",
-    "threat",
-    "safety",
-    "violence",
-  ];
-  let anchorPatterns: RegExp[] = [
-    /\babuse\b/i,
-    /\bviolence\b/i,
-    /\bthreat/i,
-    /\bharass/i,
-  ];
-  let bridgePatterns: RegExp[] = [
-    /\bevidence\b/i,
-    /\bsupport\b/i,
-    /\bright/i,
-    /\bsafety plan/i,
-    /\bsafety planning/i,
-  ];
-  let protectedPatterns: RegExp[] = [
-    /\blegal aid\b/i,
-    /\bmental health\b/i,
-    /\bcounsell?ing\b/i,
-    /\bevidence\b/i,
-    /\bsafety plan/i,
-    /\bsafety planning/i,
-  ];
-  let excludedPatterns: RegExp[] = [];
-  let minimumScore = 18;
-
-  if (
-    structuredFacts.privacyDataBreach ||
-    structuredFacts.identityTheftRisk ||
-    structuredFacts.scamFraud ||
-    structuredFacts.imageBasedAbuse ||
-    structuredFacts.onlineThreatBlackmail ||
-    structuredFacts.employerHealthPrivacy
-  ) {
-    preferredChips = ["safety", "rights", "harassment", "mentalHealth"];
-    label = "Privacy, identity risk, and online threats";
-    keywords = [
-      "privacy",
-      "data breach",
-      "identity",
-      "scam",
-      "bank",
-      "photo",
-      "image",
-      "blackmail",
-      "evidence",
-      "health information",
-    ];
-    anchorPatterns = [
-      /\bprivacy\b/i,
-      /\bdata breach\b/i,
-      /\bidentity\b/i,
-      /\bscam\b/i,
-      /\bbank\b/i,
-      /\bimage-based\b/i,
-      /\bprivate photos?\b/i,
-      /\bblackmail\b/i,
-      /\bhealth information\b/i,
-      /\bevidence\b/i,
-    ];
-    bridgePatterns = [
-      /\bonline safety\b/i,
-      /\besafety\b/i,
-      /\bcomplaint\b/i,
-      /\bprivacy complaint\b/i,
-      /\bevidence\b/i,
-      /\bscreenshot\b/i,
-      /\bmessages?\b/i,
-    ];
-    protectedPatterns = [
-      /\blegal aid\b/i,
-      /\bevidence\b/i,
-      /\bprivacy\b/i,
-      /\bidentity\b/i,
-      /\bonline safety\b/i,
-    ];
-    excludedPatterns = [
-      /\bmigrant\b/i,
-      /\bstudent\b/i,
-      /\bdiscrimination\b/i,
-      /\bracial\b/i,
-      /\bbullying\b/i,
-    ];
-    minimumScore = 18;
-  } else if (triage.likelyCategory === "domestic_violence") {
-    preferredChips = ["safety", "mentalHealth", "harassment", "rights"];
-    label = "Domestic or family violence";
-    keywords = [
-      "domestic",
-      "family",
-      "violence",
-      "safety",
-      "mental",
-      "support",
-    ];
-    anchorPatterns = [
-      /\bdomestic\b/i,
-      /\bfamily violence\b/i,
-      /\bfamily harm\b/i,
-      /\bpartner\b/i,
-      /\bcoercive\b/i,
-      /\babuse\b/i,
-      /\bviolence\b/i,
-      /\b1800respect\b/i,
-    ];
-    bridgePatterns = [
-      /\bsafety plan/i,
-      /\bsafety planning/i,
-      /\bunsafe\b/i,
-      /\bthreat/i,
-      /\bevidence\b/i,
-      /\bsupport service\b/i,
-      /\bconfidential support\b/i,
-      /\bright/i,
-    ];
-    protectedPatterns = [
-      /\blegal aid\b/i,
-      /\bmental health\b/i,
-      /\bcounsell?ing\b/i,
-      /\bcrisis\b/i,
-      /\bevidence\b/i,
-      /\bsafety plan/i,
-      /\bsafety planning/i,
-      /\b1800respect\b/i,
-    ];
-    excludedPatterns = [
-      /\bonline\b/i,
-      /\bcyber\b/i,
-      /\bdigital footprint\b/i,
-      /\bbullying\b/i,
-      /\bdiscrimination\b/i,
-      /\bscam\b/i,
-      /\bfraud\b/i,
-      /\bworkplace\b/i,
-    ];
-    minimumScore = 20;
-  } else if (triage.likelyCategory === "racism_discrimination") {
-    preferredChips = ["harassment", "rights", "safety", "mentalHealth"];
-    label = "Racial abuse or discrimination";
-    keywords = ["racial", "discrimination", "rights", "harassment", "report"];
-    anchorPatterns = [
-      /\bracis[mt]\b/i,
-      /\bracial\b/i,
-      /\bdiscriminat/i,
-      /\bhate\b/i,
-      /\bvilification\b/i,
-      /\bhijab\b/i,
-    ];
-    excludedPatterns = [/\bdomestic\b/i, /\bscam\b/i, /\bfraud\b/i];
-  } else if (triage.likelyCategory === "online_abuse") {
-    preferredChips = ["safety", "harassment", "rights", "mentalHealth"];
-    label = "Online abuse or cyberbullying";
-    keywords = ["online", "cyber", "digital", "privacy", "abuse", "safety"];
-    anchorPatterns = [
-      /\bonline\b/i,
-      /\bcyber\b/i,
-      /\bdigital\b/i,
-      /\beSafety\b/i,
-      /\bprivacy\b/i,
-      /\bimage-based\b/i,
-      /\bdoxx/i,
-      /\baccount\b/i,
-    ];
-    excludedPatterns = [/\bdomestic\b/i, /\bworkplace\b/i, /\bscam\b/i];
-  } else if (triage.likelyCategory === "scam_fraud") {
-    preferredChips = ["safety", "rights", "mentalHealth"];
-    label = "Scam or fraud";
-    keywords = ["scam", "fraud", "online", "privacy", "bank", "safety"];
-    anchorPatterns = [
-      /\bscam\b/i,
-      /\bfraud\b/i,
-      /\bphishing\b/i,
-      /\bbank\b/i,
-      /\bpassword\b/i,
-      /\botp\b/i,
-      /\baccount\b/i,
-    ];
-    bridgePatterns = [/\bevidence\b/i, /\bsupport\b/i, /\bonline safety\b/i, /\bprivacy\b/i];
-    excludedPatterns = [/\bdomestic\b/i, /\bworkplace\b/i, /\bracial\b/i];
-  } else if (triage.likelyCategory === "workplace_bullying") {
-    preferredChips = ["harassment", "rights", "safety", "mentalHealth"];
-    label = "Workplace bullying or harassment";
-    keywords = ["bullying", "harassment", "workplace", "document", "rights"];
-    anchorPatterns = [
-      /\bworkplace\b/i,
-      /\bat work\b/i,
-      /\bboss\b/i,
-      /\bmanager\b/i,
-      /\bemployer\b/i,
-      /\bbully/i,
-      /\bharass/i,
-    ];
-    excludedPatterns = [/\bdomestic\b/i, /\bscam\b/i, /\bonline abuse\b/i];
-  } else if (triage.likelyCategory === "mental_health_distress") {
-    preferredChips = ["mentalHealth", "safety", "rights"];
-    label = "Emotional support";
-    keywords = ["mental", "stress", "support", "grounding", "safety"];
-    anchorPatterns = [
-      /\bmental health\b/i,
-      /\bstress/i,
-      /\banxiety\b/i,
-      /\blonely\b/i,
-      /\bgrounding\b/i,
-      /\bcounsell?ing\b/i,
-      /\bsupport\b/i,
-    ];
-    bridgePatterns = [/\bsafety\b/i, /\bsupport\b/i, /\bwellbeing\b/i];
-    protectedPatterns = [/\bmental health\b/i, /\bcounsell?ing\b/i, /\bcrisis\b/i];
-    excludedPatterns = [
-      /\bdomestic\b/i,
-      /\bscam\b/i,
-      /\bfraud\b/i,
-      /\bdiscrimination\b/i,
-      /\bbullying\b/i,
-    ];
-  } else if (triage.likelyCategory === "theft_property") {
-    preferredChips = ["safety", "rights", "mentalHealth"];
-    label = "Theft or property harm";
-    keywords = ["theft", "stolen", "evidence", "safety", "rights"];
-    anchorPatterns = [/\btheft\b/i, /\bstolen\b/i, /\brobbed\b/i, /\bproperty\b/i];
-    bridgePatterns = [/\bevidence\b/i, /\bpolice\b/i, /\bright/i, /\bsafety\b/i];
-  } else if (triage.likelyCategory === "harassment") {
-    preferredChips = ["harassment", "safety", "rights", "mentalHealth"];
-    label = "Harassment";
-    keywords = ["harassment", "threat", "safety", "document", "rights"];
-    anchorPatterns = [/\bharass/i, /\bthreat/i, /\bstalk/i, /\bintimidat/i];
-    bridgePatterns = [/\bevidence\b/i, /\bright/i, /\bsafety plan/i, /\bsupport\b/i];
-  } else if (!VIOLENCE_TERMS.some((term) => searchText.includes(term))) {
-    return null;
-  } else if (
-    searchText.includes("domestic") ||
-    searchText.includes("family violence") ||
-    searchText.includes("sexual violence")
-  ) {
-    preferredChips = ["safety", "mentalHealth", "harassment", "rights"];
-    label = "Domestic or family violence";
-    keywords = [
-      "domestic",
-      "family",
-      "violence",
-      "safety",
-      "mental",
-      "support",
-    ];
-  } else if (
-    searchText.includes("racial") ||
-    searchText.includes("racism") ||
-    searchText.includes("discrimination")
-  ) {
-    preferredChips = ["harassment", "rights", "safety", "mentalHealth"];
-    label = "Racial abuse or discrimination";
-    keywords = ["racial", "discrimination", "rights", "harassment", "report"];
-  } else if (
-    searchText.includes("online") ||
-    searchText.includes("cyber") ||
-    searchText.includes("digital")
-  ) {
-    preferredChips = ["safety", "harassment", "rights", "mentalHealth"];
-    label = "Online abuse or cyberbullying";
-    keywords = ["online", "cyber", "digital", "privacy", "abuse", "safety"];
-  } else if (
-    searchText.includes("workplace") ||
-    searchText.includes("bullying") ||
-    searchText.includes("harassment")
-  ) {
-    preferredChips = ["harassment", "rights", "safety", "mentalHealth"];
-    label = "Bullying or harassment";
-    keywords = ["bullying", "harassment", "workplace", "document", "rights"];
-  }
-
-  return {
-    label,
-    category: triage.likelyCategory,
-    safetyRiskLevel: triage.safetyRiskLevel,
-    preferredChips: reorderRiskFirst(preferredChips, triage.safetyRiskLevel),
-    keywords,
-    anchorPatterns,
-    bridgePatterns,
-    protectedPatterns,
-    excludedPatterns,
-    minimumScore,
-  };
-}
 
 type TriagePresentation = {
   title: string;
@@ -499,14 +61,81 @@ type TriagePresentation = {
   secondTitle: string;
   secondBody: string;
   secondActionLabel: string;
-  secondActionHref: Route;
+  secondActionHref: string;
   thirdTitle: string;
   thirdBody: string;
   thirdActionLabel: string;
-  thirdActionHref: Route;
+  thirdActionHref: string;
   stepReasons?: string[];
   microCardSummary?: string;
 };
+
+function toLabel(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getConversationSessionIdFromUrl() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return (
+    new URLSearchParams(window.location.search).get("conversationSessionId") ??
+    undefined
+  );
+}
+
+function shouldShowTriageDebug() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return (
+    params.get("triageDebug") === "1" ||
+    window.localStorage.getItem("safespeak_triage_debug") === "1"
+  );
+}
+
+function withConversationSessionId(href: string, conversationSessionId?: string | null) {
+  if (!conversationSessionId || isExternalHref(href)) {
+    return href;
+  }
+
+  const [pathname, hash = ""] = href.split("#", 2);
+  const [basePath, queryString = ""] = pathname.split("?", 2);
+  const params = new URLSearchParams(queryString);
+
+  params.set("conversationSessionId", conversationSessionId);
+
+  const nextHref = `${basePath}?${params.toString()}`;
+  return hash ? `${nextHref}#${hash}` : nextHref;
+}
+
+function buildFallbackTriage(): ConversationFlowTriage {
+  return {
+    likelyCategory: "general_support",
+    likelyCategoryLabel: "Review Your Options",
+    confidenceScore: 0.25,
+    confidenceLabel: "low",
+    safetyRiskLevel: "low",
+    reasoningSummary:
+      "SafeSpeak could not confirm a clear triage path from this page alone, so it is showing broad support, safety, and evidence options instead of guessing.",
+    matchedLegislationIds: [],
+    matchedKnowledgeSources: [],
+    humanReviewRecommended: true,
+    missingInformation: ["more_context"],
+    canProceedToRecommendations: false,
+    matchedResourceTypes: ["government", "mental_health", "evidence_guidance"],
+    relatedIssueTypes: ["general_support"],
+    disclaimer: "This is information only, not legal advice.",
+  };
+}
 
 function buildTriagePresentation(
   triage: ConversationFlowTriage | null,
@@ -515,8 +144,8 @@ function buildTriagePresentation(
   if (!isLoading && triage?.presentation) {
     return {
       ...triage.presentation,
-      secondActionHref: triage.presentation.secondActionHref as Route,
-      thirdActionHref: triage.presentation.thirdActionHref as Route,
+      secondActionHref: String(triage.presentation.secondActionHref),
+      thirdActionHref: String(triage.presentation.thirdActionHref),
     };
   }
 
@@ -535,313 +164,81 @@ function buildTriagePresentation(
         "You can explore services that may fit what you shared, at your pace.",
       secondActionLabel: "Review options",
       secondActionHref: "/dashboard?view=reportsubmissionrecommendations",
-      thirdTitle: "Emotional support",
+      thirdTitle: "Evidence and safety",
       thirdBody:
-        "You can talk with a support service if this feels overwhelming.",
-      thirdActionLabel: "Find support",
-      thirdActionHref: "/dashboard/explorer",
+        "You can review evidence, account safety, and practical next steps without sharing anything automatically.",
+      thirdActionLabel: "Safety steps",
+      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
       stepReasons: [],
       microCardSummary: "",
     };
   }
 
-  const category = triage?.likelyCategory ?? "general_support";
-  const label =
-    triage?.likelyCategoryLabel ??
-    (category === "general_support" ? "General support" : toLabel(category));
-  const riskText =
-    triage?.safetyRiskLevel === "immediate" ||
-    triage?.safetyRiskLevel === "high"
-      ? " There may be safety concerns, so immediate safety comes first."
-      : "";
-  const base = {
-    title: `${label} Support`,
-    body: `From what you shared, this may fit a ${label.toLowerCase()} pathway.${riskText} You can explore support, reporting, evidence, and safety options without pressure.`,
+  const label = triage?.likelyCategoryLabel || "Review Your Options";
+  const canProceed = triage?.canProceedToRecommendations ?? false;
+
+  return {
+    title: label,
+    body:
+      triage?.reasoningSummary ||
+      "SafeSpeak is showing broad support, evidence, and safety options while keeping control with you.",
     assessmentNote: "This is not a formal finding. You choose what to do next.",
     primaryStepTitle: "Review your options",
-    primaryStepBody:
-      "Choose what feels safest: support services, reporting options, evidence, or safety planning.",
+    primaryStepBody: canProceed
+      ? "You can review support, reporting, evidence, and safety steps."
+      : "You can review support, evidence, and safety steps without forcing a category.",
     immediateDangerBody:
       "If you or someone else is in immediate danger, call 000 now. You can stop using SafeSpeak at any time.",
-    secondTitle: "Reporting options",
+    secondTitle: "Support and reporting",
     secondBody:
-      "You can review possible reporting pathways and decide what feels safe.",
-    secondActionLabel: "Review reporting",
-    secondActionHref: "/dashboard?view=reportsubmissionrecommendations" as Route,
-    thirdTitle: "Emotional support",
+      "You can review possible support or reporting pathways and decide what feels safest.",
+    secondActionLabel: canProceed ? "Review options" : "See details",
+    secondActionHref: canProceed
+      ? "/dashboard?view=reportsubmissionrecommendations"
+      : "/dashboard?view=reportsubmissiondetailedexplanations",
+    thirdTitle: "Evidence and safety",
     thirdBody:
-      "You can speak with a support service if this feels stressful, upsetting, or unsafe.",
-    thirdActionLabel: "Find support",
-    thirdActionHref: "/dashboard/explorer" as Route,
+      "You can review evidence, privacy, and account-safety steps at your own pace.",
+    thirdActionLabel: "Safety steps",
+    thirdActionHref: "/dashboard?view=reportsubmissionevidence",
     stepReasons: [],
     microCardSummary: "",
   };
-
-  if (category === "domestic_violence") {
-    return {
-      ...base,
-      title: "Domestic or Family Violence Support",
-      body:
-        "From what you shared, this may involve domestic or family violence. You can explore safety planning, support services, evidence steps, and reporting options at your pace.",
-      secondTitle: "Domestic violence support",
-      secondBody:
-        "You can contact a confidential support service such as 1800RESPECT to talk through safety and options.",
-      secondActionLabel: "Get support",
-      secondActionHref: "/dashboard/explorer",
-      thirdTitle: "Safety planning",
-      thirdBody:
-        "You can think about where you can go, who you can contact, and what evidence or belongings you may need to keep safe.",
-      thirdActionLabel: "Plan safely",
-      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
-    };
-  }
-
-  if (category === "workplace_bullying") {
-    return {
-      ...base,
-      title: "Workplace Bullying Support",
-      body:
-        "From what you shared, this may involve bullying or pressure at work. You can review support, workplace options, and safe evidence steps.",
-      secondTitle: "Workplace options",
-      secondBody:
-        "You can review workplace, HR, union, regulator, or legal information pathways without making a report yet.",
-      secondActionLabel: "Review options",
-      thirdTitle: "Record what happened",
-      thirdBody:
-        "If it feels safe, keep dates, messages, witnesses, rosters, and notes about what happened.",
-      thirdActionLabel: "Evidence steps",
-      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
-    };
-  }
-
-  if (category === "racism_discrimination") {
-    return {
-      ...base,
-      title: "Racism or Discrimination Support",
-      body:
-        "From what you shared, this may involve racism or discrimination. You can look at support, reporting options, rights information, and evidence steps.",
-      secondTitle: "Rights and reporting options",
-      secondBody:
-        "You can review options such as anti-discrimination bodies, police, community support, or legal information.",
-      secondActionLabel: "Review options",
-      thirdTitle: "Document safely",
-      thirdBody:
-        "If it feels safe, keep screenshots, dates, locations, names, and notes in a private place.",
-      thirdActionLabel: "Evidence steps",
-      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
-    };
-  }
-
-  if (category === "online_abuse") {
-    return {
-      ...base,
-      title: "Online Abuse Support",
-      body:
-        "From what you shared, this may involve online abuse. You can explore content removal, reporting, digital safety, and emotional support options.",
-      secondTitle: "eSafety Commissioner",
-      secondBody:
-        "You can consider eSafety options for online abuse, cyberbullying, or image-based abuse.",
-      secondActionLabel: "Report to eSafety",
-      thirdTitle: "Digital safety",
-      thirdBody:
-        "You can review privacy, account security, screenshots, and device safety steps.",
-      thirdActionLabel: "Safety steps",
-      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
-    };
-  }
-
-  if (category === "scam_fraud") {
-    return {
-      ...base,
-      title: "Scam or Fraud Support",
-      body:
-        "From what you shared, this may involve a scam or fraud. You can review account safety, evidence, and reporting options.",
-      secondTitle: "Scam and cyber reporting",
-      secondBody:
-        "You can consider Scamwatch, ReportCyber, your bank, or police depending on what happened.",
-      secondActionLabel: "Review options",
-      thirdTitle: "Protect accounts",
-      thirdBody:
-        "You can change passwords, contact your bank, keep screenshots, and avoid sending more money or codes.",
-      thirdActionLabel: "Safety steps",
-      thirdActionHref: "/dashboard?view=reportsubmissionevidence",
-    };
-  }
-
-  if (category === "mental_health_distress") {
-    return {
-      ...base,
-      title: "Emotional Support",
-      body:
-        "From what you shared, you may need emotional support. You can take this slowly and choose support options that feel manageable.",
-      assessmentNote: "This is not a clinical diagnosis.",
-      primaryStepTitle: "I'm feeling stressed",
-      primaryStepBody: "Grounding, support, and next-step options.",
-      secondTitle: "Immediate danger",
-      secondBody:
-        "If you may hurt yourself or someone else, or you are in immediate danger, call 000 now.",
-      secondActionLabel: "Contact Police (000)",
-      thirdTitle: "Counselling support",
-      thirdBody:
-        "You can speak confidentially with a crisis counsellor or mental health support service.",
-      thirdActionLabel: "Call Lifeline",
-    };
-  }
-
-  return base;
 }
 
-function getMicroCardSearchText(card: MicroEducationItem): string {
-  return [
-    card.title,
-    card.tag,
-    card.summary,
-    card.detailHeading,
-    card.detailSummary,
-    card.detailBody,
-    card.detailTakeaway,
-    ...card.chips,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+function isExternalHref(href: string) {
+  return /^(https?:|tel:|mailto:)/i.test(href);
 }
 
-function hasAnyPattern(text: string, patterns: RegExp[]): boolean {
-  return patterns.some((pattern) => pattern.test(text));
-}
+function ActionLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className: string;
+  children: ReactNode;
+}) {
+  if (isExternalHref(href)) {
+    const shouldOpenNewTab = /^https?:/i.test(href);
 
-function isPlaceholderMicroCard(card: MicroEducationItem): boolean {
-  const text = getMicroCardSearchText(card);
+    return (
+      <a
+        href={href}
+        className={className}
+        target={shouldOpenNewTab ? "_blank" : undefined}
+        rel={shouldOpenNewTab ? "noreferrer" : undefined}
+      >
+        {children}
+      </a>
+    );
+  }
 
-  return /\b(test|testing|sample|dummy|placeholder|lorem|new educational content|new description|create educational content)\b/i.test(
-    text
+  return (
+    <Link href={href as Route} className={className}>
+      {children}
+    </Link>
   );
-}
-
-function isMicroCardEligibleForProfile(
-  card: MicroEducationItem,
-  profile: ViolenceMicroCardProfile
-): boolean {
-  if (isPlaceholderMicroCard(card)) {
-    return false;
-  }
-
-  const searchText = getMicroCardSearchText(card);
-  const hasAnchor = hasAnyPattern(searchText, profile.anchorPatterns);
-  const hasBridge = hasAnyPattern(searchText, profile.bridgePatterns);
-  const hasProtectedTopic = hasAnyPattern(searchText, profile.protectedPatterns);
-  const hasExcludedTopic = hasAnyPattern(searchText, profile.excludedPatterns);
-
-  if (hasExcludedTopic && !hasAnchor && !hasProtectedTopic) {
-    return false;
-  }
-
-  return hasAnchor || hasBridge || hasProtectedTopic;
-}
-
-function scoreMicroCardForProfile(
-  card: MicroEducationItem,
-  profile: ViolenceMicroCardProfile
-): number {
-  if (!isMicroCardEligibleForProfile(card, profile)) {
-    return 0;
-  }
-
-  const searchText = getMicroCardSearchText(card);
-  let score = 0;
-
-  card.chips.forEach((chip) => {
-    const chipIndex = profile.preferredChips.indexOf(chip);
-
-    if (chipIndex >= 0) {
-      score += (profile.preferredChips.length - chipIndex) * 12;
-    }
-  });
-
-  profile.keywords.forEach((keyword) => {
-    if (searchText.includes(keyword)) {
-      score += 8;
-    }
-  });
-
-  profile.anchorPatterns.forEach((pattern) => {
-    if (pattern.test(searchText)) {
-      score += 18;
-    }
-  });
-
-  profile.bridgePatterns.forEach((pattern) => {
-    if (pattern.test(searchText)) {
-      score += 8;
-    }
-  });
-
-  profile.protectedPatterns.forEach((pattern) => {
-    if (pattern.test(searchText)) {
-      score += 10;
-    }
-  });
-
-  if (
-    (profile.safetyRiskLevel === "high" ||
-      profile.safetyRiskLevel === "immediate") &&
-    card.chips.includes("safety")
-  ) {
-    score += 18;
-  }
-
-  if (
-    (profile.safetyRiskLevel === "high" ||
-      profile.safetyRiskLevel === "immediate") &&
-    card.chips.includes("mentalHealth")
-  ) {
-    score += 10;
-  }
-
-  return score;
-}
-
-function getSuggestedMicroCards(
-  cards: MicroEducationItem[],
-  profile: ViolenceMicroCardProfile | null,
-  preferredIds: string[] = []
-): MicroEducationItem[] {
-  const cardsById = new Map(cards.map((card) => [card.id, card]));
-  const preferredCards = preferredIds
-    .map((id) => cardsById.get(id))
-    .filter((card): card is MicroEducationItem => Boolean(card));
-
-  if (!profile) {
-    return preferredCards.slice(0, 8);
-  }
-
-  const suggestedCards = cards
-    .map((card) => ({
-      card,
-      score: scoreMicroCardForProfile(card, profile),
-    }))
-    .filter((item) => item.score >= profile.minimumScore)
-    .sort((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score;
-      }
-
-      return left.card.sortOrder - right.card.sortOrder;
-    })
-    .map((item) => item.card)
-    .slice(0, 8);
-
-  if (preferredCards.length === 0) {
-    return suggestedCards;
-  }
-
-  const preferredIdSet = new Set(preferredCards.map((card) => card.id));
-  const remainingCards = suggestedCards.filter(
-    (card) => !preferredIdSet.has(card.id)
-  );
-
-  return [...preferredCards, ...remainingCards].slice(0, 8);
 }
 
 function SectionTitle({
@@ -861,89 +258,19 @@ function SectionTitle({
   );
 }
 
-function GradientActionCard({
-  href,
-  icon,
-  backgroundIcon,
-  title,
-  description,
-}: {
-  href: Route;
-  icon: ReactNode;
-  backgroundIcon: ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group relative flex min-h-[238px] overflow-hidden rounded-[30px] bg-[linear-gradient(135.79deg,#005C97_0%,#363795_100%)] p-6 text-white shadow-[0_18px_34px_rgba(15,93,159,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_40px_rgba(15,93,159,0.24)] sm:min-h-[270px] sm:rounded-[38px] lg:min-h-[318px] lg:rounded-[48px] lg:p-8"
-    >
-      <div className="absolute right-0 top-0 p-8 text-white opacity-10">
-        {backgroundIcon}
-      </div>
-      <div className="relative z-10 flex h-full min-h-[190px] w-full flex-col justify-between sm:min-h-[222px] lg:min-h-[254px]">
-        <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-[2px]">
-          {icon}
-        </span>
-        <span>
-          <span className="block text-xl font-extrabold leading-7 sm:text-2xl sm:leading-8">
-            {title}
-          </span>
-          <span className="mt-2 block text-sm font-medium leading-5 text-[#DBEAFE]">
-            {description}
-          </span>
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-function ResourceCard({
-  href,
-  icon,
-  title,
-  description,
-}: {
-  href: Route;
-  icon: ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="relative flex min-h-[92px] overflow-hidden rounded-[26px] bg-[linear-gradient(100.94deg,#004E92_0%,#003A6D_100%)] p-5 text-white shadow-[0_16px_32px_rgba(15,93,159,0.14)] transition hover:-translate-y-0.5 sm:rounded-[36px] sm:p-6 lg:rounded-[48px]"
-    >
-      <span className="absolute -bottom-6 -right-6 h-24 w-24 rounded-full bg-white/10" />
-      <span className="relative z-10 flex items-center gap-4">
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/20 text-white backdrop-blur-[2px]">
-          {icon}
-        </span>
-        <span>
-          <span className="block text-lg font-extrabold leading-7">
-            {title}
-          </span>
-          <span className="block text-xs font-medium leading-4 text-[#BFDBFE]">
-            {description}
-          </span>
-        </span>
-      </span>
-    </Link>
-  );
-}
-
 function RecommendationRow({
   icon,
   iconClassName,
   title,
   description,
+  detail,
   action,
 }: {
   icon: ReactNode;
   iconClassName: string;
   title: string;
   description: string;
+  detail?: string;
   action: ReactNode;
 }) {
   return (
@@ -958,12 +285,64 @@ function RecommendationRow({
           <span className="block text-sm font-extrabold leading-5 text-[#111827] sm:text-base">
             {title}
           </span>
-          <span className="mt-2 block max-w-[460px] text-xs leading-5 text-[#6B7280] sm:text-sm">
+          <span className="mt-2 block max-w-[520px] text-xs leading-5 text-[#6B7280] sm:text-sm">
             {description}
           </span>
+          {detail ? (
+            <span className="mt-2 block max-w-[520px] text-[11px] leading-5 text-[#94A3B8]">
+              {detail}
+            </span>
+          ) : null}
         </span>
       </div>
       <div className="shrink-0 sm:ml-auto">{action}</div>
+    </article>
+  );
+}
+
+function ResourceCard({
+  action,
+}: {
+  action: ConversationFlowSupportAction;
+}) {
+  const usesCall = action.actionKind === "call";
+
+  return (
+    <article className="relative overflow-hidden rounded-[26px] bg-[linear-gradient(100.94deg,#004E92_0%,#003A6D_100%)] p-5 text-white shadow-[0_16px_32px_rgba(15,93,159,0.14)] sm:rounded-[36px] sm:p-6 lg:rounded-[48px]">
+      <span className="absolute -bottom-6 -right-6 h-24 w-24 rounded-full bg-white/10" />
+      <div className="relative z-10">
+        <div className="flex items-start gap-4">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/20 text-white backdrop-blur-[2px]">
+            {usesCall ? <IconPhoneCall size={20} /> : <IconShieldCheckFilled size={20} />}
+          </span>
+          <div className="min-w-0">
+            <h4 className="text-lg font-extrabold leading-7">{action.title}</h4>
+            <p className="mt-1 text-sm leading-5 text-[#DBEAFE]">
+              {action.description}
+            </p>
+            <p className="mt-3 text-[11px] leading-5 text-[#BFDBFE]">
+              {action.whySuggested}
+            </p>
+            <p className="mt-2 text-[11px] leading-5 text-[#BFDBFE]">
+              {action.consentNote}
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <ActionLink
+            href={action.href}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-white px-5 text-xs font-extrabold text-[#0F172A] transition hover:bg-[#E2E8F0]"
+          >
+            {action.ctaLabel}
+            {usesCall ? <IconPhoneFilled size={14} /> : <IconExternalLink size={14} />}
+          </ActionLink>
+          {action.phone ? (
+            <span className="text-[11px] font-semibold text-[#DBEAFE]">
+              {action.phone}
+            </span>
+          ) : null}
+        </div>
+      </div>
     </article>
   );
 }
@@ -1146,7 +525,7 @@ function MicroCardDetailOverlay({
             className="inline-flex items-center gap-2 text-xs font-bold text-[#1f2937]"
           >
             <IconChevronLeft size={15} />
-            AI suggested micro-cards
+            Suggested guides
           </button>
           <button
             type="button"
@@ -1260,13 +639,106 @@ function MicroCardDetailOverlay({
   );
 }
 
+function buildFallbackAction(
+  slot: ConversationFlowSupportAction["slot"],
+  title: string,
+  description: string,
+  ctaLabel: string,
+  href: string
+): ConversationFlowSupportAction {
+  return {
+    slot,
+    title,
+    description,
+    whySuggested: "Suggested from your current triage pathway.",
+    ctaLabel,
+    href,
+    actionKind: isExternalHref(href) ? "external_link" : "external_link",
+    consentNote:
+      "SafeSpeak does not call, email, report, or share anything unless you choose the next step yourself.",
+  };
+}
+
+function buildImmediateDangerAction(
+  action: ConversationFlowSupportAction | undefined,
+  fallbackBody: string
+): ConversationFlowSupportAction {
+  if (action) {
+    return action;
+  }
+
+  return {
+    slot: "immediateDanger",
+    title: "Immediate danger",
+    description: fallbackBody,
+    whySuggested:
+      "This stays visible so urgent safety options are always easy to reach.",
+    ctaLabel: "Call 000",
+    href: `tel:${EMERGENCY_NUMBER}`,
+    phone: EMERGENCY_NUMBER,
+    actionKind: "call",
+    consentNote: "SafeSpeak does not call emergency services for you.",
+  };
+}
+
+function buildDisplayedActionRows(input: {
+  triagePresentation: TriagePresentation;
+  support: ConversationFlowSupportBundle;
+  conversationSessionId?: string | null;
+}) {
+  const immediateAction = buildImmediateDangerAction(
+    input.support.recommendedActions.find(
+      (item) => item.slot === "immediateDanger"
+    ),
+    input.triagePresentation.immediateDangerBody
+  );
+  const backendFollowUps = input.support.recommendedActions.filter(
+    (item) => item.slot !== "immediateDanger"
+  );
+  const fallbackActions = [
+    buildFallbackAction(
+      "primarySupport",
+      input.triagePresentation.secondTitle,
+      input.triagePresentation.secondBody,
+      input.triagePresentation.secondActionLabel,
+      withConversationSessionId(
+        input.triagePresentation.secondActionHref,
+        input.conversationSessionId
+      )
+    ),
+    buildFallbackAction(
+      "secondarySupport",
+      input.triagePresentation.thirdTitle,
+      input.triagePresentation.thirdBody,
+      input.triagePresentation.thirdActionLabel,
+      withConversationSessionId(
+        input.triagePresentation.thirdActionHref,
+        input.conversationSessionId
+      )
+    ),
+  ];
+  const combined = [immediateAction, ...backendFollowUps];
+
+  for (const fallback of fallbackActions) {
+    if (combined.some((item) => item.title === fallback.title)) {
+      continue;
+    }
+
+    combined.push(fallback);
+  }
+
+  return combined.slice(0, 3);
+}
+
 function ReportSubmissionSupportPage() {
   const { t } = useTranslation();
   const [triage, setTriage] = useState<ConversationFlowTriage | null>(null);
+  const [support, setSupport] =
+    useState<ConversationFlowSupportBundle>(EMPTY_SUPPORT_BUNDLE);
+  const [resolvedConversationSessionId, setResolvedConversationSessionId] =
+    useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [microCards, setMicroCards] = useState<MicroEducationItem[]>([]);
-  const [supportSuggestedMicroCardIds, setSupportSuggestedMicroCardIds] =
-    useState<string[]>([]);
   const [isLoadingMicroCards, setIsLoadingMicroCards] = useState(true);
   const [microCardsError, setMicroCardsError] = useState<string | null>(null);
   const [activeMicroCardId, setActiveMicroCardId] = useState<string | null>(
@@ -1281,12 +753,15 @@ function ReportSubmissionSupportPage() {
   } = useConsentGate();
 
   const loadTriage = useCallback(async () => {
-    const source = getAssistantTriageSource();
-    const conversationSessionId = source?.conversationSessionId;
+    const conversationSessionId =
+      getConversationSessionIdFromUrl() ??
+      getAssistantTriageSource()?.conversationSessionId;
+
+    setResolvedConversationSessionId(conversationSessionId ?? null);
 
     if (!conversationSessionId) {
       setTriage(buildFallbackTriage());
-      setSupportSuggestedMicroCardIds([]);
+      setSupport(EMPTY_SUPPORT_BUNDLE);
       setLoading(false);
       return;
     }
@@ -1299,7 +774,7 @@ function ReportSubmissionSupportPage() {
       );
 
       setTriage(response.triage);
-      setSupportSuggestedMicroCardIds(response.support.suggestedMicroCardIds);
+      setSupport(response.support);
     } catch (supportFetchError) {
       if (captureConsentError(supportFetchError)) {
         setTriage(null);
@@ -1312,7 +787,7 @@ function ReportSubmissionSupportPage() {
         );
 
         setTriage(response.triage);
-        setSupportSuggestedMicroCardIds([]);
+        setSupport(EMPTY_SUPPORT_BUNDLE);
       } catch (fetchError) {
         if (captureConsentError(fetchError)) {
           setTriage(null);
@@ -1320,7 +795,7 @@ function ReportSubmissionSupportPage() {
         }
 
         setTriage(buildFallbackTriage());
-        setSupportSuggestedMicroCardIds([]);
+        setSupport(EMPTY_SUPPORT_BUNDLE);
       }
     } finally {
       setLoading(false);
@@ -1373,7 +848,7 @@ function ReportSubmissionSupportPage() {
       await loadTriage();
     } catch {
       setTriage(buildFallbackTriage());
-      setSupportSuggestedMicroCardIds([]);
+      setSupport(EMPTY_SUPPORT_BUNDLE);
       setLoading(false);
     }
   };
@@ -1381,37 +856,54 @@ function ReportSubmissionSupportPage() {
   const handleDeclinePendingConsent = () => {
     clearPendingConsent();
     setTriage(buildFallbackTriage());
-    setSupportSuggestedMicroCardIds([]);
+    setSupport(EMPTY_SUPPORT_BUNDLE);
     setLoading(false);
   };
 
   const canProceedToRecommendations = useMemo(() => {
-    return triage?.canProceedToRecommendations ?? true;
+    return triage?.canProceedToRecommendations ?? false;
   }, [triage]);
 
-  const violenceMicroCardProfile = useMemo(
-    () => getViolenceMicroCardProfile(triage),
-    [triage]
-  );
-
-  const suggestedMicroCards = useMemo(
-    () =>
-      getSuggestedMicroCards(
-        microCards,
-        violenceMicroCardProfile,
-        supportSuggestedMicroCardIds
-      ),
-    [microCards, supportSuggestedMicroCardIds, violenceMicroCardProfile]
-  );
   const triagePresentation = useMemo(
     () => buildTriagePresentation(triage, loading),
     [loading, triage]
   );
   const shouldShowSupportOptions = !loading && !pendingConsentRequirement;
+  const suggestedMicroCards = useMemo(() => {
+    if (support.suggestedMicroCardIds.length === 0 || microCards.length === 0) {
+      return [];
+    }
+
+    const cardsById = new Map(microCards.map((card) => [card.id, card]));
+
+    return support.suggestedMicroCardIds
+      .map((id) => cardsById.get(id))
+      .filter((card): card is MicroEducationItem => Boolean(card))
+      .slice(0, 6);
+  }, [microCards, support.suggestedMicroCardIds]);
+  const displayedActionRows = useMemo(
+    () =>
+      buildDisplayedActionRows({
+        triagePresentation,
+        support,
+        conversationSessionId: resolvedConversationSessionId,
+      }),
+    [resolvedConversationSessionId, support, triagePresentation]
+  );
   const activeMicroCard = useMemo(
     () =>
       suggestedMicroCards.find((card) => card.id === activeMicroCardId) ?? null,
     [activeMicroCardId, suggestedMicroCards]
+  );
+  const primaryStepHref = useMemo(
+    () =>
+      withConversationSessionId(
+        canProceedToRecommendations
+          ? "/dashboard?view=reportsubmissionrecommendations"
+          : "/dashboard?view=reportsubmissiondetailedexplanations",
+        resolvedConversationSessionId
+      ),
+    [canProceedToRecommendations, resolvedConversationSessionId]
   );
 
   useEffect(() => {
@@ -1540,6 +1032,36 @@ function ReportSubmissionSupportPage() {
 
           {shouldShowSupportOptions ? (
             <>
+              <section className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]">
+                <article className="rounded-[24px] border border-[#D8E3F0] bg-[#F8FAFC] p-5 sm:rounded-[30px] sm:p-6">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#0F5D9F]">
+                    Your control
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-[#334155]">
+                    SafeSpeak does not call, email, report, or share anything
+                    automatically. Opening a service, calling a number, or
+                    sharing information only happens if you choose that next
+                    step.
+                  </p>
+                  {support.fallbackUsed ? (
+                    <p className="mt-3 text-xs leading-5 text-[#64748B]">
+                      Some options below are official fallback resources because
+                      no closer in-app support service match was available for
+                      this triage.
+                    </p>
+                  ) : null}
+                </article>
+
+                <article className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)] sm:rounded-[30px] sm:p-6">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                    Why this path
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-[#475569]">
+                    {triage?.reasoningSummary || triagePresentation.body}
+                  </p>
+                </article>
+              </section>
+
               <section>
                 <SectionTitle
                   action={
@@ -1547,7 +1069,7 @@ function ReportSubmissionSupportPage() {
                       href="/dashboard?view=reportsubmissionhistory"
                       className="shrink-0 text-xs font-semibold leading-5 text-[#9CA3AF] transition hover:text-[#64748B]"
                     >
-                      {t("dashboard.assistant.triage.saveToHistory")}
+                      View history
                     </Link>
                   }
                 >
@@ -1555,18 +1077,15 @@ function ReportSubmissionSupportPage() {
                 </SectionTitle>
 
                 <Link
-                  href={
-                    canProceedToRecommendations
-                      ? "/dashboard?view=reportsubmissionrecommendations"
-                      : "/dashboard?view=reportsubmissiondetailedexplanations"
-                  }
+                  href={primaryStepHref as Route}
+                  data-testid="triage-primary-step-link"
                   className="mt-5 flex items-center justify-between gap-5 rounded-[24px] bg-white p-4 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.08)] transition hover:-translate-y-0.5 sm:rounded-[32px] sm:p-6"
                 >
                   <span className="flex min-w-0 items-center gap-4 sm:gap-6">
                     <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#F97316] sm:h-16 sm:w-16">
                       <IconFirstAidKit size={24} stroke={2.3} />
                     </span>
-                      <span className="min-w-0">
+                    <span className="min-w-0">
                       <span className="block truncate text-lg font-extrabold leading-7 text-[#111827] sm:text-xl">
                         {triagePresentation.primaryStepTitle}
                       </span>
@@ -1581,69 +1100,63 @@ function ReportSubmissionSupportPage() {
                 </Link>
 
                 <div className="mt-5 grid gap-4">
-                  <RecommendationRow
-                    icon={<IconShieldFilled size={18} />}
-                    iconClassName="bg-[#FEF2F2] text-[#EF4444]"
-                    title={t(
-                      "dashboard.assistant.triage.recommendations.immediateDangerTitle"
-                    )}
-                    description={triagePresentation.immediateDangerBody}
-                    action={
-                      <Link
-                        href="/dashboard?view=reportsubmissionevidence"
-                        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#FF8A00] px-6 text-xs font-extrabold text-white shadow-[0_12px_22px_rgba(255,138,0,0.28)] transition hover:bg-[#F47C00] sm:w-auto"
-                      >
-                        <IconPhoneFilled size={14} />
-                        {t(
-                          "dashboard.assistant.triage.recommendations.contactPolice"
-                        )}
-                      </Link>
-                    }
-                  />
-                  <RecommendationRow
-                    icon={<IconGavel size={20} />}
-                    iconClassName="bg-[#EEF2FF] text-[#4F63F6]"
-                    title={triagePresentation.secondTitle}
-                    description={triagePresentation.secondBody}
-                    action={
-                      <Link
-                        href={triagePresentation.secondActionHref}
-                        className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto"
-                      >
-                        {triagePresentation.secondActionLabel}
-                        <IconArrowRight size={16} className="text-[#9CA3AF]" />
-                      </Link>
-                    }
-                  />
-                  <RecommendationRow
-                    icon={<IconHeadphones size={20} />}
-                    iconClassName="bg-[#E6FFFA] text-[#14B8A6]"
-                    title={triagePresentation.thirdTitle}
-                    description={triagePresentation.thirdBody}
-                    action={
-                      <Link
-                        href={triagePresentation.thirdActionHref}
-                        className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto"
-                      >
-                        {triagePresentation.thirdActionLabel}
-                        <IconArrowRight size={16} className="text-[#9CA3AF]" />
-                      </Link>
-                    }
-                  />
-                </div>
+                  {displayedActionRows.map((action, index) => {
+                    const rowConfig =
+                      index === 0
+                        ? {
+                            icon: <IconShieldFilled size={18} />,
+                            iconClassName: "bg-[#FEF2F2] text-[#EF4444]",
+                            buttonClassName:
+                              "inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#FF8A00] px-6 text-xs font-extrabold text-white shadow-[0_12px_22px_rgba(255,138,0,0.28)] transition hover:bg-[#F47C00] sm:w-auto",
+                          }
+                        : index === 1
+                          ? {
+                              icon: <IconGavel size={20} />,
+                              iconClassName: "bg-[#EEF2FF] text-[#4F63F6]",
+                              buttonClassName:
+                                "inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto",
+                            }
+                          : {
+                              icon: <IconHeadphones size={20} />,
+                              iconClassName: "bg-[#E6FFFA] text-[#14B8A6]",
+                              buttonClassName:
+                                "inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto",
+                            };
 
-                {violenceMicroCardProfile ? (
-                  <div className="mt-6">
-                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                      <div>
-                        <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#0F5D9F]">
-                          AI suggested micro-cards
-                        </p>
-                        <p className="mt-1 text-sm leading-5 text-[#64748B]">
-                          {triagePresentation.microCardSummary ||
-                            `Matched to ${violenceMicroCardProfile.label.toLowerCase()} and ${violenceMicroCardProfile.safetyRiskLevel} safety risk.`}
-                        </p>
-                      </div>
+                    return (
+                      <RecommendationRow
+                        key={`${action.slot}-${action.title}-${index}`}
+                        icon={rowConfig.icon}
+                        iconClassName={rowConfig.iconClassName}
+                        title={action.title}
+                        description={action.description}
+                        detail={`${action.whySuggested} ${action.consentNote}`}
+                        action={
+                          <ActionLink
+                            href={action.href}
+                            className={rowConfig.buttonClassName}
+                          >
+                            {action.ctaLabel}
+                            {action.actionKind === "call" ? (
+                              <IconPhoneFilled size={14} />
+                            ) : (
+                              <IconArrowRight
+                                size={16}
+                                className="text-[#9CA3AF]"
+                              />
+                            )}
+                          </ActionLink>
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section>
+                <SectionTitle
+                  action={
+                    suggestedMicroCards.length > 0 ? (
                       <Link
                         href="/dashboard?view=microcards"
                         className="inline-flex h-9 items-center gap-2 self-start rounded-full border border-[#D8E3F0] bg-white px-4 text-xs font-bold text-[#334155] transition hover:bg-[#F8FAFC] sm:self-auto"
@@ -1651,106 +1164,68 @@ function ReportSubmissionSupportPage() {
                         View all
                         <IconArrowRight size={14} />
                       </Link>
-                    </div>
+                    ) : null
+                  }
+                >
+                  Suggested guides
+                </SectionTitle>
 
-                    {isLoadingMicroCards ? (
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        {Array.from({ length: 4 }).map((_, index) => (
-                          <div
-                            key={index}
-                            className="min-h-[220px] animate-pulse rounded-[28px] bg-white/80 shadow-[0_18px_34px_rgba(15,93,159,0.08)]"
-                          />
-                        ))}
-                      </div>
-                    ) : suggestedMicroCards.length > 0 ? (
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        {suggestedMicroCards.map((card) => (
-                          <SuggestedMicroCard
-                            key={card.id}
-                            card={card}
-                            riskLevel={violenceMicroCardProfile.safetyRiskLevel}
-                            onOpen={() => setActiveMicroCardId(card.id)}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <article className="rounded-[24px] border border-dashed border-[#D8E3F0] bg-white p-6 text-sm leading-6 text-[#64748B]">
-                        {microCardsError ??
-                          "No published micro-cards currently match this violence profile. Publish matching safety, harassment, rights, or mental health micro-cards to show them here."}
-                      </article>
-                    )}
-                  </div>
-                ) : (
-                  <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,309.33px))] lg:justify-center lg:gap-6">
-                    <GradientActionCard
-                      href="/dashboard?view=reportsubmissiondetailedexplanations"
-                      icon={<IconUsersGroup size={22} />}
-                      backgroundIcon={<IconUsersGroup size={128} />}
-                      title={t("dashboard.assistant.triage.worriedOthersTitle")}
-                      description={t(
-                        "dashboard.assistant.triage.worriedOthersBody"
-                      )}
-                    />
-                    <GradientActionCard
-                      href="/dashboard?view=resources"
-                      icon={<IconBook2 size={22} />}
-                      backgroundIcon={<IconBook2 size={128} />}
-                      title={t("dashboard.assistant.triage.selfHelpTitle")}
-                      description={t("dashboard.assistant.triage.selfHelpBody")}
-                    />
-                    <article className="relative flex min-h-[238px] flex-col justify-between overflow-hidden rounded-[30px] border border-[#FEE2E2] bg-[#FEF2F2] p-6 sm:min-h-[270px] sm:rounded-[38px] lg:min-h-[318px] lg:rounded-[48px] lg:p-8">
-                      <span className="absolute right-6 top-6 h-3 w-3 rounded-full bg-[#EF4444]" />
-                      <div>
-                        <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#EF4444] text-white shadow-[0_10px_15px_-3px_#FECACA,0_4px_6px_-4px_#FECACA]">
-                          <IconShieldCheckFilled size={22} />
-                        </span>
-                        <h4 className="mt-6 text-xl font-extrabold leading-7 text-[#111827] sm:text-2xl sm:leading-8">
-                          {t("dashboard.assistant.triage.unsafeTitle")}
-                        </h4>
-                        <p className="mt-2 max-w-[220px] text-sm leading-5 text-[#4B5563]">
-                          {t("dashboard.assistant.triage.unsafeBody")}
-                        </p>
-                      </div>
-                      <div>
-                        <a
-                          href={`tel:${EMERGENCY_NUMBER}`}
-                          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#EF4444] px-4 text-sm font-extrabold text-white shadow-[0_10px_15px_-3px_#FECACA,0_4px_6px_-4px_#FECACA] transition hover:bg-[#DC2626]"
-                        >
-                          <IconPhoneCall size={16} />
-                          {t("dashboard.assistant.triage.callEmergency")}
-                        </a>
-                        <p className="mt-3 text-center text-xs leading-4 text-[#9CA3AF]">
-                          Stay on this screen
-                        </p>
-                      </div>
+                <p className="mt-2 text-sm leading-5 text-[#64748B]">
+                  {triagePresentation.microCardSummary ||
+                    "These guides were selected from the triage support response, so the page is not re-classifying your situation in the browser."}
+                </p>
+
+                <div className="mt-5">
+                  {isLoadingMicroCards ? (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {Array.from({ length: 3 }).map((_, index) => (
+                        <div
+                          key={index}
+                          className="min-h-[220px] animate-pulse rounded-[28px] bg-white/80 shadow-[0_18px_34px_rgba(15,93,159,0.08)]"
+                        />
+                      ))}
+                    </div>
+                  ) : suggestedMicroCards.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {suggestedMicroCards.map((card) => (
+                        <SuggestedMicroCard
+                          key={card.id}
+                          card={card}
+                          riskLevel={triage?.safetyRiskLevel ?? "low"}
+                          onOpen={() => setActiveMicroCardId(card.id)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <article className="rounded-[24px] border border-dashed border-[#D8E3F0] bg-white p-6 text-sm leading-6 text-[#64748B]">
+                      {microCardsError ||
+                        "No specific guide cards were suggested for this triage yet. You can still review the steps and resources below."}
                     </article>
-                  </div>
-                )}
+                  )}
+                </div>
               </section>
 
               <section>
                 <SectionTitle>
                   {t("dashboard.assistant.triage.additionalResources")}
                 </SectionTitle>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:gap-6">
-                  <ResourceCard
-                    href="/dashboard/explorer"
-                    icon={<IconShieldCheckFilled size={20} />}
-                    title={t("dashboard.assistant.triage.resourceEsafetyTitle")}
-                    description={t(
-                      "dashboard.assistant.triage.resourceEsafetyBody"
-                    )}
-                  />
-                  <ResourceCard
-                    href="/dashboard/explorer"
-                    icon={<IconLifebuoy size={20} />}
-                    title={t(
-                      "dashboard.assistant.triage.resourceCounsellingTitle"
-                    )}
-                    description={t(
-                      "dashboard.assistant.triage.resourceCounsellingBody"
-                    )}
-                  />
+                <div className="mt-5">
+                  {support.additionalResources.length > 0 ? (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:gap-6">
+                      {support.additionalResources.map((action) => (
+                        <ResourceCard
+                          key={`${action.slot}-${action.title}`}
+                          action={action}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <article className="rounded-[24px] border border-dashed border-[#D8E3F0] bg-white p-6 text-sm leading-6 text-[#64748B]">
+                      No extra resources were matched yet. You can still review
+                      the detailed explanation page or browse general support in
+                      the explorer.
+                    </article>
+                  )}
                 </div>
               </section>
 
@@ -1761,6 +1236,14 @@ function ReportSubmissionSupportPage() {
                       Triage debug
                     </summary>
                     <div className="mt-4 grid gap-4 text-sm leading-6 text-[#475569] md:grid-cols-2">
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                          Session
+                        </p>
+                        <p className="mt-1">
+                          {resolvedConversationSessionId || "fallback only"}
+                        </p>
+                      </div>
                       <div>
                         <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
                           Selected category
@@ -1778,30 +1261,39 @@ function ReportSubmissionSupportPage() {
                           Matched facts
                         </p>
                         <p className="mt-1">
-                          {(triage.structuredFacts?.matchedFacts ?? []).join("; ") ||
-                            "none"}
+                          {(triage.structuredFacts?.matchedFacts ?? []).join(
+                            "; "
+                          ) || "none"}
                         </p>
                       </div>
                       <div>
                         <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
-                          Recommended step reasons
+                          Recommended actions
                         </p>
                         <p className="mt-1">
-                          {(triagePresentation.stepReasons ?? []).join("; ") ||
-                            "none"}
+                          {support.recommendedActions
+                            .map((item) => item.title)
+                            .join(", ") || "none"}
                         </p>
                       </div>
                       <div>
                         <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
-                          Card selection reasons
+                          Additional resources
                         </p>
                         <p className="mt-1">
-                          {triagePresentation.microCardSummary || "none"}
+                          {support.additionalResources
+                            .map((item) => item.title)
+                            .join(", ") || "none"}
                         </p>
-                        <p className="text-xs text-[#94A3B8]">
-                          Suggested cards:{" "}
-                          {suggestedMicroCards.map((card) => card.title).join(", ") ||
-                            "none"}
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                          Suggested guides
+                        </p>
+                        <p className="mt-1">
+                          {suggestedMicroCards
+                            .map((card) => card.title)
+                            .join(", ") || "none"}
                         </p>
                       </div>
                     </div>
@@ -1819,10 +1311,10 @@ function ReportSubmissionSupportPage() {
         </main>
       </div>
 
-      {activeMicroCard && violenceMicroCardProfile ? (
+      {activeMicroCard ? (
         <MicroCardDetailOverlay
           card={activeMicroCard}
-          riskLevel={violenceMicroCardProfile.safetyRiskLevel}
+          riskLevel={triage?.safetyRiskLevel ?? "low"}
           onClose={() => setActiveMicroCardId(null)}
           onPrevious={() => openAdjacentMicroCard(-1)}
           onNext={() => openAdjacentMicroCard(1)}

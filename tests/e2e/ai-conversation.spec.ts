@@ -7,6 +7,8 @@ const VOICE_START_URL = `${BASE_URL}/dashboard?view=assistantconversation&catego
 const SEEDED_VOICE_START_URL = `${BASE_URL}/dashboard?view=assistantconversation&category=domestic_violence&topic=domestic_violence&voice=1&message=First+voice+message`;
 const INITIAL_MESSAGE = "Some one pull my hijub";
 const VOICE_TRANSCRIPT = "This is a voice e2e transcript about what happened.";
+const TRIAGE_HANDOFF_MESSAGE =
+  "Of course — I can take you to your triage summary now.";
 const E2E_USER = {
   id: "user-e2e",
   email: "e2e@safespeak.test",
@@ -136,10 +138,21 @@ async function mockSafeSpeakApi(
       turnNumber += 1;
       const body = request.postDataJSON() as { content?: string };
       const userContent = body.content ?? "";
+      const normalizedContent = userContent.trim().toLowerCase();
+      const isLegalLookup =
+        normalizedContent ===
+        "what is personal information under the privacy act 1988?";
+      const isTriageHandoff =
+        normalizedContent === "give me the trige button";
       const reachedTriageThreshold = turnNumber >= 4;
-      const offerTriage = reachedTriageThreshold && !state.forceBlockedTriage;
-      const assistantContent = offerTriage
+      const offerTriage =
+        isTriageHandoff || (reachedTriageThreshold && !state.forceBlockedTriage);
+      const assistantContent = isTriageHandoff
+        ? TRIAGE_HANDOFF_MESSAGE
+        : offerTriage
         ? "Assistant e2e response 4: enough facts are collected for triage."
+        : isLegalLookup
+        ? "Under the Privacy Act 1988, section 6 says personal information means information or an opinion about an identified individual, or an individual who is reasonably identifiable."
         : `Assistant e2e response ${turnNumber}: I captured that detail. Please share one more relevant fact.`;
 
       await route.fulfill({
@@ -220,13 +233,160 @@ async function mockSafeSpeakApi(
             responseMeta: {
               confidence: "medium",
               disclaimer: "This is information only, not legal advice.",
-              citations: [],
+              citations: isLegalLookup
+                ? [
+                    {
+                      title: "Privacy Act 1988",
+                      sectionRef: "Section 6",
+                      url: "https://example.test/privacy-act-section-6",
+                    },
+                  ]
+                : [],
               rag: {
-                used: false,
+                used: isLegalLookup,
                 unavailable: false,
-                resultCount: 0,
+                resultCount: isLegalLookup ? 1 : 0,
               },
-              reviewStatus: "automated",
+              reviewStatus: isTriageHandoff
+                ? "triage_handoff"
+                : "automated",
+              triageReady: isTriageHandoff ? true : undefined,
+              nextAction: isTriageHandoff
+                ? "show_triage_button"
+                : undefined,
+              conversationSessionId: "conversation-e2e",
+              showSources: isLegalLookup ? true : false,
+              sourceDisplayReason: isTriageHandoff
+                ? "triage_handoff"
+                : isLegalLookup
+                ? "legal_lookup"
+                : "hidden_support_reply",
+            },
+          })
+        ),
+      });
+      return;
+    }
+
+    if (
+      pathname.endsWith("/conversation-flow/sessions/conversation-e2e/support") &&
+      request.method() === "GET"
+    ) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          apiEnvelope({
+            session: {
+              id: "conversation-e2e",
+              selectedTopic: "cyber_scam",
+              detectedCategory: "online_abuse",
+              status: "triaged",
+              safetyRiskLevel: "high",
+              jurisdiction: "NSW",
+              messageCount: 10,
+              userTurnCount: 5,
+            },
+            triage: {
+              likelyCategory: "online_abuse",
+              likelyCategoryLabel: "Image-Based Abuse & Online Threat Support",
+              confidenceScore: 0.92,
+              confidenceLabel: "high",
+              safetyRiskLevel: "high",
+              reasoningSummary:
+                "Matched to privacy, image-based abuse, online threats, identity protection, and workplace privacy signals.",
+              structuredFacts: {
+                imageBasedAbuse: true,
+                onlineThreatBlackmail: true,
+                privacyDataBreach: true,
+                identityTheftRisk: true,
+                scamFraud: true,
+                employerHealthPrivacy: true,
+                matchedFacts: [
+                  "image-based abuse/private photos",
+                  "privacy/data breach",
+                  "identity theft risk",
+                ],
+              },
+              presentation: {
+                title: "Image-Based Abuse & Online Threat Support",
+                body: "This may involve private photos, privacy exposure, scam risk, and online threats.",
+                assessmentNote:
+                  "This is not a formal finding. You choose what to do next.",
+                primaryStepTitle:
+                  "Protect accounts, bank details, and identity information",
+                primaryStepBody:
+                  "Change passwords, contact your bank, save screenshots, and avoid sending more money or documents.",
+                immediateDangerBody:
+                  "If the threats escalate or you feel unsafe, put immediate safety first and consider calling 000.",
+                secondTitle: "Report the content or account issue",
+                secondBody:
+                  "Review platform, eSafety, privacy complaint, and company response options.",
+                secondActionLabel: "Review options",
+                secondActionHref:
+                  "/dashboard?view=reportsubmissionrecommendations",
+                thirdTitle:
+                  "Keep a short record of the workplace privacy issue",
+                thirdBody:
+                  "Keep a timeline of who shared the information and who received it.",
+                thirdActionLabel: "Evidence steps",
+                thirdActionHref: "/dashboard?view=reportsubmissionevidence",
+                microCardSummary:
+                  "Matched to privacy, identity, evidence, and online threat signals.",
+              },
+              matchedLegislationIds: [],
+              matchedKnowledgeSources: [],
+              humanReviewRecommended: false,
+              missingInformation: [],
+              canProceedToRecommendations: true,
+              matchedResourceTypes: [
+                "online_safety",
+                "government",
+                "scam_support",
+                "workplace_body",
+              ],
+              relatedIssueTypes: [
+                "online_abuse",
+                "privacy_data_breach",
+                "scam_fraud",
+                "workplace_privacy",
+              ],
+              disclaimer: "This is information only, not legal advice.",
+            },
+            support: {
+              suggestedMicroCardIds: [],
+              recommendedActions: [
+                {
+                  slot: "immediateDanger",
+                  title: "Immediate danger",
+                  description:
+                    "If the threats escalate or you feel unsafe, put immediate safety first and consider calling 000.",
+                  whySuggested:
+                    "This stays visible so urgent safety options are always easy to reach.",
+                  ctaLabel: "Call 000",
+                  href: "tel:000",
+                  phone: "000",
+                  actionKind: "call",
+                  consentNote:
+                    "SafeSpeak does not call emergency services for you.",
+                },
+              ],
+              additionalResources: [
+                {
+                  slot: "additional",
+                  title: "eSafety",
+                  description:
+                    "Online abuse guidance and reporting option for harmful content.",
+                  whySuggested:
+                    "Suggested because the triage picked up online abuse, image-based abuse, or harmful content concerns.",
+                  ctaLabel: "Open eSafety",
+                  href: "https://www.esafety.gov.au/",
+                  actionKind: "external_link",
+                  consentNote:
+                    "SafeSpeak does not contact eSafety unless you choose that next step.",
+                },
+              ],
+              matchedSupportServices: [],
+              fallbackUsed: false,
             },
           })
         ),
@@ -708,6 +868,66 @@ test.describe("SafeSpeak AI Conversation", () => {
 
     await expect(page.getByText("Assistant e2e response 4")).toBeVisible();
     await expect(triageButton).toHaveCount(0);
+  });
+
+  test("hides supportive source footers, shows compact legal footers, and preserves session into triage", async ({
+    page,
+  }) => {
+    apiMock.consent = {
+      process_with_ai: true,
+      transcribe_audio: true,
+    };
+
+    await page.goto(START_URL, { waitUntil: "domcontentloaded" });
+
+    const input = page.getByTestId("ai-conversation-input");
+    const sendButton = page.getByTestId("ai-conversation-send");
+
+    await expect(page.getByText("Assistant e2e response 1")).toBeVisible();
+    await expect(page.getByText(/^Source:/)).toHaveCount(0);
+
+    await input.fill("What is personal information under the Privacy Act 1988?");
+    await sendButton.click();
+
+    await expect(
+      page.getByText("Under the Privacy Act 1988, section 6 says personal information means")
+    ).toBeVisible();
+    await expect(
+      page.getByText("Source: Privacy Act 1988, section 6")
+    ).toBeVisible();
+
+    await input.fill("give me the trige button");
+    await sendButton.click();
+
+    const triageButton = page.getByTestId("ai-conversation-triage-button");
+    await expect(page.getByText(TRIAGE_HANDOFF_MESSAGE)).toBeVisible();
+    await expect(triageButton).toBeVisible();
+    await expect(page.getByText(/^Source:/)).toHaveCount(1);
+
+    await triageButton.click();
+
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("view"))
+      .toBe("reportsubmissionsupport");
+    await expect
+      .poll(() =>
+        new URL(page.url()).searchParams.get("conversationSessionId")
+      )
+      .toBe("conversation-e2e");
+    await expect(
+      page.getByText("Image-Based Abuse & Online Threat Support")
+    ).toBeVisible();
+    await expect(
+      page.getByText(/SafeSpeak does not call, email, report, or share anything automatically/i)
+    ).toBeVisible();
+    await expect(page.getByText("Triage debug")).toHaveCount(0);
+
+    const primaryStepLink = page.getByTestId("triage-primary-step-link");
+    await expect(primaryStepLink).toBeVisible();
+    await expect(primaryStepLink).toHaveAttribute(
+      "href",
+      /conversationSessionId=conversation-e2e/
+    );
   });
 
   test("keeps listening after spoken assistant replies when live recognition stalls", async ({
