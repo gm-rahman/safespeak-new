@@ -85,6 +85,8 @@ export type ConversationFlowTriage = {
     migrationOrVisaThreat?: boolean;
     languageOrInterpreterNeed?: boolean;
     selfHarmOrSuicidal?: boolean;
+    childSafetyRisk?: boolean;
+    sexualViolenceRisk?: boolean;
     physicalViolence?: boolean;
     threatsPresent?: boolean;
     immediateDanger?: boolean;
@@ -96,6 +98,24 @@ export type ConversationFlowTriage = {
     jurisdiction?: string;
   };
   relatedIssueTypes?: string[];
+  safetyOverride?: {
+    safetyOverride: boolean;
+    safetyLevel: "none" | "low" | "medium" | "high" | "urgent";
+    safetyReasons: string[];
+    recommendedImmediateActions: string[];
+  };
+  possiblePathways?: Array<{
+    pathwayId: string;
+    title: string;
+    description: string;
+    userFacingLabel: string;
+    userFacingIntro: string;
+    relatedCategory: string;
+  }>;
+  intakePlan?: ConversationFlowIntakePlan | null;
+  intakePlans?: ConversationFlowIntakePlan[];
+  consentGovernance?: ConversationFlowConsentGovernance;
+  pathwayExplanation?: string;
   presentation?: {
     title: string;
     body: string;
@@ -166,6 +186,48 @@ export type ConversationFlowSupportAction = {
   actionKind: "call" | "external_link";
   consentNote: string;
   websiteUrl?: string;
+  issueTypes?: string[];
+  jurisdiction?: string;
+  urgency?: "low" | "medium" | "high" | "urgent";
+  contactType?: "phone" | "web";
+  sourceUrl?: string;
+  enabled?: boolean;
+};
+
+export type ConversationFlowIntakePlan = {
+  pathwayId: string;
+  requiredFields: Array<{ key: string; label: string }>;
+  optionalFields: Array<{ key: string; label: string }>;
+  safetyWarnings: string[];
+  consentRequiredBeforeSharing: true;
+  userFriendlyExplanation: string;
+};
+
+export type ConversationFlowConsentGovernance = {
+  nothingSharedAutomatically: true;
+  userChoosesWhatToDoNext: true;
+  reviewWithoutSending: true;
+  consentRequiredBeforeSharing: true;
+  consentRequiredBeforeReferral: true;
+  consentRequiredBeforeExport: true;
+  consentRequiredBeforeEvidenceUpload: true;
+  consentRequiredBeforeCloudSync: true;
+  noAutomaticPoliceEscalation: true;
+  noBackgroundTracking: true;
+  messages: string[];
+};
+
+export type ConversationFlowReportPreparation = {
+  status: "draft" | "info_only" | "ready_to_review" | "submitted" | "withdrawn";
+  informationOnlyDisclaimer: string;
+  consentState: "not_granted";
+  notSentYet: true;
+  userNarrativeSummary: string;
+  structuredFactsSummary: string[];
+  timeline: Array<{ label: string; value: string }>;
+  evidenceList: string[];
+  selectedPathwayId?: string;
+  missingFields: string[];
 };
 
 export type ConversationFlowSupportBundle = {
@@ -174,6 +236,11 @@ export type ConversationFlowSupportBundle = {
   additionalResources: ConversationFlowSupportAction[];
   matchedSupportServices: ConversationFlowRecommendation[];
   fallbackUsed?: boolean;
+  possiblePathways?: ConversationFlowTriage["possiblePathways"];
+  intakePlan?: ConversationFlowIntakePlan | null;
+  intakePlans?: ConversationFlowIntakePlan[];
+  consentGovernance?: ConversationFlowConsentGovernance;
+  reportPreparation?: ConversationFlowReportPreparation;
 };
 
 export type ConversationFlowDetails = {
@@ -244,6 +311,11 @@ type ConversationTurnResponse = {
       resultCount: number;
     };
     reviewStatus?: string;
+    assistantLanguage?: string;
+    safetyOverride?: boolean;
+    safetyLevel?: "none" | "low" | "medium" | "high" | "urgent";
+    safetyReasons?: string[];
+    recommendedImmediateActions?: string[];
   };
 };
 

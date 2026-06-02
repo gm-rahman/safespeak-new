@@ -905,6 +905,12 @@ function ReportSubmissionSupportPage() {
       ),
     [canProceedToRecommendations, resolvedConversationSessionId]
   );
+  const safetyOverride = triage?.safetyOverride;
+  const possiblePathways = support.possiblePathways ?? triage?.possiblePathways ?? [];
+  const intakePlan = support.intakePlan ?? triage?.intakePlan ?? null;
+  const consentGovernance =
+    support.consentGovernance ?? triage?.consentGovernance ?? null;
+  const reportPreparation = support.reportPreparation;
 
   useEffect(() => {
     if (!activeMicroCardId) {
@@ -1061,6 +1067,140 @@ function ReportSubmissionSupportPage() {
                   </p>
                 </article>
               </section>
+
+              {safetyOverride?.safetyOverride ? (
+                <section className="rounded-[24px] border border-[#FECACA] bg-[#FFF7ED] p-5 shadow-[0_10px_24px_rgba(248,113,113,0.08)] sm:rounded-[30px] sm:p-6">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#C2410C]">
+                    Safety first
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-[#7C2D12]">
+                    A higher-risk safety concern may be present, so SafeSpeak is
+                    keeping this step simple and safety-focused.
+                  </p>
+                  {safetyOverride.recommendedImmediateActions.length > 0 ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {safetyOverride.recommendedImmediateActions.map((item) => (
+                        <span
+                          key={item}
+                          className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#9A3412]"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
+              <section className="grid gap-4 lg:grid-cols-2">
+                <article className="rounded-[24px] border border-[#D8E3F0] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)] sm:rounded-[30px] sm:p-6">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                    Possible pathways
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-[#475569]">
+                    {triage?.pathwayExplanation ||
+                      "These are possible support or reporting pathways only. SafeSpeak is not sending anything automatically."}
+                  </p>
+                  <div className="mt-4 grid gap-3">
+                    {possiblePathways.slice(0, 4).map((pathway) => (
+                      <div
+                        key={pathway.pathwayId}
+                        className="rounded-[18px] bg-[#F8FAFC] px-4 py-3"
+                      >
+                        <p className="text-sm font-extrabold text-[#0F172A]">
+                          {pathway.userFacingLabel}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-[#64748B]">
+                          {pathway.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+
+                <article className="rounded-[24px] border border-[#D8E3F0] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)] sm:rounded-[30px] sm:p-6">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                    Prepare for this pathway
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-[#475569]">
+                    {intakePlan?.userFriendlyExplanation ||
+                      "SafeSpeak can show what may be asked next without forcing a full form upfront."}
+                  </p>
+                  {intakePlan ? (
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[#94A3B8]">
+                          What we may ask next
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {intakePlan.requiredFields.map((field) => (
+                            <span
+                              key={field.key}
+                              className="rounded-full bg-[#EEF4FB] px-3 py-1.5 text-xs font-semibold text-[#0F5D9F]"
+                            >
+                              {field.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {intakePlan.optionalFields.length > 0 ? (
+                        <div>
+                          <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[#94A3B8]">
+                            Helpful if available
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {intakePlan.optionalFields.map((field) => (
+                              <span
+                                key={field.key}
+                                className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-xs font-semibold text-[#475569]"
+                              >
+                                {field.label}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </article>
+              </section>
+
+              {reportPreparation ? (
+                <section className="rounded-[24px] border border-[#D8E3F0] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)] sm:rounded-[30px] sm:p-6">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                    Report draft status
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-[#475569]">
+                    {reportPreparation.informationOnlyDisclaimer}
+                  </p>
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-[18px] bg-[#F8FAFC] p-4">
+                      <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[#94A3B8]">
+                        Status
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-[#0F172A]">
+                        {reportPreparation.status.replace(/_/g, " ")}
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-[#64748B]">
+                        {reportPreparation.userNarrativeSummary}
+                      </p>
+                    </div>
+                    <div className="rounded-[18px] bg-[#F8FAFC] p-4">
+                      <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[#94A3B8]">
+                        Still missing
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-[#64748B]">
+                        {reportPreparation.missingFields.length > 0
+                          ? reportPreparation.missingFields
+                              .slice(0, 4)
+                              .join(", ")
+                              .replace(/_/g, " ")
+                          : "No key field gaps were highlighted in this draft."}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
 
               <section>
                 <SectionTitle
@@ -1302,9 +1442,12 @@ function ReportSubmissionSupportPage() {
               ) : null}
 
               <footer className="border-t border-[#F3F4F6] pt-8">
-                <p className="mx-auto max-w-[672px] text-center text-xs leading-5 text-[#9CA3AF]">
-                  {t("dashboard.assistant.triage.footerNote")}
-                </p>
+                <div className="mx-auto flex max-w-[760px] flex-col gap-2 text-center text-xs leading-5 text-[#9CA3AF]">
+                  {(consentGovernance?.messages ?? []).map((message) => (
+                    <p key={message}>{message}</p>
+                  ))}
+                  <p>{t("dashboard.assistant.triage.footerNote")}</p>
+                </div>
               </footer>
             </>
           ) : null}
