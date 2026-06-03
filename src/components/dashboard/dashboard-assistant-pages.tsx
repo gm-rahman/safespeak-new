@@ -815,6 +815,8 @@ function SafeSpeakAssistantConversationPage({
   const { t, i18n } = useTranslation();
   const router = useRouter();
   type ConversationUiMessage = AssistantConversationMessage & {
+    messageId?: string;
+    turnNumber?: number;
     responseMeta?: {
       disclaimer?: string;
       citations?: ConversationCitation[];
@@ -822,6 +824,7 @@ function SafeSpeakAssistantConversationPage({
       triageReady?: boolean;
       nextAction?: string;
       conversationSessionId?: string;
+      selectedResponseSource?: string;
       showSources?: boolean;
       sourceDisplayReason?:
         | "legal_lookup"
@@ -842,10 +845,12 @@ function SafeSpeakAssistantConversationPage({
     "I'm helping you structure your report.",
     "Te ayudo a estructurar tu reporte.",
   ];
-  const existingDraft = getAssistantConversationDraft({
+  const storedDraft = getAssistantConversationDraft({
     topic: initialTopic,
     incidentCategory: initialCategory,
   });
+  const shouldIgnoreStoredDraft = Boolean(seededMessage);
+  const existingDraft = shouldIgnoreStoredDraft ? null : storedDraft;
   const shouldRestoreVoiceMode = Boolean(
     startVoiceMode && existingDraft?.voiceSessionActive
   );
@@ -914,6 +919,15 @@ function SafeSpeakAssistantConversationPage({
   const hasSentInitialRef = useRef(false);
   const hasStartedInitialVoiceModeRef = useRef(false);
   const latestMessagesRef = useRef(messages);
+  const latestRequestIdRef = useRef(0);
+  const latestAssistantTurnRef = useRef(
+    Math.max(
+      0,
+      ...messages
+        .filter((message) => message.role === "assistant")
+        .map((message) => message.turnNumber ?? 0)
+    )
+  );
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const pendingAssistantRequestRef = useRef<{
     message: string;
@@ -973,8 +987,56 @@ function SafeSpeakAssistantConversationPage({
     transcriptionLanguage === "es" ? "es-ES" : "en-US";
 
   useEffect(() => {
+    if (!storedDraft) {
+      return;
+    }
+
+    console.info(
+      shouldIgnoreStoredDraft
+        ? "[SafeSpeak][frontend-draft-ignored]"
+        : "[SafeSpeak][frontend-draft-restored]",
+      JSON.stringify({
+        seededMessage,
+        storedConversationSessionId: storedDraft.conversationSessionId,
+        storedMessageCount: storedDraft.messages.length,
+      })
+    );
+  }, [seededMessage, shouldIgnoreStoredDraft, storedDraft]);
+
+  useEffect(() => {
+    if (!shouldIgnoreStoredDraft) {
+      return;
+    }
+
+    clearAssistantConversationDraft({
+      topic: initialTopic,
+      incidentCategory: initialCategory,
+    });
+  }, [initialCategory, initialTopic, shouldIgnoreStoredDraft]);
+
+  useEffect(() => {
     latestMessagesRef.current = messages;
+    latestAssistantTurnRef.current = Math.max(
+      latestAssistantTurnRef.current,
+      ...messages
+        .filter((message) => message.role === "assistant")
+        .map((message) => message.turnNumber ?? 0)
+    );
   }, [messages]);
+
+  useEffect(() => {
+    if (storedDraft) {
+      console.info(
+        "[SafeSpeak][frontend-draft-restore]",
+        JSON.stringify({
+          usedDraft: !shouldIgnoreStoredDraft,
+          conversationSessionId: storedDraft.conversationSessionId ?? null,
+          messageCount: storedDraft.messages.length,
+          lastMessagePreview: storedDraft.messages.at(-1)?.content?.slice(0, 120) ?? "",
+        })
+      );
+    }
+  }, [shouldIgnoreStoredDraft, storedDraft]);
 
   useEffect(() => {
     voiceSessionActiveRef.current = isVoiceSessionActive;
@@ -1480,9 +1542,21 @@ function SafeSpeakAssistantConversationPage({
       conversation: AssistantConversationMessage[],
       options: { speakResponse?: boolean; continueVoiceSession?: boolean } = {}
     ) => {
+      const requestId = latestRequestIdRef.current + 1;
+      latestRequestIdRef.current = requestId;
       setIsSending(true);
       setError(null);
       let resolvedSessionId = conversationSessionId;
+
+      console.info(
+        "[SafeSpeak][frontend-request]",
+        JSON.stringify({
+          requestId,
+          conversationSessionId: resolvedSessionId,
+          latestUserMessage: message,
+          conversationLength: conversation.length,
+        })
+      );
 
       try {
         await ensureConsent(consentRequirements.aiAssistant);
@@ -1505,6 +1579,51 @@ function SafeSpeakAssistantConversationPage({
         const nextTimeline = response.factExtraction.timeline ?? {};
         const responseSessionId =
           response.responseMeta?.conversationSessionId ?? resolvedSessionId;
+
+        console.info(
+          "[SafeSpeak][frontend-response]",
+          JSON.stringify({
+            requestId,
+            responseSessionId,
+            userMessageId: response.userMessage.id,
+            userTurnNumber: response.userMessage.turnNumber,
+            assistantMessageId: response.assistantMessage.id,
+            assistantTurnNumber: response.assistantMessage.turnNumber,
+            selectedResponseSource:
+              (response.assistantMessage.metadata?.selectedResponseSource as
+                | string
+                | undefined) ??
+              (response.responseMeta as { selectedResponseSource?: string } | undefined)
+                ?.selectedResponseSource ??
+              "unknown",
+            assistantPreview: response.assistantMessage.content.slice(0, 120),
+          })
+        );
+
+        if (requestId !== latestRequestIdRef.current) {
+          console.info(
+            "[SafeSpeak][frontend-response-ignored]",
+            JSON.stringify({
+              requestId,
+              latestRequestId: latestRequestIdRef.current,
+              assistantMessageId: response.assistantMessage.id,
+            })
+          );
+          return;
+        }
+
+        if (response.assistantMessage.turnNumber <= latestAssistantTurnRef.current) {
+          console.info(
+            "[SafeSpeak][frontend-stale-assistant-ignored]",
+            JSON.stringify({
+              requestId,
+              assistantMessageId: response.assistantMessage.id,
+              assistantTurnNumber: response.assistantMessage.turnNumber,
+              latestAssistantTurnNumber: latestAssistantTurnRef.current,
+            })
+          );
+          return;
+        }
 
         if (responseSessionId && responseSessionId !== conversationSessionId) {
           setConversationSessionId(responseSessionId);
@@ -1537,12 +1656,15 @@ function SafeSpeakAssistantConversationPage({
         const assistantMessage: ConversationUiMessage = {
           role: "assistant",
           content: response.assistantMessage.content,
+          messageId: response.assistantMessage.id,
+          turnNumber: response.assistantMessage.turnNumber,
           responseMeta: {
             citations: response.responseMeta?.citations,
             confidence: response.responseMeta?.confidence,
             triageReady: response.responseMeta?.triageReady,
             nextAction: response.responseMeta?.nextAction,
             conversationSessionId: responseSessionId,
+            selectedResponseSource: response.responseMeta?.selectedResponseSource,
             showSources: response.responseMeta?.showSources,
             sourceDisplayReason: response.responseMeta?.sourceDisplayReason,
             reviewStatus: response.responseMeta?.reviewStatus,
@@ -1552,6 +1674,7 @@ function SafeSpeakAssistantConversationPage({
             ),
           },
         };
+        latestAssistantTurnRef.current = response.assistantMessage.turnNumber;
 
         if (options.speakResponse) {
           setMessages((currentMessages) => [
@@ -2508,7 +2631,10 @@ function SafeSpeakAssistantConversationPage({
 
                     return (
                       <div
-                        key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
+                        key={
+                          message.messageId ??
+                          `${message.role}-${message.turnNumber ?? index}-${message.content.slice(0, 16)}`
+                        }
                         data-testid={`ai-conversation-message-${message.role}`}
                         className={
                           message.role === "user" ? "flex justify-end" : ""

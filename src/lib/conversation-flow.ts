@@ -286,6 +286,7 @@ type ConversationTurnResponse = {
     triageReady?: boolean;
     nextAction?: string;
     conversationSessionId?: string;
+    selectedResponseSource?: string;
     showSources?: boolean;
     sourceDisplayReason?:
       | "legal_lookup"
