@@ -283,10 +283,14 @@ type ConversationTurnResponse = {
   responseMeta?: {
     confidence?: string;
     disclaimer?: string;
+    intent?: string;
     triageReady?: boolean;
     nextAction?: string;
     conversationSessionId?: string;
     selectedResponseSource?: string;
+    responseSource?: string;
+    model?: string;
+    ragStatus?: string;
     showSources?: boolean;
     sourceDisplayReason?:
       | "legal_lookup"

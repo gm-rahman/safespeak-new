@@ -27,6 +27,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
+import { AssistantMessageRenderer } from "@/components/chat/assistant-message-renderer";
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
 import {
@@ -821,10 +822,14 @@ function SafeSpeakAssistantConversationPage({
       disclaimer?: string;
       citations?: ConversationCitation[];
       confidence?: string;
+      intent?: string;
       triageReady?: boolean;
       nextAction?: string;
       conversationSessionId?: string;
       selectedResponseSource?: string;
+      responseSource?: string;
+      model?: string;
+      ragStatus?: string;
       showSources?: boolean;
       sourceDisplayReason?:
         | "legal_lookup"
@@ -1596,6 +1601,10 @@ function SafeSpeakAssistantConversationPage({
               (response.responseMeta as { selectedResponseSource?: string } | undefined)
                 ?.selectedResponseSource ??
               "unknown",
+            intent:
+              (response.assistantMessage.metadata?.intent as string | undefined) ??
+              response.responseMeta?.intent ??
+              "unknown",
             assistantPreview: response.assistantMessage.content.slice(0, 120),
           })
         );
@@ -1661,10 +1670,14 @@ function SafeSpeakAssistantConversationPage({
           responseMeta: {
             citations: response.responseMeta?.citations,
             confidence: response.responseMeta?.confidence,
+            intent: response.responseMeta?.intent,
             triageReady: response.responseMeta?.triageReady,
             nextAction: response.responseMeta?.nextAction,
             conversationSessionId: responseSessionId,
             selectedResponseSource: response.responseMeta?.selectedResponseSource,
+            responseSource: response.responseMeta?.responseSource,
+            model: response.responseMeta?.model,
+            ragStatus: response.responseMeta?.ragStatus,
             showSources: response.responseMeta?.showSources,
             sourceDisplayReason: response.responseMeta?.sourceDisplayReason,
             reviewStatus: response.responseMeta?.reviewStatus,
@@ -2642,13 +2655,17 @@ function SafeSpeakAssistantConversationPage({
                       >
                         <div className="max-w-[min(88%,540px)]">
                           <div
-                            className={`inline-flex max-w-full whitespace-pre-wrap rounded-[20px] bg-white px-4 py-2.5 text-[13px] leading-[1.6] shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
+                            className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-3 shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
                               message.role === "user"
-                                ? "rounded-tr-[8px] text-[#314256]"
-                                : "rounded-tl-[8px] text-[#5f6f86]"
+                                ? "rounded-tr-[8px] whitespace-pre-wrap text-[14px] leading-[1.6] text-[#314256]"
+                                : "rounded-tl-[8px] text-[#41566f]"
                             }`}
                           >
-                            {displayContent}
+                            {message.role === "assistant" ? (
+                              <AssistantMessageRenderer content={displayContent} />
+                            ) : (
+                              displayContent
+                            )}
                           </div>
                           {message.role === "assistant" ? (
                             <AssistantResponseCitations

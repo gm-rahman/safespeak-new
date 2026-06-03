@@ -116,3 +116,11 @@ export function clearAssistantConversationDraft(input?: AssistantDraftScopeInput
 
   saveStoredAssistantDraftMap(draftMap);
 }
+
+export function clearAllAssistantConversationDrafts(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(ASSISTANT_DRAFT_STORAGE_KEY);
+}
