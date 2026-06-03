@@ -74,6 +74,10 @@ import {
 import { LAST_NON_CONVERSATION_DASHBOARD_URL_STORAGE_KEY } from "@/lib/dashboard-navigation";
 import { triggerQuickExit } from "@/lib/safety";
 import {
+  buildConversationRequestBody,
+  hasBrokenTextEncoding,
+} from "@/lib/text-encoding";
+import {
   createAssistantVoiceAudioUrl,
   synthesizeAssistantVoice,
   transcribeAssistantVoice,
@@ -1559,11 +1563,32 @@ function SafeSpeakAssistantConversationPage({
           requestId,
           conversationSessionId: resolvedSessionId,
           latestUserMessage: message,
+          latestUserMessagePayload: buildConversationRequestBody({
+            content: message,
+            language: transcriptionLanguage,
+          }),
           conversationLength: conversation.length,
         })
       );
 
       try {
+        if (hasBrokenTextEncoding(message)) {
+          setMessages([
+            ...conversation,
+            {
+              role: "assistant",
+              content:
+                "The message looks like it was received with broken text encoding. Please resend it.",
+              responseMeta: {
+                intent: "encoding_error",
+                selectedResponseSource: "frontend_encoding_guard",
+              },
+            },
+          ]);
+          setIsSending(false);
+          return;
+        }
+
         await ensureConsent(consentRequirements.aiAssistant);
 
         if (!resolvedSessionId) {

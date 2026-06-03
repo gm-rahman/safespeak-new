@@ -18,6 +18,11 @@ export type ConversationFlowSession = {
     | "recommendation_ready"
     | "completed";
   safetyRiskLevel: "low" | "medium" | "high" | "immediate";
+  activeIssueId?: string;
+  latestTurnRiskLevel?: string;
+  activeIncidentRiskLevel?: string;
+  sessionHistoricalMaxRiskLevel?: string;
+  assistantFormatPreference?: "paragraphs" | "bullets" | "mix";
   jurisdiction?: string;
   location?: string;
   messageCount: number;
@@ -321,6 +326,13 @@ type ConversationTurnResponse = {
     safetyLevel?: "none" | "low" | "medium" | "high" | "urgent";
     safetyReasons?: string[];
     recommendedImmediateActions?: string[];
+    nonIncidentTurn?: boolean;
+    triageUpdated?: boolean;
+    latestTurnRiskLevel?: string;
+    activeIncidentRiskLevel?: string;
+    sessionHistoricalMaxRiskLevel?: string;
+    assistantFormatPreference?: "paragraphs" | "bullets" | "mix";
+    encodingWarning?: boolean;
   };
 };
 

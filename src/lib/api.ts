@@ -1,3 +1,5 @@
+import { buildUtf8JsonHeaders } from "@/lib/text-encoding";
+
 export interface ApiEnvelope<TData> {
   success: boolean;
   message: string;
@@ -90,11 +92,9 @@ export async function apiRequest<TData>(
 ): Promise<ApiEnvelope<TData>> {
   const baseUrl = getApiBaseUrl(options.baseUrl);
   const isFormData = options.body instanceof FormData;
-  const headers = new Headers(options.headers);
-
-  if (!isFormData && options.body !== undefined) {
-    headers.set("Content-Type", "application/json");
-  }
+  const headers = isFormData
+    ? new Headers(options.headers)
+    : buildUtf8JsonHeaders(options.headers);
 
   if (options.token) {
     headers.set("Authorization", `Bearer ${options.token}`);
