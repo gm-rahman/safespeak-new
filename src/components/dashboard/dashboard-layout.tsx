@@ -433,7 +433,7 @@ export function DashboardShell({
     activeTab === "notifications"
       ? "xl:mx-auto xl:min-h-[calc(100dvh-2rem)] xl:w-full xl:max-w-[1360px]"
       : homeView === "assistantconversation"
-        ? "xl:h-[100dvh] xl:min-h-0"
+        ? "h-[100dvh] min-h-0"
       : "xl:min-h-[calc(100dvh-2rem)]";
 
   return (
@@ -451,7 +451,14 @@ export function DashboardShell({
           sectionSizeClass
         )}
       >
-        <div className="overflow-hidden rounded-[16px] bg-[#edf2f8] sm:rounded-[20px] xl:flex xl:h-full xl:min-h-0 xl:flex-col">
+        <div
+          className={cn(
+            "overflow-hidden rounded-[16px] bg-[#edf2f8] sm:rounded-[20px]",
+            homeView === "assistantconversation"
+              ? "flex h-full min-h-0 flex-col"
+              : "xl:flex xl:h-full xl:min-h-0 xl:flex-col"
+          )}
+        >
           <EmergencyToolbar />
           {children}
         </div>

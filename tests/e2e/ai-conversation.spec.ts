@@ -532,6 +532,13 @@ async function installVoiceMocks(page: Page) {
       configurable: true,
       value: MockAudio,
     });
+    try {
+      delete (window as any).speechSynthesis;
+      delete (window as any).SpeechSynthesisUtterance;
+      delete (window as any).webkitSpeechSynthesis;
+      delete (window.constructor.prototype as any).speechSynthesis;
+      delete (window.constructor.prototype as any).SpeechSynthesisUtterance;
+    } catch (e) {}
   });
 }
 
@@ -642,6 +649,13 @@ async function installContinuousVoiceLoopMocks(page: Page) {
       configurable: true,
       value: MockAudio,
     });
+    try {
+      delete (window as any).speechSynthesis;
+      delete (window as any).SpeechSynthesisUtterance;
+      delete (window as any).webkitSpeechSynthesis;
+      delete (window.constructor.prototype as any).speechSynthesis;
+      delete (window.constructor.prototype as any).SpeechSynthesisUtterance;
+    } catch (e) {}
   });
 }
 

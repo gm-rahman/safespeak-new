@@ -181,6 +181,7 @@ export function AssistantInteraction({
   const {
     pendingConsentRequirement,
     isGrantingConsent,
+    captureConsentError,
     clearPendingConsent,
     grantPendingConsent,
   } = useConsentGate();
@@ -462,32 +463,20 @@ export function AssistantInteraction({
       try {
         await ensureConsent(consentRequirements.audioTranscription);
       } catch (error) {
-        if (error instanceof ConsentRequiredError) {
-          try {
-            await grantConsent(
-              getConsentGrantFlags(consentRequirements.audioTranscription),
-              consentRequirements.audioTranscription.source
-            );
-          } catch (grantError) {
-            setSpeechError(
-              grantError instanceof Error
-                ? grantError.message
-                : "Consent could not be saved."
-            );
-            setVoiceAvatarState("idle");
-            setActiveVoiceCaptureTarget(null);
-            return;
-          }
-        } else {
-          setSpeechError(
-            error instanceof Error
-              ? error.message
-              : "Consent status could not be checked."
-          );
+        if (captureConsentError(error)) {
           setVoiceAvatarState("idle");
           setActiveVoiceCaptureTarget(null);
           return;
         }
+
+        setSpeechError(
+          error instanceof Error
+            ? error.message
+            : "Consent status could not be checked."
+        );
+        setVoiceAvatarState("idle");
+        setActiveVoiceCaptureTarget(null);
+        return;
       }
 
       setSpeechError(null);

@@ -1227,8 +1227,9 @@ function SafeSpeakAssistantConversationPage({
         }
 
         const autoplayBlocked =
-          playbackError instanceof DOMException &&
-          playbackError.name === "NotAllowedError";
+          (playbackError instanceof DOMException ||
+            (playbackError && typeof playbackError === "object" && "name" in playbackError)) &&
+          (playbackError as any).name === "NotAllowedError";
 
         revealPendingSpeechResponse();
 
@@ -1484,19 +1485,7 @@ function SafeSpeakAssistantConversationPage({
       let resolvedSessionId = conversationSessionId;
 
       try {
-        try {
-          await ensureConsent(consentRequirements.aiAssistant);
-        } catch (consentError) {
-          if (consentError instanceof ConsentRequiredError) {
-            await grantConsent(
-              getConsentGrantFlags(consentRequirements.aiAssistant),
-              consentRequirements.aiAssistant.source
-            );
-            clearPendingConsent();
-          } else {
-            throw consentError;
-          }
-        }
+        await ensureConsent(consentRequirements.aiAssistant);
 
         if (!resolvedSessionId) {
           const session = await createConversationFlowSession({
@@ -1957,32 +1946,19 @@ function SafeSpeakAssistantConversationPage({
     try {
       await ensureConsent(consentRequirements.audioTranscription);
     } catch (consentCheckError) {
-      if (consentCheckError instanceof ConsentRequiredError) {
-        try {
-          await grantConsent(
-            getConsentGrantFlags(consentRequirements.audioTranscription),
-            consentRequirements.audioTranscription.source
-          );
-        } catch (grantError) {
-          showTransientSpeechError(
-            grantError instanceof Error
-              ? grantError.message
-              : "Consent could not be saved.",
-            4500
-          );
-          setVoiceAvatarState("idle");
-          return false;
-        }
-      } else {
-        showTransientSpeechError(
-          consentCheckError instanceof Error
-            ? consentCheckError.message
-            : "Consent status could not be checked.",
-          4500
-        );
+      if (captureConsentError(consentCheckError)) {
         setVoiceAvatarState("idle");
         return false;
       }
+
+      showTransientSpeechError(
+        consentCheckError instanceof Error
+          ? consentCheckError.message
+          : "Consent status could not be checked.",
+        4500
+      );
+      setVoiceAvatarState("idle");
+      return false;
     }
 
     setSpeechError(null);
@@ -2487,9 +2463,9 @@ function SafeSpeakAssistantConversationPage({
   return (
     <div
       data-testid="ai-conversation-page"
-      className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 xl:flex xl:flex-1 xl:flex-col xl:overflow-hidden xl:pb-0"
+      className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 flex flex-1 flex-col overflow-hidden pb-0"
     >
-      <div className="mx-auto flex w-full max-w-[1320px] flex-col xl:h-full xl:min-h-0">
+      <div className="mx-auto flex w-full max-w-[1320px] flex-col h-full min-h-0">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           <Link
             href={assistantEntryHref}
@@ -2507,8 +2483,8 @@ function SafeSpeakAssistantConversationPage({
           </button>
         </div>
 
-        <div className="mt-4 min-h-0 xl:flex-1">
-          <div className="relative flex min-h-[520px] flex-col bg-transparent px-2 pb-2 pt-2 xl:h-full xl:min-h-0 sm:px-3">
+        <div className="mt-4 min-h-0 flex-1 flex flex-col">
+          <div className="relative flex flex-1 flex-col bg-transparent px-2 pb-2 pt-2 h-full min-h-0 sm:px-3 xl:min-h-[520px]">
             {pendingConsentRequirement ? (
               <div className="relative z-30 mb-3 max-w-[560px]">
                 <ConsentRequiredCard
@@ -2526,7 +2502,7 @@ function SafeSpeakAssistantConversationPage({
                 data-testid="ai-conversation-chat"
                 className="conversation-scrollbar h-full overflow-y-auto"
               >
-                <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 px-2 pb-40">
+                <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 px-2 pb-4">
                   {messages.map((message, index) => {
                     const displayContent = getAssistantDisplayContent(message);
 
@@ -2676,7 +2652,7 @@ function SafeSpeakAssistantConversationPage({
 
             <form
               onSubmit={handleSubmit}
-              className="absolute bottom-0 left-0 right-0 z-20 w-full px-2 pb-2 pt-4 [background:linear-gradient(180deg,rgba(238,243,248,0)_0%,rgba(238,243,248,0.88)_30%,rgba(238,243,248,1)_100%)]"
+              className="w-full px-2 pb-2 pt-3 bg-transparent shrink-0 z-20"
             >
               <div className="mx-auto w-full max-w-[1120px] px-2">
                 {shouldShowVoiceAvatar ? (
@@ -2815,7 +2791,7 @@ function SafeSpeakAssistantConversationPage({
                           type="button"
                           onClick={stopVoiceSession}
                           className="inline-flex h-8 shrink-0 items-center rounded-full bg-[#1f8cff] px-4 text-[11px] font-bold text-white transition hover:bg-[#137cf0]"
-                          aria-label="End voice mode"
+                          aria-label={t("dashboard.assistant.stopRecording")}
                         >
                           <span className="mr-2 inline-flex items-center gap-[2px]" aria-hidden="true">
                             <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
