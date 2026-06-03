@@ -41,6 +41,7 @@ import {
   type AssistantConversationMessage,
   type AssistantTimeline,
   type LegalAwareness,
+  shouldCallTimelineAssistant,
   sendTimelineAssistantMessage,
 } from "@/lib/assistant-conversation";
 import {
@@ -845,6 +846,10 @@ function SafeSpeakAssistantConversationPage({
       ragUnavailable?: boolean;
       pendingHumanReview?: boolean;
       legalAwareness?: LegalAwareness;
+      assistantFormatPreference?: "paragraphs" | "bullets" | "mix";
+      formatPreferenceUpdated?: boolean;
+      subIntent?: string;
+      encodingWarning?: boolean;
     };
   };
   const seededMessage = initialMessage?.trim();
@@ -1606,7 +1611,7 @@ function SafeSpeakAssistantConversationPage({
           content: message,
           language: transcriptionLanguage,
         });
-        const nextTimeline = response.factExtraction.timeline ?? {};
+        const nextTimeline = response.factExtraction?.timeline ?? {};
         const responseSessionId =
           response.responseMeta?.conversationSessionId ?? resolvedSessionId;
 
@@ -1745,6 +1750,17 @@ function SafeSpeakAssistantConversationPage({
         }
 
         try {
+          if (
+            !shouldCallTimelineAssistant({
+              message,
+              conversation,
+              timeline,
+              incidentCategory: initialCategory,
+            })
+          ) {
+            throw conversationFlowError;
+          }
+
           const response = await sendTimelineAssistantMessage({
             message,
             conversation,
@@ -1797,6 +1813,7 @@ function SafeSpeakAssistantConversationPage({
               pendingHumanReview:
                 response.reviewStatus === "pending_human_review",
               legalAwareness: response.legalAwareness,
+              encodingWarning: response.encodingWarning,
             },
           };
 

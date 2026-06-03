@@ -1,4 +1,4 @@
-import { buildUtf8JsonHeaders } from "@/lib/text-encoding";
+import { buildUtf8JsonHeaders, normalizeJsonEncoding } from "./text-encoding";
 
 export interface ApiEnvelope<TData> {
   success: boolean;
@@ -80,7 +80,13 @@ export function getApiBaseUrl(explicit?: string): string {
 
 async function parseJsonSafe(response: Response): Promise<unknown> {
   try {
-    return await response.json();
+    const responseText = await response.text();
+
+    if (!responseText.trim()) {
+      return null;
+    }
+
+    return normalizeJsonEncoding(JSON.parse(responseText));
   } catch {
     return null;
   }

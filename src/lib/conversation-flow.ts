@@ -277,7 +277,7 @@ type ConversationTurnResponse = {
   session: ConversationFlowSession;
   userMessage: ConversationFlowMessage;
   assistantMessage: ConversationFlowMessage;
-  factExtraction: ConversationFlowFactExtraction;
+  factExtraction: ConversationFlowFactExtraction | null;
   triage?: ConversationFlowTriage | null;
   transition: {
     offerTriage: boolean;
@@ -332,6 +332,8 @@ type ConversationTurnResponse = {
     activeIncidentRiskLevel?: string;
     sessionHistoricalMaxRiskLevel?: string;
     assistantFormatPreference?: "paragraphs" | "bullets" | "mix";
+    formatPreferenceUpdated?: boolean;
+    subIntent?: string;
     encodingWarning?: boolean;
   };
 };
