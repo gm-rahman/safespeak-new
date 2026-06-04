@@ -11,6 +11,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconClock,
+  IconDownload,
   IconExternalLink,
   IconFolderFilled,
   IconGavel,
@@ -39,6 +40,7 @@ import {
   analyzeScamText,
   checkScamUrl,
   generateScamReportDraft,
+  redactScamContent,
   submitScamReport,
 } from "@/lib/scamshield-client";
 import {
@@ -127,12 +129,81 @@ function getDraftReportValue(
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+function getRecord(
+  value: unknown
+): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function getStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function downloadTextFile(fileName: string, content: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  window.URL.revokeObjectURL(url);
+}
+
+function parseEmailHeadersInput(raw: string): Record<string, string> | undefined {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) {
+    return undefined;
+  }
+
+  const headers: Record<string, string> = {};
+
+  lines.forEach((line) => {
+    const separatorIndex = line.indexOf(":");
+
+    if (separatorIndex <= 0) {
+      headers["Authentication-Results"] = [
+        headers["Authentication-Results"],
+        line,
+      ]
+        .filter(Boolean)
+        .join("; ");
+      return;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+
+    if (!key || !value) {
+      return;
+    }
+
+    headers[key] = headers[key]
+      ? `${headers[key]}; ${value}`
+      : value;
+  });
+
+  return Object.keys(headers).length ? headers : undefined;
+}
+
 function ScamShieldIntakePage({
   initialTopic,
 }: {
   initialTopic?: DashboardCardFlowId;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const existingState = getScamShieldFlowState();
   const evidenceFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -144,6 +215,9 @@ function ScamShieldIntakePage({
   >(existingState?.inputMode ?? "text");
   const [intakeError, setIntakeError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailFrom, setEmailFrom] = useState("");
+  const [emailHeaders, setEmailHeaders] = useState("");
   const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState<File[]>(
     []
   );
@@ -245,13 +319,28 @@ function ScamShieldIntakePage({
         inputMode === "url"
           ? await checkScamUrl({ url: normalizedUrl })
           : inputMode === "email"
-            ? await analyzeScamEmail({ body: trimmedInput })
+            ? await analyzeScamEmail({
+                body: trimmedInput,
+                subject: emailSubject.trim() || undefined,
+                from: emailFrom.trim() || undefined,
+                headers: parseEmailHeadersInput(emailHeaders),
+                forwardedWithPermission: Boolean(emailHeaders.trim()),
+                metadata: {
+                  language: i18n.language,
+                },
+              })
             : inputMode === "screenshot"
               ? await analyzeScamScreenshot({
                   imageText: trimmedInput || undefined,
                   evidenceFiles: selectedEvidenceFiles,
+                  metadata: {
+                    language: i18n.language,
+                  },
                 })
-              : await analyzeScamText({ text: trimmedInput, language: "en" });
+              : await analyzeScamText({
+                  text: trimmedInput,
+                  language: i18n.language || "en",
+                });
 
       mergeScamShieldFlowState({
         inputText: inputMode === "url" ? normalizedUrl : trimmedInput,
@@ -359,6 +448,29 @@ function ScamShieldIntakePage({
                   ? "Visible text or file text correction"
                   : t("dashboard.scamShield.messageContent")}
               </label>
+              {inputMode === "email" ? (
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <input
+                    value={emailFrom}
+                    onChange={(event) => setEmailFrom(event.target.value)}
+                    placeholder="Visible sender, for example alerts@bank.example"
+                    className="h-10 rounded-[11px] border border-[#dbe4ef] bg-[#f8fbff] px-3 text-[11px] text-[#1f2a3a] outline-none placeholder:text-[#9aabc0]"
+                  />
+                  <input
+                    value={emailSubject}
+                    onChange={(event) => setEmailSubject(event.target.value)}
+                    placeholder="Email subject"
+                    className="h-10 rounded-[11px] border border-[#dbe4ef] bg-[#f8fbff] px-3 text-[11px] text-[#1f2a3a] outline-none placeholder:text-[#9aabc0]"
+                  />
+                  <textarea
+                    value={emailHeaders}
+                    onChange={(event) => setEmailHeaders(event.target.value)}
+                    rows={3}
+                    placeholder="Optional: paste Authentication-Results, Reply-To, Return-Path, or forwarded header lines you have permission to share."
+                    className="sm:col-span-2 rounded-[11px] border border-[#dbe4ef] bg-[#f8fbff] px-3 py-2 text-[11px] leading-[1.5] text-[#1f2a3a] outline-none placeholder:text-[#9aabc0]"
+                  />
+                </div>
+              ) : null}
               <div className="relative mt-2">
                 <textarea
                   id="scam-message-content"
@@ -643,6 +755,14 @@ function ScamShieldRiskPage() {
       : null;
   const extractedEntities =
     analysis.extractedEntities ?? analysis.metadata?.extractedEntities;
+  const storageMode =
+    typeof analysis.metadata?.storageMode === "string"
+      ? analysis.metadata.storageMode
+      : "server";
+  const urlReputation = getRecord(analysis.metadata?.urlReputation);
+  const senderAnalysis = getRecord(analysis.metadata?.senderAnalysis);
+  const urlReputationSignals = getStringArray(urlReputation?.signals);
+  const senderSignals = getStringArray(senderAnalysis?.signals);
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -681,6 +801,12 @@ function ScamShieldRiskPage() {
             {extractedTextLength ? (
               <p className="mt-2 text-[10px] font-semibold text-[#60728a]">
                 OCR text extracted: {extractedTextLength} characters
+              </p>
+            ) : null}
+            {storageMode === "local_only" ? (
+              <p className="mt-2 text-[10px] font-semibold text-[#60728a]">
+                Saved locally in this browser session until you choose to share
+                or sync it.
               </p>
             ) : null}
           </article>
@@ -734,6 +860,57 @@ function ScamShieldRiskPage() {
               <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-[8px] bg-[#f8fbff] p-3 text-[10px] leading-[1.5] text-[#60728a]">
                 {JSON.stringify(extractedEntities, null, 2)}
               </pre>
+            </article>
+          ) : null}
+
+          {urlReputation ? (
+            <article className="mt-4 rounded-xl border border-[#dfe8f4] bg-white p-3 sm:p-4">
+              <p className="text-sm font-bold text-[#1f2a3a]">
+                Link reputation checks
+              </p>
+              <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] text-[#50627a] sm:grid-cols-2">
+                <p>
+                  Domain: {String(urlReputation.domain ?? "Not available")}
+                </p>
+                <p>
+                  Domain age:{" "}
+                  {typeof urlReputation.domainAgeDays === "number"
+                    ? `${String(urlReputation.domainAgeDays)} days`
+                    : "Not available"}
+                </p>
+                <p>
+                  TLS valid: {String(urlReputation.tlsValid ?? "Unknown")}
+                </p>
+                <p>
+                  IP location: {String(urlReputation.ipGeolocation ?? "Not available")}
+                </p>
+              </div>
+              {urlReputationSignals.length ? (
+                <p className="mt-2 text-[11px] leading-[1.55] text-[#b45353]">
+                  Reputation flags: {urlReputationSignals.join(", ")}
+                </p>
+              ) : null}
+            </article>
+          ) : null}
+
+          {senderAnalysis ? (
+            <article className="mt-4 rounded-xl border border-[#dfe8f4] bg-white p-3 sm:p-4">
+              <p className="text-sm font-bold text-[#1f2a3a]">
+                Sender checks
+              </p>
+              <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] text-[#50627a] sm:grid-cols-2">
+                <p>SPF: {String(senderAnalysis.spf ?? "none")}</p>
+                <p>DKIM: {String(senderAnalysis.dkim ?? "none")}</p>
+                <p>DMARC: {String(senderAnalysis.dmarc ?? "none")}</p>
+                <p>
+                  Reply-To: {String(senderAnalysis.replyTo ?? "Not provided")}
+                </p>
+              </div>
+              {senderSignals.length ? (
+                <p className="mt-2 text-[11px] leading-[1.55] text-[#b45353]">
+                  Sender flags: {senderSignals.join(", ")}
+                </p>
+              ) : null}
             </article>
           ) : null}
 
@@ -964,6 +1141,10 @@ function ScamShieldAgencyPage() {
     "accc" | "reportCyber" | "bank" | null
   >(flowState?.selectedAgency ?? "accc");
   const [privacyConsentEnabled, setPrivacyConsentEnabled] = useState(false);
+  const [autoRedactPII, setAutoRedactPII] = useState(true);
+  const [redactionMode, setRedactionMode] = useState<"mask" | "labels">(
+    "labels"
+  );
   const [draftSummary, setDraftSummary] = useState(
     flowState?.reportDraft?.draftReport?.draft ??
       flowState?.reportDraft?.draftReport?.summary ??
@@ -980,6 +1161,7 @@ function ScamShieldAgencyPage() {
   const draftReport = flowState?.reportDraft?.draftReport as
     | Record<string, unknown>
     | undefined;
+  const destinationDrafts = getRecord(draftReport?.destinations);
   const draftSenderName = getDraftReportValue(
     draftReport,
     "senderName",
@@ -1001,14 +1183,17 @@ function ScamShieldAgencyPage() {
   );
 
   useEffect(() => {
-    if (!flowState?.analysis?._id) {
+    if (!flowState?.analysis) {
       return;
     }
 
     let isActive = true;
 
     void generateScamReportDraft({
-      analysisId: flowState.analysis._id,
+      analysisId: flowState.analysis._id ?? "",
+      analysisSnapshot: flowState.analysis,
+      autoRedactPII,
+      redactionMode,
     })
       .then((draft) => {
         if (!isActive) {
@@ -1035,10 +1220,10 @@ function ScamShieldAgencyPage() {
     return () => {
       isActive = false;
     };
-  }, [analysisSummary, flowState?.analysis?._id]);
+  }, [analysisSummary, autoRedactPII, flowState?.analysis, redactionMode]);
 
   const handleSubmitToAgency = async () => {
-    if (!flowState?.analysis?._id) {
+    if (!flowState?.analysis) {
       setAgencyError(
         "Run a ScamShield analysis before preparing agency submission."
       );
@@ -1067,6 +1252,7 @@ function ScamShieldAgencyPage() {
             : "scamwatch";
       const submittedAnalysis = await submitScamReport({
         analysisId: flowState.analysis._id,
+        analysisSnapshot: flowState.analysis,
         destination,
         consentToShare: privacyConsentEnabled,
       });
@@ -1127,6 +1313,36 @@ function ScamShieldAgencyPage() {
                 <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
                   Generated draft
                 </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadTextFile(
+                        "scamshield-report-draft.txt",
+                        draftSummary
+                      )
+                    }
+                    className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                  >
+                    <IconDownload size={12} />
+                    Download draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void redactScamContent({
+                        text: draftSummary,
+                        replacement: redactionMode,
+                      }).then((result) => {
+                        setDraftSummary(result.redactedText);
+                      });
+                    }}
+                    className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                  >
+                    <IconShieldFilled size={12} />
+                    Redact preview now
+                  </button>
+                </div>
                 <p className="mt-2 text-[11px] leading-[1.6] text-[#50627a]">
                   {draftSummary}
                 </p>
@@ -1237,6 +1453,57 @@ function ScamShieldAgencyPage() {
                       </div>
                     </div>
                   </div>
+                  {getRecord(destinationDrafts?.scamwatch) ? (
+                    <div className="mt-3 rounded-[10px] border border-[#dce5f1] bg-[#f8fbff] px-3 py-3">
+                      <p className="text-[10px] font-semibold text-[#51657f]">
+                        {String(
+                          getRecord(destinationDrafts?.scamwatch)?.body ?? ""
+                        )}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {getRecord(destinationDrafts?.scamwatch)?.contactPhone ? (
+                          <a
+                            href={`tel:${String(
+                              getRecord(destinationDrafts?.scamwatch)?.contactPhone
+                            ).replace(/[^\d+]/g, "")}`}
+                            className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                          >
+                            <IconBuildingBank size={12} />
+                            Call contact
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            downloadTextFile(
+                              String(
+                                getRecord(destinationDrafts?.scamwatch)
+                                  ?.downloadFileName ??
+                                  "scamwatch-report-draft.txt"
+                              ),
+                              draftSummary
+                            )
+                          }
+                          className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                        >
+                          <IconDownload size={12} />
+                          Download Scamwatch draft
+                        </button>
+                        <a
+                          href={String(
+                            getRecord(destinationDrafts?.scamwatch)
+                              ?.guidanceUrl ?? "#"
+                          )}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                        >
+                          <IconExternalLink size={12} />
+                          Open Scamwatch
+                        </a>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </article>
@@ -1269,7 +1536,58 @@ function ScamShieldAgencyPage() {
 
               {expandedSection === "reportCyber" ? (
                 <div className="border-t border-[#e8eff8] px-3 py-3 text-[12px] leading-[1.55] text-[#60728a] sm:px-4">
-                  {t("dashboard.scamShield.reportCyberPanelBody")}
+                  <p>{t("dashboard.scamShield.reportCyberPanelBody")}</p>
+                  {getRecord(destinationDrafts?.reportCyber) ? (
+                    <div className="mt-3 rounded-[10px] border border-[#dce5f1] bg-[#f8fbff] px-3 py-3">
+                      <p className="text-[10px] font-semibold text-[#51657f]">
+                        {String(
+                          getRecord(destinationDrafts?.reportCyber)?.body ?? ""
+                        )}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {getRecord(destinationDrafts?.reportCyber)?.contactPhone ? (
+                          <a
+                            href={`tel:${String(
+                              getRecord(destinationDrafts?.reportCyber)?.contactPhone
+                            ).replace(/[^\d+]/g, "")}`}
+                            className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                          >
+                            <IconBuildingBank size={12} />
+                            Call contact
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            downloadTextFile(
+                              String(
+                                getRecord(destinationDrafts?.reportCyber)
+                                  ?.downloadFileName ??
+                                  "reportcyber-guidance.txt"
+                              ),
+                              draftSummary
+                            )
+                          }
+                          className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                        >
+                          <IconDownload size={12} />
+                          Download ReportCyber guide
+                        </button>
+                        <a
+                          href={String(
+                            getRecord(destinationDrafts?.reportCyber)
+                              ?.guidanceUrl ?? "#"
+                          )}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                        >
+                          <IconExternalLink size={12} />
+                          Open ACSC guidance
+                        </a>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </article>
@@ -1302,11 +1620,109 @@ function ScamShieldAgencyPage() {
 
               {expandedSection === "bank" ? (
                 <div className="border-t border-[#e8eff8] px-3 py-3 text-[12px] leading-[1.55] text-[#60728a] sm:px-4">
-                  {t("dashboard.scamShield.bankSecurityPanelBody")}
+                  <p>{t("dashboard.scamShield.bankSecurityPanelBody")}</p>
+                  {getRecord(destinationDrafts?.bank) ? (
+                    <div className="mt-3 rounded-[10px] border border-[#dce5f1] bg-[#f8fbff] px-3 py-3">
+                      <p className="text-[10px] font-semibold text-[#51657f]">
+                        {String(getRecord(destinationDrafts?.bank)?.body ?? "")}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {getRecord(destinationDrafts?.bank)?.contactPhone ? (
+                          <a
+                            href={`tel:${String(
+                              getRecord(destinationDrafts?.bank)?.contactPhone
+                            ).replace(/[^\d+]/g, "")}`}
+                            className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                          >
+                            <IconBuildingBank size={12} />
+                            {`Call ${String(
+                              getRecord(destinationDrafts?.bank)?.bankName ??
+                                "bank fraud line"
+                            )}`}
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            downloadTextFile(
+                              String(
+                                getRecord(destinationDrafts?.bank)
+                                  ?.downloadFileName ??
+                                  "bank-fraud-contact-template.txt"
+                              ),
+                              draftSummary
+                            )
+                          }
+                          className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                        >
+                          <IconDownload size={12} />
+                          Download bank template
+                        </button>
+                        <a
+                          href={String(
+                            getRecord(destinationDrafts?.bank)?.guidanceUrl ??
+                              "#"
+                          )}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-8 items-center gap-1 rounded-full border border-[#d6e2f0] bg-white px-3 text-[10px] font-semibold text-[#37506d]"
+                        >
+                          <IconExternalLink size={12} />
+                          Open bank guidance
+                        </a>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </article>
           </div>
+
+          <article className="mt-3 rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4 sm:py-3.5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-[14px] font-bold text-[#1f2a3a]">
+                  Auto-redact personal details
+                </p>
+                <p className="mt-1 text-[10px] leading-[1.45] text-[#6a7e96] sm:text-[11px]">
+                  Remove emails, phone numbers, amounts, URLs, and transaction
+                  identifiers from generated report drafts before download or
+                  sharing.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoRedactPII}
+                onClick={() => setAutoRedactPII((value) => !value)}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                  autoRedactPII ? "bg-[#ff9800]" : "bg-[#d5dde8]"
+                }`}
+              >
+                <span
+                  className={`h-5 w-5 rounded-full bg-white shadow-[0_1px_2px_rgba(15,23,42,0.35)] transition-transform ${
+                    autoRedactPII ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(["labels", "mask"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setRedactionMode(mode)}
+                  className={`inline-flex h-8 items-center rounded-full px-3 text-[10px] font-bold ${
+                    redactionMode === mode
+                      ? "bg-[#0f5d9f] text-white"
+                      : "bg-[#f4f7fb] text-[#60728a]"
+                  }`}
+                >
+                  {mode === "labels" ? "Use labels" : "Mask values"}
+                </button>
+              ))}
+            </div>
+          </article>
 
           <article className="mt-3 rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4 sm:py-3.5">
             <div className="flex items-center justify-between gap-3">
