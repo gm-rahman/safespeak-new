@@ -1302,10 +1302,16 @@ function SafeSpeakAssistantConversationPage({
           return;
         }
 
-        const autoplayBlocked =
-          (playbackError instanceof DOMException ||
-            (playbackError && typeof playbackError === "object" && "name" in playbackError)) &&
-          (playbackError as any).name === "NotAllowedError";
+        const playbackErrorName =
+          playbackError instanceof DOMException
+            ? playbackError.name
+            : playbackError &&
+                typeof playbackError === "object" &&
+                "name" in playbackError &&
+                typeof playbackError.name === "string"
+              ? playbackError.name
+              : null;
+        const autoplayBlocked = playbackErrorName === "NotAllowedError";
 
         revealPendingSpeechResponse();
 
