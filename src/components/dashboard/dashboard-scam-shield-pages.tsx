@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -46,6 +47,7 @@ import {
 import {
   getScamShieldFlowState,
   mergeScamShieldFlowState,
+  useScamShieldFlowState,
 } from "@/lib/scamshield-flow";
 
 import { interFont } from "./dashboard-shared";
@@ -142,6 +144,24 @@ function getStringArray(value: unknown): string[] {
     ? value.filter((item): item is string => typeof item === "string")
     : [];
 }
+
+function includesAnyText(value: string, patterns: string[]): boolean {
+  const normalizedValue = value.toLowerCase();
+  return patterns.some((pattern) => normalizedValue.includes(pattern));
+}
+
+type ScamShieldActionCard = {
+  id: "bank" | "accc" | "reportCyber";
+  title: string;
+  body: string;
+  secondary?: string;
+  badge?: string;
+  icon: ReactNode;
+  iconClassName: string;
+  href: "/dashboard?view=scamshieldagency";
+  cta: string;
+  agency: "bank" | "accc" | "reportCyber";
+};
 
 function downloadTextFile(fileName: string, content: string) {
   if (typeof window === "undefined") {
@@ -688,7 +708,8 @@ function ScamShieldIntakePage({
 
 function ScamShieldRiskPage() {
   const { t } = useTranslation();
-  const analysis = getScamShieldFlowState()?.analysis;
+  const flowState = useScamShieldFlowState();
+  const analysis = flowState?.analysis;
 
   if (!analysis) {
     return (
@@ -947,7 +968,9 @@ function ScamShieldRiskPage() {
 
 function ScamShieldAssetsPage() {
   const { t } = useTranslation();
+  const flowState = useScamShieldFlowState();
   const [mediaAssets, setMediaAssets] = useState<MediaAssetItem[]>([]);
+  const analysis = flowState?.analysis;
 
   useEffect(() => {
     let isMounted = true;
@@ -968,6 +991,101 @@ function ScamShieldAssetsPage() {
       isMounted = false;
     };
   }, []);
+
+  const extractedEntities = getRecord(analysis?.extractedEntities);
+  const entityUrls = getStringArray(extractedEntities?.urls);
+  const entityOrganizations = getStringArray(extractedEntities?.organizations);
+  const entityPaymentMethods = getStringArray(extractedEntities?.paymentMethods);
+  const entityAccountTerms = getStringArray(extractedEntities?.accountTerms);
+  const recommendations = analysis?.recommendations ?? [];
+  const recommendationText = recommendations.join(" ").toLowerCase();
+  const summaryText = analysis?.summary?.toLowerCase() ?? "";
+  const redFlagText = (analysis?.redFlags ?? []).join(" ").toLowerCase();
+  const combinedAnalysisText = [
+    recommendationText,
+    summaryText,
+    redFlagText,
+    entityOrganizations.join(" ").toLowerCase(),
+    entityPaymentMethods.join(" ").toLowerCase(),
+    entityAccountTerms.join(" ").toLowerCase(),
+  ].join(" ");
+  const shouldShowBankAction =
+    (analysis?.riskScore ?? 0) >= 25 &&
+    (includesAnyText(combinedAnalysisText, [
+      "bank",
+      "account",
+      "transaction",
+      "transfer",
+      "payment",
+      "card",
+      "fraud department",
+      "freeze",
+      "compromise",
+      "unauthorized login",
+    ]) ||
+      entityPaymentMethods.length > 0 ||
+      entityAccountTerms.length > 0);
+  const shouldShowScamwatchAction = (analysis?.riskScore ?? 0) >= 15;
+  const shouldShowReportCyberAction =
+    (analysis?.riskScore ?? 0) >= 25 &&
+    (entityUrls.length > 0 ||
+      includesAnyText(combinedAnalysisText, [
+        "link",
+        "url",
+        "identity",
+        "credential",
+        "password",
+        "otp",
+        "device",
+        "cyber",
+        "account access",
+      ]));
+  const actionCards: ScamShieldActionCard[] = [];
+
+  if (shouldShowBankAction) {
+    actionCards.push({
+      id: "bank",
+      title: t("dashboard.scamShield.contactYourBank"),
+      body: t("dashboard.scamShield.contactYourBankDetailed"),
+      secondary: analysis?.summary ?? t("dashboard.scamShield.assetActionIntro"),
+      icon: <IconBuildingBank size={17} />,
+      iconClassName: "bg-[#fff3df] text-[#ef7d00]",
+      href: "/dashboard?view=scamshieldagency",
+      cta: t("dashboard.scamShield.callFraudDepartment"),
+      agency: "bank",
+    });
+  }
+
+  if (shouldShowScamwatchAction) {
+    actionCards.push({
+      id: "accc",
+      title: t("dashboard.scamShield.reportToAcccScamwatch"),
+      body: t("dashboard.scamShield.reportToAcccDetailed"),
+      secondary:
+        recommendations[0] ?? t("dashboard.scamShield.communityPreventionBody"),
+      badge: t("dashboard.scamShield.communityPrevention"),
+      icon: <IconGavel size={17} />,
+      iconClassName: "bg-[#fff3df] text-[#ef7d00]",
+      href: "/dashboard?view=scamshieldagency",
+      cta: t("dashboard.scamShield.launchReportTool"),
+      agency: "accc",
+    });
+  }
+
+  if (shouldShowReportCyberAction) {
+    actionCards.push({
+      id: "reportCyber",
+      title: t("dashboard.scamShield.reportToReportCyber"),
+      body: t("dashboard.scamShield.reportToReportCyberBody"),
+      secondary:
+        recommendations[1] ?? recommendations[0] ?? analysis?.summary ?? "",
+      icon: <IconShieldFilled size={14} />,
+      iconClassName: "bg-[#fff3df] text-[#ef7d00]",
+      href: "/dashboard?view=scamshieldagency",
+      cta: t("dashboard.scamShield.launchReportTool"),
+      agency: "reportCyber",
+    });
+  }
 
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
@@ -994,105 +1112,82 @@ function ScamShieldAssetsPage() {
               {t("dashboard.scamShield.secureAssetsTitle")}
             </h2>
             <p className="mx-auto mt-2 max-w-[560px] text-xs leading-[1.55] text-[#6a7e96] sm:text-sm">
-              {t("dashboard.scamShield.assetActionIntro")}
+              {analysis?.summary ?? t("dashboard.scamShield.assetActionIntro")}
             </p>
+            {recommendations.length ? (
+              <div className="mx-auto mt-4 max-w-[760px] rounded-[12px] border border-[#e2eaf4] bg-[#f8fbff] px-4 py-3 text-left">
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                  Recommended next steps
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  {recommendations.slice(0, 3).map((recommendation, index) => (
+                    <p
+                      key={`${recommendation}-${index}`}
+                      className="text-[11px] leading-[1.5] text-[#50627a]"
+                    >
+                      {recommendation}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </article>
 
           <div className="mt-3 space-y-3">
-            <article className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4 sm:py-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fff3df] text-[#ef7d00]">
-                    <IconBuildingBank size={17} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[25px] font-extrabold leading-none text-[#1f2a3a]">
-                      {t("dashboard.scamShield.contactYourBank")}
-                    </p>
-                    <p className="mt-1 text-[11px] leading-[1.5] text-[#6a7e96]">
-                      {t("dashboard.scamShield.contactYourBankDetailed")}
-                    </p>
-                  </div>
-                </div>
-
-                <Link
-                  href="/dashboard?view=scamshieldagency"
-                  onClick={() => {
-                    mergeScamShieldFlowState({ selectedAgency: "bank" });
-                  }}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[#ff9800] px-5 text-[11px] font-semibold text-white shadow-[0_8px_16px_rgba(255,152,0,0.26)]"
-                >
-                  {t("dashboard.scamShield.callFraudDepartment")}
-                  <IconExternalLink size={12} />
-                </Link>
-              </div>
-            </article>
-
-            <article className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4 sm:py-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fff3df] text-[#ef7d00]">
-                    <IconGavel size={17} />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-[25px] font-extrabold leading-none text-[#1f2a3a]">
-                        {t("dashboard.scamShield.reportToAcccScamwatch")}
+            {actionCards.map((card) => (
+              <article
+                key={card.id}
+                className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4 sm:py-4"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${card.iconClassName}`}
+                    >
+                      {card.icon}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[25px] font-extrabold leading-none text-[#1f2a3a]">
+                          {card.title}
+                        </p>
+                        {card.badge ? (
+                          <span className="inline-flex h-5 items-center rounded-full bg-[#ecf3ff] px-2 text-[8px] font-bold uppercase tracking-[0.08em] text-[#2c66b0]">
+                            {card.badge}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-[1.5] text-[#6a7e96]">
+                        {card.body}
                       </p>
-                      <span className="inline-flex h-5 items-center rounded-full bg-[#ecf3ff] px-2 text-[8px] font-bold uppercase tracking-[0.08em] text-[#2c66b0]">
-                        {t("dashboard.scamShield.communityPrevention")}
-                      </span>
+                      {card.secondary ? (
+                        <p className="mt-1 text-[10px] font-semibold text-[#374b64]">
+                          {card.secondary}
+                        </p>
+                      ) : null}
                     </div>
-                    <p className="mt-1 text-[11px] leading-[1.5] text-[#6a7e96]">
-                      {t("dashboard.scamShield.reportToAcccDetailed")}
-                    </p>
-                    <p className="mt-1 text-[10px] font-semibold text-[#374b64]">
-                      {t("dashboard.scamShield.communityPreventionBody")}
-                    </p>
                   </div>
+
+                  <Link
+                    href={card.href}
+                    onClick={() => {
+                      mergeScamShieldFlowState({ selectedAgency: card.agency });
+                    }}
+                    className="inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[#ff9800] px-5 text-[11px] font-semibold text-white shadow-[0_8px_16px_rgba(255,152,0,0.26)]"
+                  >
+                    {card.cta}
+                    <IconExternalLink size={12} />
+                  </Link>
                 </div>
+              </article>
+            ))}
 
-                <Link
-                  href="/dashboard?view=scamshieldagency"
-                  onClick={() => {
-                    mergeScamShieldFlowState({ selectedAgency: "accc" });
-                  }}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[#ff9800] px-5 text-[11px] font-semibold text-white shadow-[0_8px_16px_rgba(255,152,0,0.26)]"
-                >
-                  {t("dashboard.scamShield.launchReportTool")}
-                  <IconExternalLink size={12} />
-                </Link>
-              </div>
-            </article>
-
-            <article className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-3 sm:px-4 sm:py-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fff3df] text-[#ef7d00]">
-                    <IconShieldFilled size={14} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[25px] font-extrabold leading-none text-[#1f2a3a]">
-                      {t("dashboard.scamShield.reportToReportCyber")}
-                    </p>
-                    <p className="mt-1 text-[11px] leading-[1.5] text-[#6a7e96]">
-                      {t("dashboard.scamShield.reportToReportCyberBody")}
-                    </p>
-                  </div>
-                </div>
-
-                <Link
-                  href="/dashboard?view=scamshieldagency"
-                  onClick={() => {
-                    mergeScamShieldFlowState({ selectedAgency: "reportCyber" });
-                  }}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[#ff9800] px-5 text-[11px] font-semibold text-white shadow-[0_8px_16px_rgba(255,152,0,0.26)]"
-                >
-                  {t("dashboard.scamShield.launchReportTool")}
-                  <IconExternalLink size={12} />
-                </Link>
-              </div>
-            </article>
+            {!actionCards.length ? (
+              <article className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-3 text-[11px] leading-[1.55] text-[#64748b] sm:px-4">
+                Run a ScamShield analysis to generate case-specific next steps
+                and reporting options for this session.
+              </article>
+            ) : null}
 
             {mediaAssets.map((asset) => (
               <article
@@ -1136,20 +1231,16 @@ function ScamShieldAssetsPage() {
 function ScamShieldAgencyPage() {
   const { t } = useTranslation();
   const router = useRouter();
-  const flowState = getScamShieldFlowState();
+  const flowState = useScamShieldFlowState();
   const [expandedSection, setExpandedSection] = useState<
     "accc" | "reportCyber" | "bank" | null
-  >(flowState?.selectedAgency ?? "accc");
+  >("accc");
   const [privacyConsentEnabled, setPrivacyConsentEnabled] = useState(false);
   const [autoRedactPII, setAutoRedactPII] = useState(true);
   const [redactionMode, setRedactionMode] = useState<"mask" | "labels">(
     "labels"
   );
-  const [draftSummary, setDraftSummary] = useState(
-    flowState?.reportDraft?.draftReport?.draft ??
-      flowState?.reportDraft?.draftReport?.summary ??
-      ""
-  );
+  const [draftSummary, setDraftSummary] = useState("");
   const [agencyError, setAgencyError] = useState<string | null>(null);
   const [pendingConsentRequirement, setPendingConsentRequirement] =
     useState<ConsentRequirement | null>(null);
@@ -1181,6 +1272,18 @@ function ScamShieldAgencyPage() {
       ? `${flowState.analysis.type} input`
       : "Pending analysis details"
   );
+
+  useEffect(() => {
+    setExpandedSection(flowState?.selectedAgency ?? "accc");
+  }, [flowState?.selectedAgency]);
+
+  useEffect(() => {
+    setDraftSummary(
+      flowState?.reportDraft?.draftReport?.draft ??
+        flowState?.reportDraft?.draftReport?.summary ??
+        ""
+    );
+  }, [flowState?.reportDraft]);
 
   useEffect(() => {
     if (!flowState?.analysis) {
