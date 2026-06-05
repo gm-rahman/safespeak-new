@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import type { ScamAnalysisRecord } from "@/lib/scamshield-client";
 
 const SCAMSHIELD_FLOW_KEY = "safespeak_scamshield_flow";
+const SCAMSHIELD_FLOW_EVENT = "safespeak:scamshield-flow-updated";
 
 export type ScamShieldFlowState = {
   inputText: string;
@@ -46,6 +49,7 @@ export function saveScamShieldFlowState(
       SCAMSHIELD_FLOW_KEY,
       JSON.stringify(nextState)
     );
+    window.dispatchEvent(new CustomEvent(SCAMSHIELD_FLOW_EVENT));
   }
 
   return nextState;
@@ -72,4 +76,26 @@ export function clearScamShieldFlowState(): void {
   }
 
   window.sessionStorage.removeItem(SCAMSHIELD_FLOW_KEY);
+  window.dispatchEvent(new CustomEvent(SCAMSHIELD_FLOW_EVENT));
+}
+
+export function useScamShieldFlowState(): ScamShieldFlowState | null {
+  const [flowState, setFlowState] = useState<ScamShieldFlowState | null>(null);
+
+  useEffect(() => {
+    const syncState = () => {
+      setFlowState(getScamShieldFlowState());
+    };
+
+    syncState();
+    window.addEventListener("storage", syncState);
+    window.addEventListener(SCAMSHIELD_FLOW_EVENT, syncState);
+
+    return () => {
+      window.removeEventListener("storage", syncState);
+      window.removeEventListener(SCAMSHIELD_FLOW_EVENT, syncState);
+    };
+  }, []);
+
+  return flowState;
 }
