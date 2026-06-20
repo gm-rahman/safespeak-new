@@ -33,6 +33,7 @@ type ApiMockState = {
   timelineAssistantRequests: number;
   transcriptionRequests: number;
   speechSynthesisRequests: number;
+  speechSynthesisLanguages: Array<string | undefined>;
 };
 
 function apiEnvelope(data: unknown, message = "OK") {
@@ -57,6 +58,7 @@ async function mockSafeSpeakApi(
     timelineAssistantRequests: 0,
     transcriptionRequests: 0,
     speechSynthesisRequests: 0,
+    speechSynthesisLanguages: [],
   };
 
   await page.route(API_ROUTE, async (route) => {
@@ -144,11 +146,14 @@ async function mockSafeSpeakApi(
         "what is personal information under the privacy act 1988?";
       const isTriageHandoff =
         normalizedContent === "give me the trige button";
+      const isBengaliVoiceRequest = userContent.includes("বাংল");
       const reachedTriageThreshold = turnNumber >= 4;
       const offerTriage =
         isTriageHandoff || (reachedTriageThreshold && !state.forceBlockedTriage);
       const assistantContent = isTriageHandoff
         ? TRIAGE_HANDOFF_MESSAGE
+        : isBengaliVoiceRequest
+        ? "হ্যাঁ, আমি বাংলায় কথা বলতে পারি। আপনি কী নিয়ে কথা বলতে চান?"
         : offerTriage
         ? "Assistant e2e response 4: enough facts are collected for triage."
         : isLegalLookup
@@ -261,6 +266,7 @@ async function mockSafeSpeakApi(
                 : isLegalLookup
                 ? "legal_lookup"
                 : "hidden_support_reply",
+              assistantLanguage: isBengaliVoiceRequest ? "bn" : "en",
             },
           })
         ),
@@ -416,6 +422,8 @@ async function mockSafeSpeakApi(
 
     if (pathname.endsWith("/ai/synthesize-speech")) {
       state.speechSynthesisRequests += 1;
+      const body = request.postDataJSON() as { language?: string };
+      state.speechSynthesisLanguages.push(body.language);
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify(
@@ -516,6 +524,17 @@ async function installVoiceMocks(page: Page) {
       pause() {}
     }
 
+    class StalledSpeechSynthesisUtterance {
+      lang = "en-US";
+      rate = 1;
+      pitch = 1;
+      volume = 1;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor(_text: string) {}
+    }
+
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
@@ -532,13 +551,17 @@ async function installVoiceMocks(page: Page) {
       configurable: true,
       value: MockAudio,
     });
-    try {
-      delete (window as any).speechSynthesis;
-      delete (window as any).SpeechSynthesisUtterance;
-      delete (window as any).webkitSpeechSynthesis;
-      delete (window.constructor.prototype as any).speechSynthesis;
-      delete (window.constructor.prototype as any).SpeechSynthesisUtterance;
-    } catch (e) {}
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: StalledSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        cancel: () => undefined,
+        speak: () => undefined,
+      },
+    });
   });
 }
 
@@ -618,6 +641,17 @@ async function installContinuousVoiceLoopMocks(page: Page) {
       pause() {}
     }
 
+    class StalledSpeechSynthesisUtterance {
+      lang = "en-US";
+      rate = 1;
+      pitch = 1;
+      volume = 1;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor(_text: string) {}
+    }
+
     const getUserMedia = async () => {
       return {
         getTracks: () => [{ stop: () => undefined }],
@@ -649,13 +683,17 @@ async function installContinuousVoiceLoopMocks(page: Page) {
       configurable: true,
       value: MockAudio,
     });
-    try {
-      delete (window as any).speechSynthesis;
-      delete (window as any).SpeechSynthesisUtterance;
-      delete (window as any).webkitSpeechSynthesis;
-      delete (window.constructor.prototype as any).speechSynthesis;
-      delete (window.constructor.prototype as any).SpeechSynthesisUtterance;
-    } catch (e) {}
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: StalledSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        cancel: () => undefined,
+        speak: () => undefined,
+      },
+    });
   });
 }
 
@@ -944,7 +982,7 @@ test.describe("SafeSpeak AI Conversation", () => {
     );
   });
 
-  test("keeps listening after spoken assistant replies when live recognition stalls", async ({
+  test("keeps listening when browser recognition and speech synthesis stall", async ({
     page,
   }) => {
     apiMock.consent = {
@@ -972,5 +1010,29 @@ test.describe("SafeSpeak AI Conversation", () => {
     await expect(stopButton).toBeVisible();
     await stopButton.click();
     await expect(stopButton).toHaveCount(0);
+  });
+
+  test("uses the assistant language for multilingual voice playback", async ({
+    page,
+  }) => {
+    apiMock.consent = {
+      process_with_ai: true,
+      transcribe_audio: true,
+    };
+    await installContinuousVoiceLoopMocks(page);
+
+    await page.goto(
+      `${BASE_URL}/dashboard?view=assistantconversation&voice=1&topic=general_assistant&message=${encodeURIComponent("বাংলায় কথা বলুন")}`,
+      { waitUntil: "domcontentloaded" }
+    );
+
+    await expect(
+      page.getByText("হ্যাঁ, আমি বাংলায় কথা বলতে পারি। আপনি কী নিয়ে কথা বলতে চান?")
+    ).toBeVisible();
+    await expect
+      .poll(() => apiMock.speechSynthesisLanguages)
+      .toContain("bn");
+
+    await page.getByRole("button", { name: "Stop Recording" }).click();
   });
 });

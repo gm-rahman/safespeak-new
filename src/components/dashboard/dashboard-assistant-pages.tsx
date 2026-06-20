@@ -88,6 +88,54 @@ import { interFont } from "./dashboard-shared";
 
 const emptyTimeline: AssistantTimeline = {};
 
+function normalizeAssistantSpeechLanguage(language?: string): string | undefined {
+  const normalized = language?.trim().toLowerCase();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const aliases: Record<string, string> = {
+    "ar-sa": "ar",
+    "bn-bd": "bn",
+    "el-gr": "el",
+    "en-au": "en",
+    "en-us": "en",
+    "es-419": "es",
+    "es-es": "es",
+    "es-mx": "es",
+    "hi-in": "hi",
+    "ne-np": "ne",
+    "pa-in": "pa",
+    "vi-vn": "vi",
+    yue: "zh-Hant",
+    "yue-hk": "zh-Hant",
+    zh: "zh-Hans",
+    "zh-cn": "zh-Hans",
+    "zh-hans": "zh-Hans",
+    "zh-hant": "zh-Hant",
+    "zh-hk": "zh-Hant",
+    "zh-sg": "zh-Hans",
+    "zh-tw": "zh-Hant",
+  };
+
+  return aliases[normalized] ?? language?.trim();
+}
+
+function detectAssistantSpeechLanguage(text: string): string {
+  if (/[\u0600-\u06ff]/u.test(text)) return "ar";
+  if (/[\u0980-\u09ff]/u.test(text)) return "bn";
+  if (/[\u0370-\u03ff]/u.test(text)) return "el";
+  if (/[\u0a00-\u0a7f]/u.test(text)) return "pa";
+  if (/[\u0900-\u097f]/u.test(text)) return "hi";
+  if (/\p{Script=Han}/u.test(text)) return "zh-Hans";
+  if (/[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu.test(text)) {
+    return "vi";
+  }
+  if (/[¿¡ñáéíóúü]/iu.test(text)) return "es";
+  return "en";
+}
+
 const harmfulActivityPatterns = [
   /\b(violence|violent|abuse|assault|attacked|attack|hit|slap|punched|kick|kicked|choke|threat|threatened)\b/i,
   /\b(harass|harassment|bullied|bullying|stalk|stalking|unsafe|scared|fear)\b/i,
@@ -107,6 +155,13 @@ type ConversationCitation = {
   sourceType?: string;
   topic?: string;
   sectionRef?: string;
+  sectionTitle?: string;
+  page?: number;
+  pageStart?: number;
+  pageEnd?: number;
+  versionDate?: string;
+  commencementDate?: string;
+  amendmentStatus?: "in_force" | "amended" | "repealed";
   lastUpdated?: string;
 };
 
@@ -233,7 +288,30 @@ function formatConversationSectionRef(sectionRef?: string) {
 
 function buildConversationCitationSummary(citation: ConversationCitation) {
   const sectionRef = formatConversationSectionRef(citation.sectionRef);
-  return [citation.title, sectionRef].filter(Boolean).join(", ");
+  const page = citation.pageStart ?? citation.page;
+  const pageLabel = page ? `p. ${page}` : "";
+  const versionLabel = citation.versionDate
+    ? `version ${formatConversationCitationDate(citation.versionDate)}`
+    : citation.lastUpdated
+      ? `updated ${formatConversationCitationDate(citation.lastUpdated)}`
+      : "";
+  return [citation.title, citation.publisher, sectionRef, pageLabel, versionLabel]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function formatConversationCitationDate(value: string) {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleDateString("en-AU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function buildConversationCitationIdentity(citation: ConversationCitation) {
@@ -368,7 +446,6 @@ type SpeechWindow = Window & {
 };
 
 const VOICE_RECORDING_TIMEOUT_MS = 8000;
-const MAX_VOICE_RESTART_ATTEMPTS = 10;
 type VoiceCaptureTarget = "conversation" | "transcription";
 
 function getRecordingErrorMessage(
@@ -844,6 +921,7 @@ function SafeSpeakAssistantConversationPage({
         | "not_directly_grounded";
       reviewStatus?: string;
       ragUnavailable?: boolean;
+      assistantLanguage?: string;
       pendingHumanReview?: boolean;
       legalAwareness?: LegalAwareness;
       assistantFormatPreference?: "paragraphs" | "bullets" | "mix";
@@ -916,6 +994,9 @@ function SafeSpeakAssistantConversationPage({
     null
   );
   const [replayVoiceText, setReplayVoiceText] = useState<string | null>(null);
+  const [replayVoiceLanguage, setReplayVoiceLanguage] = useState<
+    string | undefined
+  >(undefined);
   const [liveTranscript, setLiveTranscript] = useState("");
   const [voiceAvatarState, setVoiceAvatarState] =
     useState<VoiceAvatarState>("idle");
@@ -962,6 +1043,9 @@ function SafeSpeakAssistantConversationPage({
     null
   );
   const speechErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speechPlaybackWatchdogRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const startVoiceRecordingRef = useRef<() => Promise<boolean>>(
     async () => false
   );
@@ -997,6 +1081,8 @@ function SafeSpeakAssistantConversationPage({
       ? "es"
       : "en";
   }, [i18n.language, i18n.resolvedLanguage]);
+  const transcriptionLanguageHint =
+    transcriptionLanguage === "en" ? undefined : transcriptionLanguage;
   const livePreviewLanguage =
     transcriptionLanguage === "es" ? "es-ES" : "en-US";
 
@@ -1077,6 +1163,13 @@ function SafeSpeakAssistantConversationPage({
     }
   }, []);
 
+  const clearSpeechPlaybackWatchdog = useCallback(() => {
+    if (speechPlaybackWatchdogRef.current) {
+      clearTimeout(speechPlaybackWatchdogRef.current);
+      speechPlaybackWatchdogRef.current = null;
+    }
+  }, []);
+
   const dismissSpeechError = useCallback(() => {
     clearSpeechErrorTimer();
     setSpeechError(null);
@@ -1102,6 +1195,8 @@ function SafeSpeakAssistantConversationPage({
   }, [clearAutoStopRecordingTimer]);
 
   const cleanupSpeechAudio = useCallback(() => {
+    clearSpeechPlaybackWatchdog();
+
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
@@ -1113,7 +1208,7 @@ function SafeSpeakAssistantConversationPage({
       URL.revokeObjectURL(speechAudioUrlRef.current);
       speechAudioUrlRef.current = null;
     }
-  }, []);
+  }, [clearSpeechPlaybackWatchdog]);
 
   const revealPendingSpeechResponse = useCallback(() => {
     const reveal = pendingSpeechRevealRef.current;
@@ -1156,17 +1251,13 @@ function SafeSpeakAssistantConversationPage({
               return;
             }
 
-            if (attempt < MAX_VOICE_RESTART_ATTEMPTS) {
-              scheduleNextVoiceTurn(attempt + 1);
-              return;
-            }
-
-            voiceSessionActiveRef.current = false;
-            setIsVoiceSessionActive(false);
-            setVoiceAvatarState("idle");
+            // Keep recovering while the voice session is active. The End
+            // button, consent decline, navigation, or component cleanup are
+            // the only normal ways to terminate the loop.
+            scheduleNextVoiceTurn(attempt + 1);
           });
         },
-        attempt === 0 ? 350 : 250
+        attempt === 0 ? 350 : Math.min(500 + attempt * 250, 3000)
       );
     },
     [clearRestartListeningTimer, isVoiceSessionMuted]
@@ -1178,6 +1269,7 @@ function SafeSpeakAssistantConversationPage({
       options: {
         continueVoiceSession?: boolean;
         revealAfterPlayback?: () => void;
+        language?: string;
       } = {}
     ) => {
       const speechText = text.trim();
@@ -1194,7 +1286,11 @@ function SafeSpeakAssistantConversationPage({
       shouldContinueAfterPlaybackRef.current = Boolean(
         options.continueVoiceSession
       );
+      const speechLanguage =
+        normalizeAssistantSpeechLanguage(options.language) ??
+        detectAssistantSpeechLanguage(speechText);
       setReplayVoiceText(speechText);
+      setReplayVoiceLanguage(speechLanguage);
       setSpeechPlaybackError(null);
       setIsGeneratingSpeech(true);
       setIsSpeaking(false);
@@ -1203,56 +1299,9 @@ function SafeSpeakAssistantConversationPage({
       setVoiceAvatarState("aiSpeaking");
 
       try {
-        if (
-          typeof window !== "undefined" &&
-          "speechSynthesis" in window &&
-          typeof SpeechSynthesisUtterance !== "undefined"
-        ) {
-          const utterance = new SpeechSynthesisUtterance(speechText);
-          utterance.lang = livePreviewLanguage;
-          utterance.rate = 1.04;
-          utterance.pitch = 1;
-          utterance.volume = 1;
-
-          utterance.onend = () => {
-            const shouldContinue = shouldContinueAfterPlaybackRef.current;
-
-            speechPlaybackActiveRef.current = false;
-            shouldContinueAfterPlaybackRef.current = false;
-            setIsSpeaking(false);
-            revealPendingSpeechResponse();
-            setVoiceAvatarState(shouldContinue ? "listening" : "idle");
-
-            if (shouldContinue) {
-              scheduleNextVoiceTurn();
-            }
-          };
-
-          utterance.onerror = () => {
-            const shouldContinue = shouldContinueAfterPlaybackRef.current;
-
-            speechPlaybackActiveRef.current = false;
-            shouldContinueAfterPlaybackRef.current = false;
-            setIsSpeaking(false);
-            setSpeechPlaybackError(t("dashboard.assistant.voicePlaybackFailed"));
-            revealPendingSpeechResponse();
-            setVoiceAvatarState(shouldContinue ? "listening" : "idle");
-
-            if (shouldContinue) {
-              scheduleNextVoiceTurn();
-            }
-          };
-
-          setIsGeneratingSpeech(false);
-          setIsSpeaking(true);
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.speak(utterance);
-          return;
-        }
-
         const voice = await synthesizeAssistantVoice(
           speechText,
-          transcriptionLanguage
+          speechLanguage
         );
         const audioUrl = createAssistantVoiceAudioUrl(voice);
         const audio = new Audio(audioUrl);
@@ -1260,12 +1309,23 @@ function SafeSpeakAssistantConversationPage({
         speechAudioUrlRef.current = audioUrl;
         speechAudioRef.current = audio;
 
-        audio.onended = () => {
+        let playbackFinished = false;
+        const finishPlayback = (failed = false) => {
+          if (playbackFinished) {
+            return;
+          }
+
+          playbackFinished = true;
+          clearSpeechPlaybackWatchdog();
           const shouldContinue = shouldContinueAfterPlaybackRef.current;
 
           speechPlaybackActiveRef.current = false;
           shouldContinueAfterPlaybackRef.current = false;
           setIsSpeaking(false);
+          setIsGeneratingSpeech(false);
+          if (failed) {
+            setSpeechPlaybackError(t("dashboard.assistant.voicePlaybackFailed"));
+          }
           revealPendingSpeechResponse();
           setVoiceAvatarState(shouldContinue ? "listening" : "idle");
 
@@ -1273,26 +1333,24 @@ function SafeSpeakAssistantConversationPage({
             scheduleNextVoiceTurn();
           }
         };
-        audio.onerror = () => {
-          const shouldContinue = shouldContinueAfterPlaybackRef.current;
-
-          speechPlaybackActiveRef.current = false;
-          shouldContinueAfterPlaybackRef.current = false;
-          setIsSpeaking(false);
-          setSpeechPlaybackError(t("dashboard.assistant.voicePlaybackFailed"));
-          revealPendingSpeechResponse();
-          setVoiceAvatarState(shouldContinue ? "listening" : "idle");
-
-          if (shouldContinue) {
-            scheduleNextVoiceTurn();
-          }
-        };
+        audio.onended = () => finishPlayback();
+        audio.onerror = () => finishPlayback(true);
 
         setIsGeneratingSpeech(false);
         setIsSpeaking(true);
+        const watchdogDelay = Math.min(
+          90_000,
+          Math.max(15_000, speechText.length * 120 + 8_000)
+        );
+        speechPlaybackWatchdogRef.current = setTimeout(
+          () => finishPlayback(true),
+          watchdogDelay
+        );
         await audio.play();
       } catch (playbackError) {
+        clearSpeechPlaybackWatchdog();
         speechPlaybackActiveRef.current = false;
+        shouldContinueAfterPlaybackRef.current = false;
         setIsSpeaking(false);
 
         if (captureConsentError(playbackError)) {
@@ -1338,12 +1396,11 @@ function SafeSpeakAssistantConversationPage({
     },
     [
       captureConsentError,
+      clearSpeechPlaybackWatchdog,
       cleanupSpeechAudio,
-      livePreviewLanguage,
       revealPendingSpeechResponse,
       scheduleNextVoiceTurn,
       t,
-      transcriptionLanguage,
     ]
   );
 
@@ -1718,6 +1775,7 @@ function SafeSpeakAssistantConversationPage({
             sourceDisplayReason: response.responseMeta?.sourceDisplayReason,
             reviewStatus: response.responseMeta?.reviewStatus,
             ragUnavailable: response.responseMeta?.rag?.unavailable,
+            assistantLanguage: response.responseMeta?.assistantLanguage,
             pendingHumanReview: Boolean(
               response.triage?.humanReviewRecommended
             ),
@@ -1732,6 +1790,7 @@ function SafeSpeakAssistantConversationPage({
           ]);
           void playAssistantSpeech(response.assistantMessage.content, {
             continueVoiceSession: options.continueVoiceSession,
+            language: response.responseMeta?.assistantLanguage,
           });
         } else {
           setMessages((currentMessages) => [
@@ -1871,6 +1930,12 @@ function SafeSpeakAssistantConversationPage({
               ? requestError.message
               : "Assistant response failed"
           );
+          if (
+            voiceSessionActiveRef.current &&
+            options.continueVoiceSession
+          ) {
+            scheduleNextVoiceTurn();
+          }
         }
       } finally {
         setIsSending(false);
@@ -1883,6 +1948,7 @@ function SafeSpeakAssistantConversationPage({
       initialCategory,
       initialTopic,
       playAssistantSpeech,
+      scheduleNextVoiceTurn,
       timeline,
       transcriptionLanguage,
       useNswLegalAwareness,
@@ -1912,7 +1978,7 @@ function SafeSpeakAssistantConversationPage({
       const transcript = fastTranscript
         ? fastTranscript
         : (
-            await transcribeAssistantVoice(audioBlob, transcriptionLanguage)
+            await transcribeAssistantVoice(audioBlob, transcriptionLanguageHint)
           ).transcript.trim();
 
       if (!transcript) {
@@ -1923,7 +1989,7 @@ function SafeSpeakAssistantConversationPage({
         [currentInput.trim(), transcript].filter(Boolean).join(" ")
       );
     },
-    [liveTranscript, t, transcriptionLanguage]
+    [liveTranscript, t, transcriptionLanguageHint]
   );
 
   const processVoiceAudioBlob = useCallback(
@@ -1943,13 +2009,13 @@ function SafeSpeakAssistantConversationPage({
       }
 
       try {
-        const fastTranscript =
-          liveFinalTranscriptRef.current.trim() || liveTranscript.trim();
-        const transcript = fastTranscript
-          ? fastTranscript
-          : (
-              await transcribeAssistantVoice(audioBlob, transcriptionLanguage)
-            ).transcript.trim();
+        // Browser speech recognition is only a live preview. It is tied to a
+        // configured locale and can turn multilingual speech into incorrect
+        // English text, so voice-first turns always use server transcription
+        // with language auto-detection.
+        const transcript = (
+          await transcribeAssistantVoice(audioBlob, transcriptionLanguageHint)
+        ).transcript.trim();
 
         if (!transcript) {
           showTransientSpeechError(getRecordingErrorMessage("no-speech", t));
@@ -1996,15 +2062,17 @@ function SafeSpeakAssistantConversationPage({
           return;
         }
 
-        voiceSessionActiveRef.current = false;
-        setIsVoiceSessionActive(false);
-        setVoiceAvatarState("idle");
         showTransientSpeechError(
           recordingError instanceof Error
             ? recordingError.message
             : getRecordingErrorMessage("network", t),
           4500
         );
+        if (voiceSessionActiveRef.current) {
+          scheduleNextVoiceTurn();
+        } else {
+          setVoiceAvatarState("idle");
+        }
       } finally {
         setIsTranscribing(false);
         liveFinalTranscriptRef.current = "";
@@ -2018,7 +2086,7 @@ function SafeSpeakAssistantConversationPage({
       requestAssistantTurn,
       scheduleNextVoiceTurn,
       t,
-      transcriptionLanguage,
+      transcriptionLanguageHint,
     ]
   );
 
@@ -2271,11 +2339,9 @@ function SafeSpeakAssistantConversationPage({
     const started = await startVoiceRecording("conversation");
 
     if (!started) {
-      voiceSessionActiveRef.current = false;
-      setIsVoiceSessionActive(false);
-      setVoiceAvatarState("idle");
+      scheduleNextVoiceTurn(1);
     }
-  }, [startVoiceRecording]);
+  }, [scheduleNextVoiceTurn, startVoiceRecording]);
 
   const stopVoiceSession = useCallback(() => {
     voiceSessionActiveRef.current = false;
@@ -2560,6 +2626,7 @@ function SafeSpeakAssistantConversationPage({
       if (isVoiceSessionActive && replayVoiceText) {
         void playAssistantSpeech(replayVoiceText, {
           continueVoiceSession: true,
+          language: replayVoiceLanguage,
         });
       }
     } catch (consentError) {
@@ -2811,6 +2878,7 @@ function SafeSpeakAssistantConversationPage({
                           onClick={() => {
                             void playAssistantSpeech(replayVoiceText, {
                               continueVoiceSession: voiceSessionActiveRef.current,
+                              language: replayVoiceLanguage,
                             });
                           }}
                           className="ml-1 rounded-full border border-[#d6e7f6] px-2 py-1 text-[10px] font-bold text-[#0f5d9f]"

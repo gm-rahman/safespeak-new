@@ -1,4 +1,4 @@
-import { apiRequest } from "./api";
+import { apiRequest, getAiAgentApiBaseUrl } from "./api";
 import type { AssistantIncidentCategory } from "./assistant-categories";
 import { consentRequirements, ensureConsent } from "./consent";
 import { getSessionAwareAuthHeaders } from "./frontend-session";
@@ -193,6 +193,13 @@ export type TimelineAssistantResponse = {
     sourceType?: string;
     topic?: string;
     sectionRef?: string;
+    sectionTitle?: string;
+    page?: number;
+    pageStart?: number;
+    pageEnd?: number;
+    versionDate?: string;
+    commencementDate?: string;
+    amendmentStatus?: "in_force" | "amended" | "repealed";
     lastUpdated?: string;
   }>;
   rag: {
@@ -254,6 +261,7 @@ export async function sendTimelineAssistantMessage(input: {
       "/rag/timeline-assistant",
       {
         method: "POST",
+        baseUrl: getAiAgentApiBaseUrl(),
         headers,
         body: normalizedInput,
       }
@@ -268,6 +276,7 @@ export async function sendTimelineAssistantMessage(input: {
       "/rag/timeline-assistant",
       {
         method: "POST",
+        baseUrl: getAiAgentApiBaseUrl(),
         headers,
         body: normalizedInput,
       }
