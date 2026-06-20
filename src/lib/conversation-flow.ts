@@ -313,6 +313,13 @@ type ConversationTurnResponse = {
       sourceType?: string;
       topic?: string;
       sectionRef?: string;
+      sectionTitle?: string;
+      page?: number;
+      pageStart?: number;
+      pageEnd?: number;
+      versionDate?: string;
+      commencementDate?: string;
+      amendmentStatus?: "in_force" | "amended" | "repealed";
       lastUpdated?: string;
     }>;
     rag?: {

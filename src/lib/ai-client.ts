@@ -1,6 +1,11 @@
 "use client";
 
-import { ApiRequestError, apiRequest, type ApiEnvelope } from "@/lib/api";
+import {
+  ApiRequestError,
+  apiRequest,
+  getAiAgentApiBaseUrl,
+  type ApiEnvelope,
+} from "@/lib/api";
 import {
   consentRequirements,
   ensureConsent,
@@ -163,6 +168,7 @@ async function aiApiRequest<TData>(
   try {
     return await apiRequest<TData>(path, {
       ...options,
+      baseUrl: getAiAgentApiBaseUrl(),
       headers,
     });
   } catch (error) {
@@ -174,6 +180,7 @@ async function aiApiRequest<TData>(
 
       return apiRequest<TData>(path, {
         ...options,
+        baseUrl: getAiAgentApiBaseUrl(),
         headers: retryHeaders,
       });
     }

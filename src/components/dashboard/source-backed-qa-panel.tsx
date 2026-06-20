@@ -50,7 +50,26 @@ function CitationList({ citations }: { citations: RagAnswerCitation[] }) {
             citation.sourceCategory,
             citation.sourceType,
             citation.topic,
-            citation.sectionRef,
+            citation.sectionRef ? `Section ${citation.sectionRef}` : undefined,
+            citation.pageStart
+              ? `Page${citation.pageEnd && citation.pageEnd !== citation.pageStart ? "s" : ""} ${
+                  citation.pageEnd && citation.pageEnd !== citation.pageStart
+                    ? `${citation.pageStart}-${citation.pageEnd}`
+                    : citation.pageStart
+                }`
+              : citation.page
+                ? `Page ${citation.page}`
+                : undefined,
+            citation.versionDate
+              ? `Version ${formatCitationDate(citation.versionDate)}`
+              : undefined,
+            citation.commencementDate
+              ? `Commenced ${formatCitationDate(citation.commencementDate)}`
+              : undefined,
+            citation.amendmentStatus &&
+            citation.amendmentStatus !== "in_force"
+              ? citation.amendmentStatus.replace("_", " ")
+              : undefined,
             formatCitationDate(citation.lastUpdated),
           ].filter(Boolean);
 

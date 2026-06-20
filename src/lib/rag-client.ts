@@ -1,6 +1,11 @@
 "use client";
 
-import { ApiRequestError, apiRequest, type ApiEnvelope } from "@/lib/api";
+import {
+  ApiRequestError,
+  apiRequest,
+  getAiAgentApiBaseUrl,
+  type ApiEnvelope,
+} from "@/lib/api";
 import { consentRequirements, ensureConsent } from "@/lib/consent";
 import {
   clearAnonymousSession,
@@ -97,6 +102,14 @@ export type RagAnswerCitation = {
   sourceType?: string;
   topic?: string;
   sectionRef?: string;
+  sectionTitle?: string;
+  page?: number;
+  pageStart?: number;
+  pageEnd?: number;
+  versionDate?: string;
+  commencementDate?: string;
+  amendmentStatus?: "in_force" | "amended" | "repealed";
+  amendingInstrument?: string;
   lastUpdated?: string;
 };
 
@@ -140,6 +153,7 @@ async function ragApiRequest<TData>(
   try {
     return await apiRequest<TData>(path, {
       ...options,
+      baseUrl: getAiAgentApiBaseUrl(),
       headers,
     });
   } catch (error) {
@@ -151,6 +165,7 @@ async function ragApiRequest<TData>(
 
       return apiRequest<TData>(path, {
         ...options,
+        baseUrl: getAiAgentApiBaseUrl(),
         headers: retryHeaders,
       });
     }

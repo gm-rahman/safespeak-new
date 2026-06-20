@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getAiAgentApiBaseUrl } from "@/lib/api";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import { consentRequirements, ensureConsent } from "@/lib/consent";
 import {
@@ -135,6 +135,7 @@ export async function fetchAssistantTriageReport(
 
   const response = await apiRequest<TriageReportResponse>("/ai/triage-report", {
     method: "POST",
+    baseUrl: getAiAgentApiBaseUrl(),
     headers,
     body: {
       narrative: source.narrative,
