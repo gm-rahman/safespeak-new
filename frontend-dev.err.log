@@ -1,4 +1,0 @@
-npm warn Unknown project config "public-hoist-pattern". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
-
-[1m[33mwarn[39m[22m - The class `duration-[250ms]` is ambiguous and matches multiple utilities.
-[1m[33mwarn[39m[22m - If this is content and not a class, replace it with `duration-&lsqb;250ms&rsqb;` to silence this warning.
