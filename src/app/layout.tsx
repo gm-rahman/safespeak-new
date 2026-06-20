@@ -5,7 +5,7 @@ import { I18nProvider } from "@/components/providers/i18n-provider";
 import { SafetyExperience } from "@/components/safety/safety-experience";
 
 import "./globals.css";
-
+// TODO: Add a favicon and update the title and description in metadata.
 export const metadata: Metadata = {
   title: "SafeSpeak",
   description: "Report racism safely and anonymously with trauma-informed support.",
