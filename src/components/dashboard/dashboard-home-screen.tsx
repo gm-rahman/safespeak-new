@@ -191,6 +191,7 @@ const ReportSubmissionSharePage = dynamic(
 
 export default function DashboardHomeScreen({
   homeView = "overview",
+  assistantStartFresh = false,
   assistantRecording = false,
   assistantVoiceMode = false,
   assistantMessage,
@@ -200,6 +201,7 @@ export default function DashboardHomeScreen({
   assistantTopic,
 }: {
   homeView?: HomeView;
+  assistantStartFresh?: boolean;
   assistantRecording?: boolean;
   assistantVoiceMode?: boolean;
   assistantMessage?: string;
@@ -254,6 +256,7 @@ export default function DashboardHomeScreen({
       />
     ) : homeView === "assistant" ? (
       <SafeSpeakAssistantPage
+        startFresh={assistantStartFresh}
         isRecording={assistantRecording}
         initialCategory={assistantCategory}
         initialTopic={assistantTopic}

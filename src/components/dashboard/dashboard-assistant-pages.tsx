@@ -679,10 +679,12 @@ function hasActiveAssistantDraftForScope(input: {
 }
 
 function SafeSpeakAssistantPage({
+  startFresh = false,
   isRecording = false,
   initialCategory,
   initialTopic,
 }: {
+  startFresh?: boolean;
   isRecording?: boolean;
   initialCategory?: AssistantIncidentCategory;
   initialTopic?: DashboardCardFlowId;
@@ -691,6 +693,11 @@ function SafeSpeakAssistantPage({
   const [isCheckingDraft, setIsCheckingDraft] = useState(true);
 
   useEffect(() => {
+    if (startFresh) {
+      setIsCheckingDraft(false);
+      return;
+    }
+
     if (initialTopic || initialCategory) {
       if (
         hasActiveAssistantDraftForScope({
@@ -724,7 +731,7 @@ function SafeSpeakAssistantPage({
     }
 
     router.replace("/dashboard?view=assistantconversation");
-  }, [initialCategory, initialTopic, router]);
+  }, [initialCategory, initialTopic, router, startFresh]);
   if (isCheckingDraft) {
     return null;
   }

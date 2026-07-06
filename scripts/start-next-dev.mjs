@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import net from "node:net";
 
 const require = createRequire(import.meta.url);
 
@@ -12,28 +13,80 @@ const getArg = (name, fallback) => {
   return args[index + 1];
 };
 
-const port = getArg("--port", "3000");
-const distDir = getArg("--dist", ".next-dev");
-const useWebpack = args.includes("--webpack");
-const nextBin = require.resolve("next/dist/bin/next");
-const nextArgs = ["dev", "-p", port];
+async function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
 
-if (!useWebpack) {
-  nextArgs.splice(1, 0, "--turbopack");
+    server.unref();
+    server.on("error", () => resolve(false));
+    server.listen({ port, host: "127.0.0.1" }, () => {
+      server.close(() => resolve(true));
+    });
+  });
 }
 
-const child = spawn(process.execPath, [nextBin, ...nextArgs], {
-  env: {
-    ...process.env,
-    NEXT_DIST_DIR: distDir,
-  },
-  stdio: "inherit",
-});
+async function findAvailablePort(startPort, maxAttempts = 25) {
+  for (let offset = 0; offset < maxAttempts; offset += 1) {
+    const candidatePort = startPort + offset;
 
-child.on("exit", (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
+    // eslint-disable-next-line no-await-in-loop
+    if (await isPortAvailable(candidatePort)) {
+      return candidatePort;
+    }
   }
-  process.exit(code ?? 0);
+
+  throw new Error(
+    `No available port found between ${startPort} and ${startPort + maxAttempts - 1}.`
+  );
+}
+
+const requestedPort = Number.parseInt(getArg("--port", "3000"), 10);
+const requestedDistDir = getArg("--dist", ".next-dev");
+const useWebpack = args.includes("--webpack");
+const nextBin = require.resolve("next/dist/bin/next");
+
+async function run() {
+  const resolvedPort = await findAvailablePort(requestedPort);
+  const resolvedDistDir =
+    resolvedPort === requestedPort
+      ? requestedDistDir
+      : `${requestedDistDir}-${resolvedPort}`;
+  const nextArgs = ["dev", "-p", String(resolvedPort)];
+
+  if (!useWebpack) {
+    nextArgs.splice(1, 0, "--turbopack");
+  }
+
+  if (resolvedPort !== requestedPort) {
+    console.log(
+      `[SafeSpeak frontend] Port ${requestedPort} is busy, using ${resolvedPort} instead.`
+    );
+  }
+
+  console.log(
+    `[SafeSpeak frontend] Starting on http://localhost:${resolvedPort} with dist dir "${resolvedDistDir}".`
+  );
+
+  const child = spawn(process.execPath, [nextBin, ...nextArgs], {
+    env: {
+      ...process.env,
+      NEXT_DIST_DIR: resolvedDistDir,
+    },
+    stdio: "inherit",
+  });
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exit(code ?? 0);
+  });
+}
+
+run().catch((error) => {
+  console.error(
+    `[SafeSpeak frontend] Failed to start dev server: ${error instanceof Error ? error.message : String(error)}`
+  );
+  process.exit(1);
 });

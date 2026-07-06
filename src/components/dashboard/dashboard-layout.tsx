@@ -148,7 +148,7 @@ function Sidebar({
         <NavItem
           href={{
             pathname: "/dashboard",
-            query: { view: "assistant" },
+            query: { view: "reportsubmissiondetails" },
           }}
           icon={<IconAlertCircleFilled size={13} />}
           label="Report Incident"
@@ -259,7 +259,7 @@ function MobileDashboardNav({
       <MobileNavItem
         href={{
           pathname: "/dashboard",
-          query: { view: "assistant" },
+          query: { view: "reportsubmissiondetails" },
         }}
         icon={<IconAlertCircleFilled size={16} />}
         label="Report Incident"

@@ -11,6 +11,7 @@ import {
 
 type DashboardPageSearchParams = {
   view?: string | string[];
+  fresh?: string | string[];
   recording?: string | string[];
   voice?: string | string[];
   message?: string | string[];
@@ -29,6 +30,7 @@ export default async function DashboardPage({
 }: DashboardPageProps) {
   const resolved = (await searchParams) ?? {};
   const rawView = resolved.view;
+  const rawFresh = resolved.fresh;
   const rawRecording = resolved.recording;
   const rawVoice = resolved.voice;
   const rawMessage = resolved.message;
@@ -37,6 +39,7 @@ export default async function DashboardPage({
   const rawCategory = resolved.category;
   const rawTopic = resolved.topic;
   const view = Array.isArray(rawView) ? rawView[0] : rawView;
+  const fresh = Array.isArray(rawFresh) ? rawFresh[0] : rawFresh;
   const recording = Array.isArray(rawRecording)
     ? rawRecording[0]
     : rawRecording;
@@ -52,6 +55,7 @@ export default async function DashboardPage({
   const topicValue = Array.isArray(rawTopic) ? rawTopic[0] : rawTopic;
   const assistantRecording = recording === "1";
   const assistantVoiceMode = voice === "1";
+  const assistantStartFresh = fresh === "1";
   const assistantCategory: AssistantIncidentCategory | undefined =
     isAssistantIncidentCategory(categoryValue) ? categoryValue : undefined;
   const assistantTopic: DashboardCardFlowId | undefined = isDashboardCardFlowId(
@@ -114,6 +118,7 @@ export default async function DashboardPage({
   return (
     <DashboardHomeScreen
       homeView={homeView}
+      assistantStartFresh={assistantStartFresh}
       assistantRecording={assistantRecording}
       assistantVoiceMode={assistantVoiceMode}
       assistantMessage={message}
