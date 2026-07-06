@@ -1,7 +1,8 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -44,6 +45,18 @@ function ReportSubmissionDetailsPage({
 }) {
   const { t } = useTranslation();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromTriage = searchParams.get("fromTriage") === "1";
+  const conversationSessionId = searchParams.get("conversationSessionId");
+
+  const backHref = useMemo(() => {
+    if (!fromTriage) {
+      return undefined;
+    }
+    return (conversationSessionId
+      ? `/dashboard?view=reportsubmissionsupport&conversationSessionId=${conversationSessionId}`
+      : "/dashboard?view=reportsubmissionsupport") as Route;
+  }, [fromTriage, conversationSessionId]);
   const contextFlow = useMemo(
     () => (initialTopic ? getDashboardCardFlow(initialTopic) : null),
     [initialTopic]
@@ -224,6 +237,8 @@ function ReportSubmissionDetailsPage({
       title={t("dashboard.reportSubmission.detailsTitle")}
       subtitle={t("dashboard.reportSubmission.detailsSubtitle")}
       step="details"
+      backHref={backHref}
+      backLabel={t("dashboard.assistant.triage.title")}
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[1.65fr_1fr]">
         <article className="space-y-3 rounded-[14px] border border-[#e3ebf4] bg-[#f9fbfe] p-4">

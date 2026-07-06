@@ -1300,7 +1300,7 @@ function ReportSubmissionSupportPage() {
                     action={
                       <ActionLink
                         href={withConversationSessionId(
-                          "/dashboard?view=reportsubmissiondetails",
+                          "/dashboard?view=reportsubmissiondetails&fromTriage=1",
                           resolvedConversationSessionId
                         )}
                         className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#0F5D9F] px-6 text-xs font-extrabold text-white shadow-[0_12px_22px_rgba(15,93,159,0.28)] transition hover:bg-[#004E92] sm:w-auto"

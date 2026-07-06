@@ -24,12 +24,14 @@ function ReportSubmissionFrame({
   subtitle,
   step,
   backHref,
+  backLabel,
   children,
 }: {
   title: string;
   subtitle: string;
   step: ReportSubmissionStep;
   backHref?: Route;
+  backLabel?: string;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
@@ -47,7 +49,7 @@ function ReportSubmissionFrame({
               className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
             >
               <IconChevronLeft size={14} />
-              {t("dashboard.reportSubmission.reportSubmission")}
+              {backLabel || t("dashboard.reportSubmission.reportSubmission")}
             </Link>
           ) : (
             <div />
