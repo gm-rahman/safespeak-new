@@ -224,7 +224,6 @@ function ReportSubmissionDetailsPage({
       title={t("dashboard.reportSubmission.detailsTitle")}
       subtitle={t("dashboard.reportSubmission.detailsSubtitle")}
       step="details"
-      backHref="/dashboard?view=assistantconversation"
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[1.65fr_1fr]">
         <article className="space-y-3 rounded-[14px] border border-[#e3ebf4] bg-[#f9fbfe] p-4">
