@@ -2725,13 +2725,7 @@ function SafeSpeakAssistantConversationPage({
     >
       <div className="mx-auto flex w-full max-w-[1320px] flex-col h-full min-h-0">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
-          <Link
-            href={assistantEntryHref}
-            className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
-          >
-            <IconChevronLeft size={14} />
-            AI Conversation
-          </Link>
+          <div />
           <button
             type="button"
             onClick={handleCancel}

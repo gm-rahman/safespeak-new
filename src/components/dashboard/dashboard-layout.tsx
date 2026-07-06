@@ -80,7 +80,8 @@ function NavItem({
   );
 }
 
-const REPORT_VIEWS: HomeView[] = [
+const HOME_VIEWS: HomeView[] = [
+  "overview",
   "assistant",
   "assistantconversation",
   "reportshistory",
@@ -89,6 +90,9 @@ const REPORT_VIEWS: HomeView[] = [
   "reportsubmissionrecommendations",
   "reportsubmissionhistory",
   "reportsubmissiondetailedexplanations",
+];
+
+const REPORT_VIEWS: HomeView[] = [
   "reportsubmissiondetails",
   "reportsubmissionevidence",
   "reportsubmissionreview",
@@ -121,6 +125,7 @@ function Sidebar({
 }) {
   const { t } = useTranslation();
   const isHomeTab = activeTab === "home";
+  const isHomeActive = isHomeTab && HOME_VIEWS.includes(homeView);
   const isReportActive = isHomeTab && REPORT_VIEWS.includes(homeView);
   const isScamShieldActive = isHomeTab && SCAMSHIELD_VIEWS.includes(homeView);
   const isLearningActive = isHomeTab && LEARNING_VIEWS.includes(homeView);
@@ -143,7 +148,7 @@ function Sidebar({
           href="/dashboard"
           icon={<IconHomeFilled size={12} />}
           label={t("dashboard.nav.home")}
-          active={isHomeTab && homeView === "overview"}
+          active={isHomeActive}
         />
         <NavItem
           href={{
@@ -241,6 +246,7 @@ function MobileDashboardNav({
 }) {
   const { t } = useTranslation();
   const isHomeTab = activeTab === "home";
+  const isHomeActive = isHomeTab && HOME_VIEWS.includes(homeView);
   const isReportActive = isHomeTab && REPORT_VIEWS.includes(homeView);
   const isScamShieldActive = isHomeTab && SCAMSHIELD_VIEWS.includes(homeView);
   const isLearningActive = isHomeTab && LEARNING_VIEWS.includes(homeView);
@@ -254,7 +260,7 @@ function MobileDashboardNav({
         href="/dashboard"
         icon={<IconHomeFilled size={15} />}
         label={t("dashboard.nav.home")}
-        active={isHomeTab && homeView === "overview"}
+        active={isHomeActive}
       />
       <MobileNavItem
         href={{

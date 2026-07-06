@@ -755,9 +755,6 @@ test.describe("SafeSpeak AI Conversation", () => {
     await expect(conversation).toBeVisible();
     await expect(page.locator(".dashboard-safety-rail")).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "AI Conversation" })
-    ).toBeVisible();
-    await expect(
       page.getByTestId("ai-conversation-message-user")
     ).toContainText(INITIAL_MESSAGE);
     await expect(page.getByText("AI consent required")).toBeVisible();

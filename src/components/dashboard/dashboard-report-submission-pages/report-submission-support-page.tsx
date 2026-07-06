@@ -971,7 +971,7 @@ function ReportSubmissionSupportPage() {
             className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
           >
             <IconChevronLeft size={14} />
-            {t("dashboard.assistant.triage.title")}
+            {t("dashboard.assistant.triage.aiConversation")}
           </Link>
           <Link
             href="/dashboard?view=reportsubmissionhistory"

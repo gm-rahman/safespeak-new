@@ -412,6 +412,7 @@ const resources = {
           },
           triage: {
             title: "Triage Explanation",
+            aiConversation: "AI Conversation",
             subtitle: "Understanding your current status and next steps.",
             specialtyTag: "cardiology",
             incidentClassification: "Incident Classification",
@@ -1338,6 +1339,7 @@ const resources = {
           },
           triage: {
             title: "Explicacion de triaje",
+            aiConversation: "Conversación con IA",
             subtitle: "Comprende tu estado actual y los siguientes pasos.",
             specialtyTag: "cardiologia",
             incidentClassification: "Clasificacion del incidente",
