@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import {
+  IconAlertCircleFilled,
   IconArrowRight,
   IconBook2,
   IconChevronLeft,
@@ -1290,6 +1291,25 @@ function ReportSubmissionSupportPage() {
                       />
                     );
                   })}
+                  <RecommendationRow
+                    icon={<IconAlertCircleFilled size={20} />}
+                    iconClassName="bg-[#EFF6FF] text-[#0F5D9F]"
+                    title="Report Incident"
+                    description="Safely submit details about what happened. You can choose to remain anonymous."
+                    detail="SafeSpeak does not submit anything automatically. You have full control."
+                    action={
+                      <ActionLink
+                        href={withConversationSessionId(
+                          "/dashboard?view=reportsubmissiondetails",
+                          resolvedConversationSessionId
+                        )}
+                        className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#0F5D9F] px-6 text-xs font-extrabold text-white shadow-[0_12px_22px_rgba(15,93,159,0.28)] transition hover:bg-[#004E92] sm:w-auto"
+                      >
+                        Start Report
+                        <IconArrowRight size={16} className="text-white" />
+                      </ActionLink>
+                    }
+                  />
                 </div>
               </section>
 
