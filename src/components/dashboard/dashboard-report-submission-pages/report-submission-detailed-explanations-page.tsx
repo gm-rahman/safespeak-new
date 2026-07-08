@@ -31,51 +31,33 @@ const TAB_ORDER: DetailTabKey[] = [
   "safetyPlanning",
 ];
 
-function buildFallbackDetails(): ConversationFlowDetails {
-  return {
-    category: "general_support",
-    categoryLabel: "General Support",
-    safetyRiskLevel: "low",
-    matchedKnowledgeSources: [],
-    matchedLegislationIds: [],
-    humanReviewRecommended: true,
-    sections: {
-      overview: {
-        title: "Overview",
-        body: "The conversation needs more verified detail before a stronger rights explanation can be shown.",
-      },
-      rights: {
-        title: "Your Rights",
-        items: [
-          {
-            title: "Information-first guidance",
-            body: "SafeSpeak can help you understand options, but it should not invent legal conclusions when source matching is incomplete.",
-          },
-        ],
-      },
-      reportingOptions: { title: "Reporting Options", items: [] },
-      evidenceGuide: {
-        title: "Evidence Guide",
-        items: [
-          {
-            title: "Capture what feels safe",
-            description: "Screenshots, dates, locations, and short notes can all help later.",
-          },
-        ],
-      },
-      supportServices: { title: "Support Services", items: [] },
-      safetyPlanning: {
-        title: "Safety Planning",
-        items: [
-          {
-            title: "Safety planning",
-            description: "Think about trusted contacts, safer locations, and what you may need if you decide to report.",
-          },
-        ],
-      },
-    },
-    disclaimer: "This is information only, not legal advice.",
-  };
+function getConversationSessionIdFromUrl() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return (
+    new URLSearchParams(window.location.search).get("conversationSessionId") ??
+    undefined
+  );
+}
+
+function withConversationSessionId(
+  href: string,
+  conversationSessionId?: string | null
+) {
+  if (!conversationSessionId) {
+    return href;
+  }
+
+  const [pathname, hash = ""] = href.split("#", 2);
+  const [basePath, queryString = ""] = pathname.split("?", 2);
+  const params = new URLSearchParams(queryString);
+
+  params.set("conversationSessionId", conversationSessionId);
+
+  const nextHref = `${basePath}?${params.toString()}`;
+  return hash ? `${nextHref}#${hash}` : nextHref;
 }
 
 function TabButton({
@@ -155,6 +137,9 @@ function ReportSubmissionDetailedExplanationsPage() {
   const [details, setDetails] = useState<ConversationFlowDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadNotice, setLoadNotice] = useState<string | null>(null);
+  const [resolvedConversationSessionId, setResolvedConversationSessionId] =
+    useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTabKey>("overview");
   const {
     pendingConsentRequirement,
@@ -165,17 +150,24 @@ function ReportSubmissionDetailedExplanationsPage() {
   } = useConsentGate();
 
   const loadDetails = useCallback(async () => {
-    const source = getAssistantTriageSource();
-    const conversationSessionId = source?.conversationSessionId;
+    const conversationSessionId =
+      getConversationSessionIdFromUrl() ??
+      getAssistantTriageSource()?.conversationSessionId;
+
+    setResolvedConversationSessionId(conversationSessionId ?? null);
 
     if (!conversationSessionId) {
-      setDetails(buildFallbackDetails());
+      setDetails(null);
+      setLoadNotice(
+        "Live detail guidance is not available yet because this report is not linked to an active triage session."
+      );
       setLoading(false);
       return;
     }
 
     setLoading(true);
     setError(null);
+    setLoadNotice(null);
 
     try {
       const response = await fetchConversationFlowDetails(conversationSessionId);
@@ -188,7 +180,8 @@ function ReportSubmissionDetailedExplanationsPage() {
       }
 
       setError(fetchError instanceof Error ? fetchError.message : null);
-      setDetails(buildFallbackDetails());
+      setDetails(null);
+      setLoadNotice("Detail guidance could not be loaded from SafeSpeak right now.");
     } finally {
       setLoading(false);
     }
@@ -213,8 +206,11 @@ function ReportSubmissionDetailedExplanationsPage() {
 
   const handleDeclinePendingConsent = () => {
     clearPendingConsent();
-    setDetails(buildFallbackDetails());
-    setError("AI detail data was not loaded because consent was declined. A local fallback view is shown.");
+    setDetails(null);
+    setError("AI detail data was not loaded because consent was declined.");
+    setLoadNotice(
+      "Grant AI consent to load live SafeSpeak detail guidance for this triage session."
+    );
     setLoading(false);
   };
 
@@ -232,7 +228,10 @@ function ReportSubmissionDetailedExplanationsPage() {
       <div className="mx-auto flex w-full max-w-[1184px] flex-col">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           <Link
-            href="/dashboard?view=reportsubmissionrecommendations"
+            href={withConversationSessionId(
+              "/dashboard?view=reportsubmissionrecommendations",
+              resolvedConversationSessionId
+            )}
             className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
           >
             <IconChevronLeft size={14} />
@@ -272,7 +271,14 @@ function ReportSubmissionDetailedExplanationsPage() {
 
           {error ? (
             <div className="mt-4 rounded-[16px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm text-[#607B90]">
-              Live detail data was unavailable, so a safe fallback view is shown.
+              {loadNotice ??
+                "Detail guidance could not be loaded from SafeSpeak right now."}
+            </div>
+          ) : null}
+
+          {!error && loadNotice ? (
+            <div className="mt-4 rounded-[16px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm text-[#607B90]">
+              {loadNotice}
             </div>
           ) : null}
 
@@ -291,6 +297,12 @@ function ReportSubmissionDetailedExplanationsPage() {
             <h3 className="text-lg font-bold text-[#0B1F33]">
               {activeSection?.title ?? "Loading"}
             </h3>
+            {!loading && !details ? (
+              <p className="mt-3 rounded-[14px] border border-[#e5edf6] bg-white p-4 text-sm leading-6 text-[#526B80]">
+                No live detail guidance is available yet. Return to support or
+                triage to continue this flow.
+              </p>
+            ) : null}
             {activeTab === "overview" && activeSection && "body" in activeSection ? (
               <p className="mt-3 text-sm leading-6 text-[#526B80]">{activeSection.body}</p>
             ) : null}
@@ -315,7 +327,7 @@ function ReportSubmissionDetailedExplanationsPage() {
           </section>
 
           <p className="mt-6 text-[11px] leading-5 text-[#7a8ca2]">
-            {details?.disclaimer ?? "This is information only, not legal advice."}
+            {details?.disclaimer ?? "This page shows approved SafeSpeak guidance when it is available."}
           </p>
         </article>
       </div>

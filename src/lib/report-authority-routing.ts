@@ -256,45 +256,14 @@ export const toAuthorityMatch = (
   expectedNextSteps: destination.expectedNextSteps,
 });
 
-export const buildPreparedFallbackMatch = (
-  preparedSubmission: NonNullable<ReportFlowDraft["preparedSubmission"]>
-): AuthorityMatch => ({
-  destinationId: preparedSubmission.destinationId,
-  destinationName: preparedSubmission.destinationName,
-  destinationType: preparedSubmission.destinationType ?? "prepared_contact",
-  channel: preparedSubmission.channel,
-  jurisdiction: "From review",
-  reason:
-    preparedSubmission.reason ||
-    "Saved from the selected admin-managed destination in the review step.",
-  confidence: 78,
-  tags: uniqueValues([
-    preparedSubmission.destinationType
-      ? formatDestinationType(preparedSubmission.destinationType)
-      : "Prepared contact",
-    preparedSubmission.missingRequiredInfo?.length
-      ? "Needs review"
-      : "Ready to share",
-  ]),
-  missingRequiredInfo: preparedSubmission.missingRequiredInfo ?? [],
-  expectedNextSteps: [],
-});
-
 export function rankAuthorityMatches(input: {
   destinations: ReportDestinationPreview[];
   draft: ReportFlowDraft | null;
   preferredDestinationId?: string;
-  preparedSubmission?: ReportFlowDraft["preparedSubmission"] | null;
 }): AuthorityMatch[] {
-  const matches = input.destinations
+  return input.destinations
     .map((destination) =>
       toAuthorityMatch(destination, input.draft, input.preferredDestinationId)
     )
     .sort((a, b) => b.confidence - a.confidence);
-
-  if (!matches.length && input.preparedSubmission) {
-    return [buildPreparedFallbackMatch(input.preparedSubmission)];
-  }
-
-  return matches;
 }

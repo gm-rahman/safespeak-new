@@ -26,8 +26,9 @@ import {
   rankAuthorityMatches,
 } from "@/lib/report-authority-routing";
 import {
+  buildReportFlowHref,
   type PreparedSubmissionStatus,
-  getReportFlowDraft,
+  getResolvedReportFlowDraft,
   mergeReportFlowDraft,
 } from "@/lib/report-flow";
 import {
@@ -47,7 +48,7 @@ function getSummaryText(
   return (
     draftSummary?.trim() ||
     destination?.payloadPreview?.summary?.trim() ||
-    "Prepared report summary"
+    "Report summary pending final confirmation"
   );
 }
 
@@ -78,7 +79,7 @@ function toPreparedSubmissionStatus(status?: string): PreparedSubmissionStatus {
     return status;
   }
 
-  return "prepared_only";
+  return "ready_to_share";
 }
 
 function getDeliveryActionLabel(match: AuthorityMatch | null): string {
@@ -130,8 +131,7 @@ function getShareNotice(submission: ReportSubmissionRecord): string {
 }
 
 function ReportSubmissionSharePage() {
-  const reportDraft = useMemo(() => getReportFlowDraft(), []);
-  const preparedSubmission = reportDraft?.preparedSubmission ?? null;
+  const reportDraft = useMemo(() => getResolvedReportFlowDraft(), []);
   const {
     pendingConsentRequirement,
     isGrantingConsent,
@@ -153,13 +153,17 @@ function ReportSubmissionSharePage() {
   );
   const [selectedDestinationId, setSelectedDestinationId] = useState<
     string | null
-  >(reportDraft?.selectedDestinationId ?? preparedSubmission?.destinationId ?? null);
+  >(reportDraft?.selectedDestinationId ?? null);
   const [pendingShareDestinationId, setPendingShareDestinationId] = useState<
     string | null
   >(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [anonymityMode, setAnonymityMode] = useState<
+    "identified" | "anonymous" | "pseudonymous"
+  >(reportDraft?.shareAnonymityMode ?? "identified");
+  const [shareNotes, setShareNotes] = useState(reportDraft?.shareNotes ?? "");
 
   useEffect(() => {
     if (!reportDraft?.reportId) {
@@ -199,10 +203,37 @@ function ReportSubmissionSharePage() {
         setReportRef(report.refNo ?? report._id);
         setReportStatus(status.current);
         setDestinationOptions(destinations);
-        setLatestSubmission(
+        const resolvedLatestSubmission =
           matchedSubmission ??
-            (shouldUseFallbackSubmission ? (submissions[0] ?? null) : null)
-        );
+          (shouldUseFallbackSubmission ? (submissions[0] ?? null) : null);
+        setLatestSubmission(resolvedLatestSubmission);
+        mergeReportFlowDraft({
+          reportId: report._id,
+          selectedDestinationId:
+            resolvedLatestSubmission?.destinationId ??
+            reportDraft.selectedDestinationId,
+          latestSubmissionId: resolvedLatestSubmission?._id,
+          preparedSubmission: resolvedLatestSubmission
+            ? {
+                destinationId: resolvedLatestSubmission.destinationId,
+                destinationName: resolvedLatestSubmission.destinationName,
+                destinationType: resolvedLatestSubmission.destinationType,
+                channel: resolvedLatestSubmission.channel,
+                status: toPreparedSubmissionStatus(
+                  resolvedLatestSubmission.status
+                ),
+                missingRequiredInfo:
+                  resolvedLatestSubmission.missingRequiredInfo,
+                message: resolvedLatestSubmission.deliveryMessage,
+                actuallySent:
+                  resolvedLatestSubmission.actuallySent ??
+                  isActualDeliveryStatus(resolvedLatestSubmission.status),
+                updatedAt: new Date().toISOString(),
+              }
+            : reportDraft.preparedSubmission?.status === "ready_to_share"
+              ? reportDraft.preparedSubmission
+              : undefined,
+        });
       })
       .catch((error) => {
         if (!isActive) {
@@ -228,12 +259,20 @@ function ReportSubmissionSharePage() {
     reportDraft?.latestSubmissionId,
     reportDraft?.preparedSubmission,
     reportDraft?.reportId,
+    reportDraft?.selectedDestinationId,
   ]);
+
+  useEffect(() => {
+    mergeReportFlowDraft({
+      selectedDestinationId: selectedDestinationId ?? undefined,
+      shareAnonymityMode: anonymityMode,
+      shareNotes,
+    });
+  }, [anonymityMode, selectedDestinationId, shareNotes]);
 
   const preferredDestinationId =
     selectedDestinationId ??
     latestSubmission?.destinationId ??
-    preparedSubmission?.destinationId ??
     reportDraft?.selectedDestinationId;
 
   const authorityMatches = useMemo(
@@ -242,14 +281,8 @@ function ReportSubmissionSharePage() {
         destinations: destinationOptions,
         draft: reportDraft,
         preferredDestinationId,
-        preparedSubmission,
       }),
-    [
-      destinationOptions,
-      preferredDestinationId,
-      preparedSubmission,
-      reportDraft,
-    ]
+    [destinationOptions, preferredDestinationId, reportDraft]
   );
 
   const primaryMatch = authorityMatches[0] ?? null;
@@ -332,8 +365,10 @@ function ReportSubmissionSharePage() {
     try {
       const submission = await submitReportToDestination(reportDraft.reportId, {
         destinationId,
-        anonymityMode: "identified",
-        notes: `Shared from SafeSpeak secure report sharing: ${destination.destinationName}`,
+        anonymityMode,
+        notes:
+          shareNotes.trim() ||
+          `Shared from SafeSpeak secure report sharing: ${destination.destinationName}`,
         confirmConsent: true,
       });
 
@@ -367,7 +402,7 @@ function ReportSubmissionSharePage() {
       setShareError(
         error instanceof Error
           ? error.message
-          : "Prepared information could not be shared."
+          : "Sharing could not be completed."
       );
     } finally {
       setIsSubmitting(false);
@@ -405,22 +440,31 @@ function ReportSubmissionSharePage() {
   const handleDeclineSharingConsent = () => {
     setPendingShareDestinationId(null);
     clearPendingConsent();
-    setShareError("No report was sent. The report remains prepared only.");
+    setShareError("No report was sent. The report remains ready for secure sharing.");
   };
   const deliveryReadinessCopy = getDeliveryReadinessCopy(selectedMatch);
   const deliveryActionLabel = getDeliveryActionLabel(selectedMatch);
+  const successHref = buildReportFlowHref("reportsubmissionsuccess", {
+    reportId: reportDraft?.reportId,
+    selectedDestinationId:
+      selectedDestination?.destinationId ??
+      selectedDestinationId ??
+      reportDraft?.selectedDestinationId,
+    latestSubmissionId:
+      latestSubmission?._id ?? reportDraft?.latestSubmissionId,
+  });
 
   return (
     <div className="px-6 pb-12 pt-12">
       <div className="mx-auto flex w-full max-w-[1184px] flex-col">
         <div className="flex h-[60px] items-center justify-between border-b border-[#d9e2ee] px-6 py-[10px]">
           <Link
-            href="/dashboard?view=reportsubmissionsuccess"
+            href={successHref}
             className="inline-flex items-center gap-2 text-[#111827]"
           >
             <IconChevronLeft size={18} stroke={2} />
             <span className="inline-block text-[13px] font-bold leading-[20px]">
-              Prepared Report
+              Secure Sharing
             </span>
           </Link>
           <Link
@@ -452,7 +496,7 @@ function ReportSubmissionSharePage() {
                 SafeSpeak reference
               </p>
               <p className="mt-1 text-[13px] font-bold text-[#1f2a3a]">
-                {reportRef ?? "Draft only"}
+                {reportRef ?? "No backend report yet"}
               </p>
             </div>
             <div className="rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
@@ -710,7 +754,8 @@ function ReportSubmissionSharePage() {
                         Anonymity
                       </dt>
                       <dd className="mt-1 text-[11px] font-semibold text-[#526982]">
-                        Identified
+                        {anonymityMode.charAt(0).toUpperCase() +
+                          anonymityMode.slice(1)}
                       </dd>
                     </div>
                     <div className="rounded-[12px] border border-[#edf2f8] bg-[#f9fbfe] px-3 py-2">
@@ -723,6 +768,40 @@ function ReportSubmissionSharePage() {
                           : "Standard sharing consent"}
                       </dd>
                     </div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="rounded-[12px] border border-[#edf2f8] bg-[#f9fbfe] px-3 py-2">
+                      <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                        Sharing mode
+                      </dt>
+                      <select
+                        value={anonymityMode}
+                        onChange={(event) =>
+                          setAnonymityMode(
+                            event.target.value as
+                              | "identified"
+                              | "anonymous"
+                              | "pseudonymous"
+                          )
+                        }
+                        className="mt-1 h-9 w-full rounded-[8px] border border-[#dce5f1] bg-white px-2.5 text-[12px] font-semibold text-[#1f2a3a] outline-none"
+                      >
+                        <option value="identified">Identified</option>
+                        <option value="anonymous">Anonymous</option>
+                        <option value="pseudonymous">Pseudonymous</option>
+                      </select>
+                    </label>
+                    <label className="rounded-[12px] border border-[#edf2f8] bg-[#f9fbfe] px-3 py-2">
+                      <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                        Sharing notes
+                      </dt>
+                      <input
+                        value={shareNotes}
+                        onChange={(event) => setShareNotes(event.target.value)}
+                        placeholder="Optional routing note"
+                        className="mt-1 h-9 w-full rounded-[8px] border border-[#dce5f1] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none placeholder:text-[#9eb0c7]"
+                      />
+                    </label>
                   </div>
                 </dl>
               </article>
@@ -746,7 +825,7 @@ function ReportSubmissionSharePage() {
                   ) : null}
                   {selectedMatch && !selectedDestination ? (
                     <p className="rounded-[10px] border border-[#fdeccf] bg-[#fff9ef] px-3 py-2 text-[#9a5b12]">
-                      This prepared contact is not currently available in the
+                      This selected contact is not currently available in the
                       active admin destination list.
                     </p>
                   ) : null}
@@ -787,10 +866,10 @@ function ReportSubmissionSharePage() {
                 </button>
 
                 <Link
-                  href="/dashboard?view=reportsubmissionsuccess"
+                  href={successHref}
                   className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-full border border-[#dbe7f4] bg-white px-5 text-[11px] font-bold text-[#526982] transition hover:bg-[#f8fbff]"
                 >
-                  Back to prepared summary
+                  Back to sharing summary
                   <IconArrowRight size={13} />
                 </Link>
               </article>

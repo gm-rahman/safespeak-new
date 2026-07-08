@@ -118,26 +118,6 @@ function withConversationSessionId(href: string, conversationSessionId?: string 
   return hash ? `${nextHref}#${hash}` : nextHref;
 }
 
-function buildFallbackTriage(): ConversationFlowTriage {
-  return {
-    likelyCategory: "general_support",
-    likelyCategoryLabel: "Review Your Options",
-    confidenceScore: 0.25,
-    confidenceLabel: "low",
-    safetyRiskLevel: "low",
-    reasoningSummary:
-      "SafeSpeak could not confirm a clear triage path from this page alone, so it is showing broad support, safety, and evidence options instead of guessing.",
-    matchedLegislationIds: [],
-    matchedKnowledgeSources: [],
-    humanReviewRecommended: true,
-    missingInformation: ["more_context"],
-    canProceedToRecommendations: false,
-    matchedResourceTypes: ["government", "mental_health", "evidence_guidance"],
-    relatedIssueTypes: ["general_support"],
-    disclaimer: "This is information only, not legal advice.",
-  };
-}
-
 function buildTriagePresentation(
   triage: ConversationFlowTriage | null,
   isLoading: boolean
@@ -739,6 +719,9 @@ function ReportSubmissionSupportPage() {
   const [resolvedConversationSessionId, setResolvedConversationSessionId] =
     useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [supportLoadNotice, setSupportLoadNotice] = useState<string | null>(
+    null
+  );
   const [microCards, setMicroCards] = useState<MicroEducationItem[]>([]);
   const [isLoadingMicroCards, setIsLoadingMicroCards] = useState(true);
   const [microCardsError, setMicroCardsError] = useState<string | null>(null);
@@ -761,13 +744,17 @@ function ReportSubmissionSupportPage() {
     setResolvedConversationSessionId(conversationSessionId ?? null);
 
     if (!conversationSessionId) {
-      setTriage(buildFallbackTriage());
+      setTriage(null);
       setSupport(EMPTY_SUPPORT_BUNDLE);
+      setSupportLoadNotice(
+        "Live triage support is not available yet because this report is not linked to an active SafeSpeak triage session."
+      );
       setLoading(false);
       return;
     }
 
     setLoading(true);
+    setSupportLoadNotice(null);
 
     try {
       const response = await fetchConversationFlowSupport(
@@ -789,14 +776,22 @@ function ReportSubmissionSupportPage() {
 
         setTriage(response.triage);
         setSupport(EMPTY_SUPPORT_BUNDLE);
+        setSupportLoadNotice(
+          "Support options could not be loaded, but the live triage summary is available."
+        );
       } catch (fetchError) {
         if (captureConsentError(fetchError)) {
           setTriage(null);
           return;
         }
 
-        setTriage(buildFallbackTriage());
+        setTriage(null);
         setSupport(EMPTY_SUPPORT_BUNDLE);
+        setSupportLoadNotice(
+          fetchError instanceof Error
+            ? fetchError.message
+            : "SafeSpeak could not load triage support from the backend."
+        );
       }
     } finally {
       setLoading(false);
@@ -848,16 +843,22 @@ function ReportSubmissionSupportPage() {
       await grantPendingConsent();
       await loadTriage();
     } catch {
-      setTriage(buildFallbackTriage());
+      setTriage(null);
       setSupport(EMPTY_SUPPORT_BUNDLE);
+      setSupportLoadNotice(
+        "Live triage support could not be loaded after consent was granted."
+      );
       setLoading(false);
     }
   };
 
   const handleDeclinePendingConsent = () => {
     clearPendingConsent();
-    setTriage(buildFallbackTriage());
+    setTriage(null);
     setSupport(EMPTY_SUPPORT_BUNDLE);
+    setSupportLoadNotice(
+      "Grant AI consent to load live SafeSpeak triage support for this report."
+    );
     setLoading(false);
   };
 
@@ -869,7 +870,8 @@ function ReportSubmissionSupportPage() {
     () => buildTriagePresentation(triage, loading),
     [loading, triage]
   );
-  const shouldShowSupportOptions = !loading && !pendingConsentRequirement;
+  const shouldShowSupportOptions =
+    !loading && !pendingConsentRequirement && Boolean(triage);
   const suggestedMicroCards = useMemo(() => {
     if (support.suggestedMicroCardIds.length === 0 || microCards.length === 0) {
       return [];
@@ -1035,6 +1037,31 @@ function ReportSubmissionSupportPage() {
                 onDecline={handleDeclinePendingConsent}
               />
             </div>
+          ) : null}
+
+          {!pendingConsentRequirement && supportLoadNotice ? (
+            <section className="rounded-[24px] border border-[#D8E3F0] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)] sm:rounded-[30px] sm:p-6">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
+                SafeSpeak status
+              </p>
+              <p className="mt-3 text-sm leading-6 text-[#475569]">
+                {supportLoadNotice}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link
+                  href="/dashboard?view=assistantconversation"
+                  className="inline-flex h-11 items-center justify-center rounded-full bg-[#0f5d9f] px-5 text-[12px] font-bold text-white"
+                >
+                  Return to AI conversation
+                </Link>
+                <Link
+                  href="/dashboard?view=reportsubmissionhistory"
+                  className="inline-flex h-11 items-center justify-center rounded-full border border-[#D8E3F0] px-5 text-[12px] font-bold text-[#475569]"
+                >
+                  View report history
+                </Link>
+              </div>
+            </section>
           ) : null}
 
           {shouldShowSupportOptions ? (
@@ -1401,7 +1428,7 @@ function ReportSubmissionSupportPage() {
                           Session
                         </p>
                         <p className="mt-1">
-                          {resolvedConversationSessionId || "fallback only"}
+                          {resolvedConversationSessionId || "not available"}
                         </p>
                       </div>
                       <div>

@@ -25,7 +25,10 @@ import {
   formatDestinationType,
   rankAuthorityMatches,
 } from "@/lib/report-authority-routing";
-import { getReportFlowDraft } from "@/lib/report-flow";
+import {
+  buildReportFlowHref,
+  getResolvedReportFlowDraft,
+} from "@/lib/report-flow";
 import {
   type ReportDestinationPreview,
   type ReportSubmissionRecord,
@@ -34,6 +37,7 @@ import {
   getReportStatus,
   listReportSubmissions,
 } from "@/lib/reports-client";
+import { mergeReportFlowDraft } from "@/lib/report-flow";
 
 function isActualDeliveryStatus(status?: string): boolean {
   return status === "submitted" || status === "acknowledged";
@@ -60,6 +64,10 @@ function getSubmissionOutcomeLabel(submission: ReportSubmissionRecord): string {
 }
 
 function getPreparedStatusLabel(status?: string): string {
+  if (status === "ready_to_share") {
+    return "Ready for secure sharing";
+  }
+
   if (status === "config_missing") {
     return "Not sent - partner setup needed";
   }
@@ -72,19 +80,11 @@ function getPreparedStatusLabel(status?: string): string {
     return "Delivery failed";
   }
 
-  if (status === "requires_review") {
-    return "Prepared - review required";
-  }
-
-  if (status === "prepared_only") {
-    return "Prepared only";
-  }
-
   return "Prepared";
 }
 
 function ReportSubmissionSuccessPage() {
-  const reportDraft = useMemo(() => getReportFlowDraft(), []);
+  const reportDraft = useMemo(() => getResolvedReportFlowDraft(), []);
   const preparedSubmission = reportDraft?.preparedSubmission ?? null;
   const [reportStatus, setReportStatus] = useState<string>("prepared");
   const [reportRef, setReportRef] = useState<string | null>(
@@ -100,17 +100,26 @@ function ReportSubmissionSuccessPage() {
   );
   const [loadNotice, setLoadNotice] = useState<string | null>(null);
 
-  const selectedContactName =
-    latestSubmission?.destinationName ?? preparedSubmission?.destinationName;
-  const selectedContactChannel =
-    latestSubmission?.channel ?? preparedSubmission?.channel;
   const preferredDestinationId =
     latestSubmission?.destinationId ??
-    preparedSubmission?.destinationId ??
     reportDraft?.selectedDestinationId;
   const preparedStatusLabel = getPreparedStatusLabel(
     preparedSubmission?.status
   );
+  const shareHref = buildReportFlowHref("reportsubmissionshare", {
+    reportId: reportDraft?.reportId,
+    selectedDestinationId:
+      latestSubmission?.destinationId ??
+      reportDraft?.selectedDestinationId,
+    latestSubmissionId:
+      latestSubmission?._id ?? reportDraft?.latestSubmissionId,
+  });
+  const reviewHref = buildReportFlowHref("reportsubmissionreview", {
+    reportId: reportDraft?.reportId,
+    selectedDestinationId:
+      latestSubmission?.destinationId ??
+      reportDraft?.selectedDestinationId,
+  });
 
   useEffect(() => {
     if (!reportDraft?.reportId) {
@@ -151,10 +160,42 @@ function ReportSubmissionSuccessPage() {
         setReportRef(report.refNo ?? report._id);
         setReportStatus(status.current);
         setDestinationOptions(destinations);
-        setLatestSubmission(
+        const resolvedLatestSubmission =
           matchedSubmission ??
-            (shouldUseFallbackSubmission ? (submissions[0] ?? null) : null)
-        );
+          (shouldUseFallbackSubmission ? (submissions[0] ?? null) : null);
+        setLatestSubmission(resolvedLatestSubmission);
+        mergeReportFlowDraft({
+          reportId: report._id,
+          selectedDestinationId:
+            resolvedLatestSubmission?.destinationId ??
+            reportDraft.selectedDestinationId,
+          latestSubmissionId: resolvedLatestSubmission?._id,
+          preparedSubmission: resolvedLatestSubmission
+            ? {
+                destinationId: resolvedLatestSubmission.destinationId,
+                destinationName: resolvedLatestSubmission.destinationName,
+                destinationType: resolvedLatestSubmission.destinationType,
+                channel: resolvedLatestSubmission.channel,
+                status: isActualDeliveryStatus(resolvedLatestSubmission.status)
+                  ? resolvedLatestSubmission.status
+                  : resolvedLatestSubmission.status ===
+                      "requires_manual_action" ||
+                    resolvedLatestSubmission.status === "config_missing" ||
+                    resolvedLatestSubmission.status === "failed"
+                    ? resolvedLatestSubmission.status
+                    : "ready_to_share",
+                missingRequiredInfo:
+                  resolvedLatestSubmission.missingRequiredInfo,
+                message: resolvedLatestSubmission.deliveryMessage,
+                actuallySent:
+                  resolvedLatestSubmission.actuallySent ??
+                  isActualDeliveryStatus(resolvedLatestSubmission.status),
+                updatedAt: new Date().toISOString(),
+              }
+            : reportDraft.preparedSubmission?.status === "ready_to_share"
+              ? reportDraft.preparedSubmission
+              : undefined,
+        });
       })
       .catch(() => {
         if (!isActive) {
@@ -163,7 +204,7 @@ function ReportSubmissionSuccessPage() {
 
         setReportStatus("prepared");
         setLoadNotice(
-          "Admin-managed destinations could not be refreshed. Showing the saved prepared contact when available."
+          "Admin-managed destinations could not be refreshed. Reopen secure sharing to refresh the latest recipient data."
         );
       })
       .finally(() => {
@@ -179,6 +220,7 @@ function ReportSubmissionSuccessPage() {
     reportDraft?.latestSubmissionId,
     reportDraft?.preparedSubmission,
     reportDraft?.reportId,
+    reportDraft?.selectedDestinationId,
   ]);
 
   const authorityMatches = useMemo(
@@ -187,29 +229,31 @@ function ReportSubmissionSuccessPage() {
         destinations: destinationOptions,
         draft: reportDraft,
         preferredDestinationId,
-        preparedSubmission,
       }),
-    [
-      destinationOptions,
-      preferredDestinationId,
-      preparedSubmission,
-      reportDraft,
-    ]
+    [destinationOptions, preferredDestinationId, reportDraft]
   );
 
   const primaryMatch = authorityMatches[0] ?? null;
   const alternativeMatches = authorityMatches.slice(1, 4);
+  const selectedDestination =
+    destinationOptions.find(
+      (destination) => destination.destinationId === preferredDestinationId
+    ) ?? null;
+  const selectedContactName =
+    latestSubmission?.destinationName ?? selectedDestination?.destinationName;
+  const selectedContactChannel =
+    latestSubmission?.channel ?? selectedDestination?.channel;
   const checklistItems = [
     {
       label: "Confirm recipient",
-      done: Boolean(primaryMatch),
+      done: Boolean(selectedDestination ?? primaryMatch),
     },
     {
       label: "Review evidence",
       done: Boolean(reportDraft?.evidenceIds?.length || reportDraft?.summary),
     },
     {
-      label: "Open secure share",
+      label: "Complete secure share",
       done: Boolean(latestSubmission),
     },
     {
@@ -223,7 +267,7 @@ function ReportSubmissionSuccessPage() {
       <div className="mx-auto flex w-full max-w-[1184px] flex-col">
         <div className="flex h-[60px] items-center justify-between border-b border-[#d9e2ee] px-6 py-[10px]">
           <Link
-            href="/dashboard?view=reportsubmissionreview"
+            href={reviewHref}
             className="inline-flex items-center gap-2 text-[#111827]"
           >
             <IconChevronLeft size={18} stroke={2} />
@@ -231,7 +275,7 @@ function ReportSubmissionSuccessPage() {
               className="inline-block text-[13px] font-bold leading-[20px]"
               style={{ fontFamily: "Inter, sans-serif" }}
             >
-              Detailed Explanations
+              Evidence Review
             </span>
           </Link>
           <Link
@@ -245,10 +289,10 @@ function ReportSubmissionSuccessPage() {
 
         <article className="mt-5 rounded-[16px] border border-[#dce5f1] bg-[#f7fafe] p-4 sm:p-6">
           <p className="mx-auto max-w-[620px] text-center text-[12px] leading-[18px] text-[#7789a1]">
-            SafeSpeak prepared this report and matched it against
+            SafeSpeak reviewed this report and matched it against
             admin-managed police, legal, eSafety, and support destinations.
-            Review the recommended recipient before opening the secure sharing
-            step.
+            Open secure sharing when you are ready to confirm the recipient and
+            final sharing step.
           </p>
 
           <div className="mt-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3 text-center">
@@ -256,7 +300,7 @@ function ReportSubmissionSuccessPage() {
               SafeSpeak reference
             </p>
             <p className="mt-1 text-[14px] font-bold text-[#1f2a3a]">
-              {reportRef ?? "Draft only"}
+              {reportRef ?? "No backend report yet"}
             </p>
             <p className="mt-1 text-[10px] text-[#60728a]">
               Current status: {reportStatus}
@@ -267,7 +311,7 @@ function ReportSubmissionSuccessPage() {
                 {formatChannel(selectedContactChannel)}
               </p>
             ) : null}
-            {!latestSubmission && preparedSubmission ? (
+            {!latestSubmission && selectedDestination ? (
               <p className="mt-1 text-[10px] font-semibold text-[#9a5b12]">
                 {preparedStatusLabel}. No external sharing was recorded yet.
               </p>
@@ -406,7 +450,7 @@ function ReportSubmissionSuccessPage() {
                     </p>
                   ) : null}
                 </div>
-              ) : (
+              ) : destinationOptions.length === 0 && !isLoadingDestinations ? (
                 <div className="mt-4 rounded-[14px] border border-[#dbe7f4] bg-[#f8fbff] p-5 text-center">
                   <p className="text-[13px] font-bold text-[#1f2a3a]">
                     No authority match is available yet.
@@ -417,7 +461,7 @@ function ReportSubmissionSuccessPage() {
                     should go.
                   </p>
                 </div>
-              )}
+              ) : null}
 
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between">
@@ -521,8 +565,8 @@ function ReportSubmissionSuccessPage() {
                 <p className="mt-2 max-w-[260px] text-[10px] leading-[15px] text-white/85">
                   {latestSubmission
                     ? `This report is tracked as ${latestSubmission.status} for ${latestSubmission.destinationName}.`
-                    : preparedSubmission?.status === "requires_review"
-                      ? "Review the required details before SafeSpeak can send this to the selected contact."
+                    : preparedSubmission?.status === "ready_to_share"
+                      ? "This report is prepared and ready for secure sharing when you choose."
                       : primaryMatch
                         ? "Open secure sharing to confirm the recipient, consent, and final report submission."
                         : "Your report remains in SafeSpeak until a supported backend action changes it."}
@@ -531,10 +575,10 @@ function ReportSubmissionSuccessPage() {
             </div>
           </div>
 
-          {latestSubmission || preparedSubmission ? (
+          {latestSubmission || selectedDestination ? (
             <div className="mt-4 rounded-[12px] border border-[#e5ebf4] bg-white px-4 py-3">
               <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                {latestSubmission ? "Submission record" : "Prepared contact"}
+                {latestSubmission ? "Submission record" : "Selected recipient"}
               </p>
               {latestSubmission ? (
                 <>
@@ -577,17 +621,17 @@ function ReportSubmissionSuccessPage() {
                     </p>
                   ) : null}
                 </>
-              ) : preparedSubmission ? (
+              ) : selectedDestination ? (
                 <>
                   <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
-                    {preparedSubmission.destinationName}
+                    {selectedDestination.destinationName}
                   </p>
                   <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
                     Status: {preparedStatusLabel}
                   </p>
-                  {preparedSubmission.missingRequiredInfo?.length ? (
+                  {selectedDestination.missingRequiredInfo.length ? (
                     <p className="mt-1 text-[10px] font-semibold leading-[16px] text-[#9a5b12]">
-                      Needs: {preparedSubmission.missingRequiredInfo.join(", ")}
+                      Needs: {selectedDestination.missingRequiredInfo.join(", ")}
                     </p>
                   ) : null}
                   {preparedSubmission.message ? (
@@ -611,14 +655,14 @@ function ReportSubmissionSuccessPage() {
               </Link>
               <div className="flex min-h-[64px] flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-center">
                 <Link
-                  href="/dashboard?view=reportsubmissionshare"
+                  href={shareHref}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#ff8f00] px-5 text-[11px] font-bold text-white shadow-[0_10px_22px_rgba(255,143,0,0.28)] transition hover:bg-[#ec8200]"
                 >
                   <IconShare size={13} />
                   Share report securely
                 </Link>
                 <Link
-                  href="/dashboard?view=reportsubmissionreview"
+                  href={reviewHref}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#dbe7f4] bg-white px-5 text-[11px] font-bold text-[#526982] transition hover:bg-[#f8fbff]"
                 >
                   Review recipients
@@ -628,7 +672,9 @@ function ReportSubmissionSuccessPage() {
                   <IconBoltFilled size={12} />
                   {latestSubmission
                     ? "Shared through SafeSpeak"
-                    : "Prepared - not yet shared"}
+                    : selectedDestination
+                      ? "Ready for secure sharing"
+                      : "Awaiting recipient selection"}
                 </span>
               </div>
             </div>

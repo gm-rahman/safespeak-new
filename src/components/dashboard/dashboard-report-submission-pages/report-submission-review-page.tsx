@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -16,10 +15,15 @@ import {
   IconPencil,
   IconPhoneCall,
   IconPlus,
+  IconTrash,
 } from "@tabler/icons-react";
 
 import { SourceBackedQaPanel } from "@/components/dashboard/source-backed-qa-panel";
-import { getReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
+import {
+  buildReportFlowHref,
+  getResolvedReportFlowDraft,
+  mergeReportFlowDraft,
+} from "@/lib/report-flow";
 import {
   type ReportDestinationPreview,
   type ReportSubmissionPayloadPreview,
@@ -27,6 +31,7 @@ import {
   getReportDestinations,
   getReportStatus,
   getReportTimeline,
+  updateReport,
   previewReportSubmissions,
 } from "@/lib/reports-client";
 
@@ -56,40 +61,26 @@ type StatusHistoryEntry = {
   reason?: string;
 };
 
-const initialTimelineEntries: TimelineEntry[] = [
-  {
-    id: "info",
-    chip: "Who",
-    label: "Person of Interest",
-    value: "Officer John Doe",
-    hint: "* AI Suggested - 98% Confidence",
-    action: "Edit Details",
-  },
-  {
-    id: "what",
-    chip: "What",
-    value: "Verbal harassment incident...",
-  },
-  {
-    id: "where",
-    chip: "Where",
-    value: "1234 Elm Street, Breakroom 4B",
-  },
-  {
-    id: "when",
-    chip: "When",
-    value: "Oct 14, 2023 - 2:30 PM EST",
-  },
-] as const;
+type TimelineFieldKey =
+  | "who"
+  | "what"
+  | "where"
+  | "when"
+  | "how"
+  | "witnesses"
+  | "repeatedIncidents"
+  | "injuries";
 
 const manualEntryTypes: Array<TimelineEntry["chip"]> = [
   "Who",
   "What",
   "Where",
   "When",
+  "How",
+  "Witnesses",
+  "Repeated",
+  "Injuries",
 ];
-
-const reportSubmissionSuccessHref = "/dashboard?view=reportsubmissionsuccess";
 
 const timelineFieldConfig = [
   { key: "who", chip: "Who" },
@@ -102,6 +93,17 @@ const timelineFieldConfig = [
   { key: "injuries", chip: "Injuries" },
   { key: "evidenceItems", chip: "Evidence" },
 ] as const;
+
+const timelineChipToFieldKey: Record<Exclude<TimelineEntry["chip"], "Evidence">, TimelineFieldKey> = {
+  Who: "who",
+  What: "what",
+  Where: "where",
+  When: "when",
+  How: "how",
+  Witnesses: "witnesses",
+  Repeated: "repeatedIncidents",
+  Injuries: "injuries",
+};
 
 const hasTimelineValue = (value: unknown): boolean => {
   if (typeof value === "string") {
@@ -155,6 +157,7 @@ const buildStructuredTimelineEntries = (
       id: field.key,
       chip: field.chip,
       value: safeTimelineValue(useLocalValue ? localValue : backendValue),
+      action: field.chip === "Evidence" ? undefined : "Edit Details",
       isLocalOnly: useLocalValue,
     };
   });
@@ -194,6 +197,11 @@ const formatConsentFlag = (flag: string): string => flag.replace(/_/g, " ");
 const formatConsentFlags = (flags: string[]): string =>
   flags.map(formatConsentFlag).join(", ");
 
+const areStructuredFieldsEqual = (
+  left: Record<string, unknown>,
+  right: Record<string, unknown>
+): boolean => JSON.stringify(left) === JSON.stringify(right);
+
 const toTelHref = (phone: string): string => {
   const normalized = phone.replace(/[^\d+]/g, "");
   return normalized ? `tel:${normalized}` : `tel:${phone}`;
@@ -207,11 +215,14 @@ const toMailHref = (email: string, destinationName: string): string => {
 };
 
 function ReportSubmissionReviewPage() {
-  const router = useRouter();
-  const reportDraft = useMemo(() => getReportFlowDraft(), []);
-  const [timelineEntries, setTimelineEntries] = useState(
-    initialTimelineEntries
-  );
+  const reportDraft = useMemo(() => getResolvedReportFlowDraft(), []);
+  const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>([]);
+  const [backendStructuredFields, setBackendStructuredFields] = useState<
+    Record<string, unknown>
+  >({});
+  const [currentStructuredFields, setCurrentStructuredFields] = useState<
+    Record<string, unknown>
+  >(reportDraft?.structuredFields ?? {});
   const [reportStatus, setReportStatus] = useState<string>("draft");
   const [reportRef, setReportRef] = useState<string | null>(
     reportDraft?.reportId ?? null
@@ -247,19 +258,25 @@ function ReportSubmissionReviewPage() {
   const [isLoadingSubmissionPreviews, setIsLoadingSubmissionPreviews] =
     useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(
-    initialTimelineEntries[0]?.id ?? null
-  );
+  const [timelineStatusMessage, setTimelineStatusMessage] = useState<
+    string | null
+  >(null);
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
   const [manualEntryType, setManualEntryType] =
     useState<TimelineEntry["chip"]>("What");
   const [manualEntryValue, setManualEntryValue] = useState("");
+  const [isSavingTimeline, setIsSavingTimeline] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editingEntryValue, setEditingEntryValue] = useState("");
 
   useEffect(() => {
     const reportId = reportDraft?.reportId;
 
     if (!reportId) {
       if (reportDraft?.structuredFields) {
+        setBackendStructuredFields({});
+        setCurrentStructuredFields(reportDraft.structuredFields);
         const localEntries = buildStructuredTimelineEntries(
           {},
           reportDraft.structuredFields
@@ -292,23 +309,50 @@ function ReportSubmissionReviewPage() {
           return;
         }
 
+        const mergedStructuredFields = {
+          ...(reportDraft?.structuredFields ?? {}),
+          ...(report.structuredFields ?? {}),
+        };
+
+        const backendStructuredFields = report.structuredFields ?? {};
+        const requiresBackendSync =
+          report._id &&
+          Object.keys(mergedStructuredFields).length > 0 &&
+          !areStructuredFieldsEqual(
+            backendStructuredFields,
+            mergedStructuredFields
+          );
+
+        const syncedReport = requiresBackendSync
+          ? await updateReport(report._id, {
+              structuredFields: mergedStructuredFields,
+              ...(typeof mergedStructuredFields.what === "string"
+                ? {
+                    originalNarrative: String(mergedStructuredFields.what),
+                  }
+                : {}),
+            })
+          : report;
+        const resolvedStructuredFields =
+          syncedReport.structuredFields ?? mergedStructuredFields;
+
+        setBackendStructuredFields(resolvedStructuredFields);
+        setCurrentStructuredFields(resolvedStructuredFields);
         const backendEntries = buildStructuredTimelineEntries(
-          report.structuredFields ?? {},
-          reportDraft.structuredFields ?? {}
+          resolvedStructuredFields,
+          resolvedStructuredFields
         );
 
         setTimelineEntries(backendEntries);
-        setHasLocalOnlyTimelineContent(
-          backendEntries.some((entry) => entry.isLocalOnly)
-        );
+        setHasLocalOnlyTimelineContent(false);
         setExpandedEntryId(backendEntries[0]?.id ?? null);
         setStatusHistoryEntries(buildStatusHistoryEntries(timeline));
         setReportStatus(
-          status.current ?? status.status ?? report.status ?? "draft"
+          status.current ?? status.status ?? syncedReport.status ?? "draft"
         );
-        setReportRef(report.refNo ?? report._id);
-        setReportLanguage(report.language ?? "en");
-        setReportJurisdiction(report.jurisdiction ?? "NSW");
+        setReportRef(syncedReport.refNo ?? syncedReport._id);
+        setReportLanguage(syncedReport.language ?? "en");
+        setReportJurisdiction(syncedReport.jurisdiction ?? "NSW");
         setDestinations(destinationOptions);
         setSelectedDestinationId((currentDestinationId) => {
           if (
@@ -356,31 +400,31 @@ function ReportSubmissionReviewPage() {
           return fallbackDestinationId ? [fallbackDestinationId] : [];
         });
         setLoadError(null);
+        mergeReportFlowDraft({
+          reportId: syncedReport._id,
+          structuredFields: resolvedStructuredFields,
+        });
       } catch (error) {
         if (!isActive) {
           return;
         }
 
-        if (reportDraft?.structuredFields) {
-          const localEntries = buildStructuredTimelineEntries(
-            {},
-            reportDraft.structuredFields
-          );
-
-          setTimelineEntries(localEntries);
-          setExpandedEntryId(localEntries[0]?.id ?? null);
-          setHasLocalOnlyTimelineContent(
-            localEntries.some((entry) => entry.isLocalOnly)
-          );
-          setStatusHistoryEntries([]);
-          setReportStatus("local_only");
-          setDestinations([]);
-        }
+        setBackendStructuredFields({});
+        setCurrentStructuredFields({});
+        setTimelineEntries([]);
+        setExpandedEntryId(null);
+        setHasLocalOnlyTimelineContent(false);
+        setStatusHistoryEntries([]);
+        setReportStatus("draft");
+        setDestinations([]);
+        setSelectedDestinationId(null);
+        setSelectedDestinationIds([]);
+        setSubmissionPreviews([]);
 
         setLoadError(
           error instanceof Error
             ? error.message
-            : "Report draft could not be loaded."
+            : "SafeSpeak could not load this report review from the backend."
         );
       } finally {
         if (isActive) {
@@ -460,7 +504,101 @@ function ReportSubmissionReviewPage() {
     setManualEntryValue("");
   };
 
-  const handleManualEntrySubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const closeInlineEditor = () => {
+    setEditingEntryId(null);
+    setEditingEntryValue("");
+  };
+
+  const buildDraftFieldPatch = (
+    fieldKey: TimelineFieldKey,
+    value?: string
+  ): Partial<{
+    summary: string;
+    date: string;
+    location: string;
+  }> => ({
+    ...(fieldKey === "what" ? { summary: value ?? "" } : {}),
+    ...(fieldKey === "when" ? { date: value ?? "" } : {}),
+    ...(fieldKey === "where" ? { location: value ?? "" } : {}),
+  });
+
+  const syncTimelineField = async (
+    fieldKey: TimelineFieldKey,
+    value?: string
+  ) => {
+    const trimmedValue = value?.trim();
+    const nextStructuredFields = { ...currentStructuredFields };
+
+    if (trimmedValue) {
+      nextStructuredFields[fieldKey] = trimmedValue;
+    } else {
+      delete nextStructuredFields[fieldKey];
+    }
+
+    setCurrentStructuredFields(nextStructuredFields);
+    setTimelineEntries(
+      buildStructuredTimelineEntries(backendStructuredFields, nextStructuredFields)
+    );
+    setExpandedEntryId(fieldKey);
+    setTimelineStatusMessage("Timeline updated in this draft.");
+    setLoadError(null);
+    mergeReportFlowDraft({
+      structuredFields: nextStructuredFields,
+      ...buildDraftFieldPatch(fieldKey, trimmedValue),
+    });
+
+    if (!reportDraft?.reportId) {
+      setHasLocalOnlyTimelineContent(true);
+      return;
+    }
+
+    setIsSavingTimeline(true);
+
+    try {
+      const savedReport = await updateReport(reportDraft.reportId, {
+        structuredFields: nextStructuredFields,
+        ...(fieldKey === "what"
+          ? { originalNarrative: trimmedValue ?? "" }
+          : {}),
+      });
+
+      const savedStructuredFields =
+        savedReport.structuredFields ?? nextStructuredFields;
+      setBackendStructuredFields(savedStructuredFields);
+      setCurrentStructuredFields(savedStructuredFields);
+      setTimelineEntries(
+        buildStructuredTimelineEntries(savedStructuredFields, savedStructuredFields)
+      );
+      setHasLocalOnlyTimelineContent(false);
+      setReportStatus(savedReport.status ?? reportStatus);
+      setTimelineStatusMessage(
+        trimmedValue
+          ? "Timeline saved to SafeSpeak."
+          : "Timeline field removed from SafeSpeak."
+      );
+      mergeReportFlowDraft({
+        reportId: savedReport._id,
+        structuredFields: savedStructuredFields,
+        ...buildDraftFieldPatch(fieldKey, trimmedValue),
+      });
+    } catch (error) {
+      setHasLocalOnlyTimelineContent(true);
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Timeline changes could not be synced to SafeSpeak."
+      );
+      setTimelineStatusMessage(
+        "Timeline saved in this browser only. Backend sync did not complete."
+      );
+    } finally {
+      setIsSavingTimeline(false);
+    }
+  };
+
+  const handleManualEntrySubmit = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
     event.preventDefault();
 
     const value = manualEntryValue.trim();
@@ -468,17 +606,39 @@ function ReportSubmissionReviewPage() {
       return;
     }
 
-    const entryId = `manual-${Date.now()}`;
-    const newEntry: TimelineEntry = {
-      id: entryId,
-      chip: manualEntryType,
-      value,
-      action: "Edit Details",
-    };
-
-    setTimelineEntries((currentEntries) => [...currentEntries, newEntry]);
-    setExpandedEntryId(entryId);
+    const fieldKey = timelineChipToFieldKey[manualEntryType];
     closeManualEntry();
+    await syncTimelineField(fieldKey, value);
+  };
+
+  const startEditingEntry = (entry: TimelineEntry) => {
+    if (entry.chip === "Evidence") {
+      return;
+    }
+
+    setExpandedEntryId(entry.id);
+    setEditingEntryId(entry.id);
+    setEditingEntryValue(
+      typeof currentStructuredFields[entry.id] === "string"
+        ? String(currentStructuredFields[entry.id])
+        : entry.value === "Not provided yet"
+          ? ""
+          : entry.value
+    );
+  };
+
+  const handleInlineEditSubmit = async (
+    event: React.FormEvent<HTMLFormElement>,
+    entryId: string
+  ) => {
+    event.preventDefault();
+    await syncTimelineField(entryId as TimelineFieldKey, editingEntryValue);
+    closeInlineEditor();
+  };
+
+  const handleRemoveEntry = async (entryId: string) => {
+    await syncTimelineField(entryId as TimelineFieldKey);
+    closeInlineEditor();
   };
 
   const toggleDestinationSelection = (destinationId: string) => {
@@ -505,52 +665,55 @@ function ReportSubmissionReviewPage() {
       (destination) => destination.destinationId === selectedDestinationId
     ) ?? null;
 
-  const goToSubmissionSuccess = () => {
-    router.push(reportSubmissionSuccessHref);
-  };
-
-  const savePreparedSubmission = (
-    destination: ReportDestinationPreview,
-    status: "submitted" | "requires_review" | "prepared_only",
-    message?: string
-  ) => {
-    mergeReportFlowDraft({
-      selectedDestinationId: destination.destinationId,
-      latestSubmissionId: undefined,
-      preparedSubmission: {
-        destinationId: destination.destinationId,
-        destinationName: destination.destinationName,
-        destinationType: destination.destinationType,
-        channel: destination.channel,
-        status,
-        missingRequiredInfo: destination.missingRequiredInfo,
-        reason: destination.reason,
-        message,
-        updatedAt: new Date().toISOString(),
-      },
-    });
-  };
-
-  const handleShareWithSelectedService = () => {
-    setLoadError(null);
-
+  const handleContinueToShare = () => {
     const destination = selectedDestination ?? destinations[0] ?? null;
 
     if (destination) {
-      savePreparedSubmission(
-        destination,
-        "prepared_only",
-        "Backend sharing is not connected yet. The selected service is saved for the next step."
-      );
+      mergeReportFlowDraft({
+        selectedDestinationId: destination.destinationId,
+        latestSubmissionId: undefined,
+        shareAnonymityMode: anonymityMode,
+        shareNotes: submissionNotes,
+        structuredFields: currentStructuredFields,
+        preparedSubmission: {
+          destinationId: destination.destinationId,
+          destinationName: destination.destinationName,
+          destinationType: destination.destinationType,
+          channel: destination.channel,
+          status: "ready_to_share",
+          missingRequiredInfo: destination.missingRequiredInfo,
+          reason: destination.reason,
+          message:
+            destination.missingRequiredInfo.length > 0
+              ? "Review the missing details before final sharing."
+              : "Recipient reviewed. Continue to secure sharing to confirm and send.",
+          updatedAt: new Date().toISOString(),
+        },
+      });
     } else {
       mergeReportFlowDraft({
         latestSubmissionId: undefined,
+        shareAnonymityMode: anonymityMode,
+        shareNotes: submissionNotes,
+        structuredFields: currentStructuredFields,
         preparedSubmission: undefined,
       });
     }
-
-    goToSubmissionSuccess();
   };
+
+  const shareHref = buildReportFlowHref("reportsubmissionshare", {
+    reportId: reportDraft?.reportId,
+    selectedDestinationId:
+      selectedDestination?.destinationId ??
+      selectedDestinationId ??
+      reportDraft?.selectedDestinationId,
+  });
+  const canContinueToShare =
+    Boolean(reportDraft?.reportId) &&
+    Boolean(selectedDestination ?? destinations[0]) &&
+    !loadError &&
+    !isLoading &&
+    !hasLocalOnlyTimelineContent;
 
   return (
     <div className="px-6 pb-12 pt-12">
@@ -584,7 +747,7 @@ function ReportSubmissionReviewPage() {
             </h2>
             <p className="max-w-[430px] text-center text-[12px] leading-[16px] text-[#6f7f93]">
               If AI-assisted structuring was used, verify the timeline below
-              before saving this prepared report for review.
+              before continuing to the secure sharing step.
             </p>
           </header>
 
@@ -597,15 +760,28 @@ function ReportSubmissionReviewPage() {
                 </span>
               </div>
             ) : null}
+            {timelineStatusMessage ? (
+              <div className="mb-4 rounded-[12px] border border-[#d8e4f2] bg-white px-3 py-2 text-[11px] font-medium text-[#0f5d9f]">
+                {timelineStatusMessage}
+              </div>
+            ) : null}
             <div className="mb-4 flex items-center justify-between rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
               <p className="text-[11px] font-semibold text-[#1f2a3a]">
                 Current backend status: {reportStatus}
               </p>
-              {reportRef ? (
-                <p className="text-[10px] text-[#8ea0b8]">
+              <div className="flex items-center gap-3">
+                {isSavingTimeline ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#60728a]">
+                    <IconLoader2 size={12} className="animate-spin" />
+                    Saving timeline...
+                  </span>
+                ) : null}
+                {reportRef ? (
+                  <p className="text-[10px] text-[#8ea0b8]">
                   SafeSpeak ref {reportRef.slice(-6)}
-                </p>
-              ) : null}
+                  </p>
+                ) : null}
+              </div>
             </div>
             {statusHistoryEntries.length ? (
               <div className="mb-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
@@ -637,11 +813,11 @@ function ReportSubmissionReviewPage() {
               Choose a police, government, or support contact from the
               admin-managed directory. SafeSpeak will not call, email, or share
               anything automatically; you decide whether to contact directly or
-              share the prepared information.
+              share the reviewed report information.
               {hasLocalOnlyTimelineContent ? (
                 <span className="mt-2 block font-semibold text-[#9a5b12]">
-                  Stored locally only: some review fields are shown from this
-                  browser session and are not stored in the backend.
+                  Some review fields are not synced to SafeSpeak yet. Save them
+                  successfully before continuing to secure sharing.
                 </span>
               ) : null}
             </div>
@@ -839,7 +1015,7 @@ function ReportSubmissionReviewPage() {
                   ) : null}
                   {selectedDestination.requiredConsentFlags.length ? (
                     <div className="rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[10px] leading-[1.55] text-[#60728a] sm:col-span-2">
-                      Consent required before SafeSpeak shares prepared
+                      Consent required before SafeSpeak shares reviewed
                       information:{" "}
                       {formatConsentFlags(
                         selectedDestination.requiredConsentFlags
@@ -857,7 +1033,7 @@ function ReportSubmissionReviewPage() {
                 <div className="mt-3 rounded-[12px] border border-[#edf2f8] bg-white p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                      Prepared contact previews
+                      Recipient payload previews
                     </p>
                     <p className="text-[10px] text-[#8ea0b8]">
                       {selectedDestinationIds.length} selected
@@ -974,9 +1150,54 @@ function ReportSubmissionReviewPage() {
                                 {entry.label}
                               </p>
                             ) : null}
-                            <p className="mt-1 text-[13px] font-semibold leading-[18px] text-[#1f2a3a]">
-                              {entry.value}
-                            </p>
+                            {editingEntryId === entry.id ? (
+                              <form
+                                onSubmit={(event) =>
+                                  void handleInlineEditSubmit(event, entry.id)
+                                }
+                                className="mt-2 space-y-2"
+                              >
+                                <textarea
+                                  value={editingEntryValue}
+                                  onChange={(event) =>
+                                    setEditingEntryValue(event.target.value)
+                                  }
+                                  rows={3}
+                                  className="w-full resize-none rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-[12px] leading-[1.55] text-[#253447] outline-none"
+                                  placeholder={`Update ${entry.chip.toLowerCase()} details`}
+                                />
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleRemoveEntry(entry.id)}
+                                    disabled={isSavingTimeline}
+                                    className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[#fde2e2] px-3 text-[10px] font-semibold text-[#b45353] disabled:opacity-50"
+                                  >
+                                    <IconTrash size={10} />
+                                    Clear
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={closeInlineEditor}
+                                    disabled={isSavingTimeline}
+                                    className="inline-flex h-8 items-center rounded-[8px] border border-[#dce5f1] px-3 text-[10px] font-semibold text-[#60728a] disabled:opacity-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    disabled={isSavingTimeline}
+                                    className="inline-flex h-8 items-center rounded-[8px] bg-[#0f52ba] px-3 text-[10px] font-semibold text-white disabled:opacity-50"
+                                  >
+                                    {isSavingTimeline ? "Saving..." : "Save"}
+                                  </button>
+                                </div>
+                              </form>
+                            ) : (
+                              <p className="mt-1 text-[13px] font-semibold leading-[18px] text-[#1f2a3a]">
+                                {entry.value}
+                              </p>
+                            )}
                             {entry.hint ? (
                               <p className="mt-3 inline-flex items-center gap-1 text-[10px] font-semibold text-[#16a56a]">
                                 <IconBoltFilled size={10} />
@@ -994,6 +1215,7 @@ function ReportSubmissionReviewPage() {
                             <div className="flex justify-end">
                               <button
                                 type="button"
+                                onClick={() => startEditingEntry(entry)}
                                 className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#ff8f00]"
                               >
                                 <IconPencil size={10} />
@@ -1090,10 +1312,10 @@ function ReportSubmissionReviewPage() {
                     </button>
                     <button
                       type="submit"
-                      disabled={!manualEntryValue.trim()}
+                      disabled={!manualEntryValue.trim() || isSavingTimeline}
                       className="inline-flex h-8 items-center rounded-[8px] bg-[#0f52ba] px-3 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Add Entry
+                      {isSavingTimeline ? "Saving..." : "Add Entry"}
                     </button>
                   </div>
                 </form>
@@ -1118,14 +1340,22 @@ function ReportSubmissionReviewPage() {
             </div>
 
             <div className="mt-5 flex justify-center">
-              <button
-                type="button"
-                onClick={handleShareWithSelectedService}
+              <Link
+                href={canContinueToShare ? shareHref : "#"}
+                onClick={(event) => {
+                  if (!canContinueToShare) {
+                    event.preventDefault();
+                    return;
+                  }
+
+                  handleContinueToShare();
+                }}
+                aria-disabled={!canContinueToShare}
                 className="inline-flex h-[44px] w-full max-w-[392px] items-center justify-center rounded-[8px] bg-[#ff9800] px-8 text-[11px] font-bold text-white shadow-[0_8px_20px_rgba(255,152,0,0.34)]"
               >
-                Share with selected service
+                Continue to secure sharing
                 <IconChevronRight size={14} className="ml-1" />
-              </button>
+              </Link>
             </div>
           </article>
         </div>

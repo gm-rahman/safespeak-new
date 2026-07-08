@@ -82,7 +82,7 @@ type EvidenceItem = {
   deletionRequestedAt?: string;
   deletedAt?: string;
   detailError?: string;
-  status: "attached" | "restored" | "synced" | "local-only" | "deleted";
+  status: "attached" | "restored" | "synced" | "deleted";
 };
 
 type EvidenceAuditEntry = {
@@ -352,9 +352,7 @@ function EvidenceCard({
                 ? "Deleted"
                 : item.status === "restored"
                   ? "Re-upload needed"
-                  : item.status === "local-only"
-                    ? "Local only"
-                    : "Attached"}
+                  : "Attached"}
             </span>
           </div>
         </div>
@@ -383,9 +381,7 @@ function EvidenceVaultCard({
     ? "Deleted"
     : item.status === "synced"
       ? "Uploaded"
-      : item.status === "local-only"
-        ? "Local only"
-        : item.status === "restored"
+      : item.status === "restored"
           ? "Re-upload needed"
           : "Attached";
   const canUseBackendActions = Boolean(item.backendEvidenceId) && !isDeleted;
@@ -667,36 +663,19 @@ function ReportSubmissionEvidencePage() {
       );
 
       if (parsed.attachments?.length) {
-        setAttachedFiles(
-          parsed.attachments.map((item, index) => ({
-            id: `restored-${index}-${item.name}`,
-            backendEvidenceId: item.backendEvidenceId,
-            name: item.name,
-            sizeLabel: item.sizeLabel,
-            kind: item.kind,
-            sha256Hash: item.sha256Hash ?? "hash-unavailable",
-            uploadedAt: item.uploadedAt ?? new Date().toISOString(),
-            backendStatus: item.backendStatus,
-            storageProvider: item.storageProvider,
-            mimeType: item.mimeType,
-            sizeBytes: item.sizeBytes,
-            deletionRequestedAt: item.deletionRequestedAt,
-            deletedAt: item.deletedAt,
-            status: item.deletedAt ? "deleted" : "restored",
-          }))
-        );
+        setAttachedFiles([]);
         setAuditTrail(
           parsed.auditTrail?.length
             ? parsed.auditTrail
             : [
                 createAuditEntry(
                   "restored",
-                  "Draft metadata restored. Evidence files need re-upload."
+                  "Draft text was restored. Evidence files must be uploaded again before review."
                 ),
               ]
         );
         setRestoredDraftNotice(
-          "Draft text and metadata were restored. Re-upload any evidence files before continuing."
+          "Draft text was restored from this browser. Re-upload any evidence files before continuing."
         );
       }
     } catch {
@@ -947,10 +926,24 @@ function ReportSubmissionEvidencePage() {
         return;
       }
 
+      if (!allowCloudSync) {
+        setPendingFiles([]);
+        setEvidenceError(
+          "Evidence must be uploaded to the SafeSpeak evidence vault before it can be attached to this report."
+        );
+        return;
+      }
+
       const syncedReportDraft = allowCloudSync
         ? await persistReportDraftToBackend()
         : reportDraft;
       const syncedReportId = syncedReportDraft?.reportId;
+
+      if (!syncedReportId) {
+        throw new Error(
+          "A backend SafeSpeak report is required before evidence can be attached."
+        );
+      }
 
       const nextItems: EvidenceItem[] = await Promise.all(
         fileList.map(async (file) => {
@@ -969,14 +962,8 @@ function ReportSubmissionEvidencePage() {
               file.type.startsWith("image/") || file.type.startsWith("video/")
                 ? URL.createObjectURL(file)
                 : undefined,
-            status: (allowCloudSync
-              ? "synced"
-              : "local-only") as EvidenceItem["status"],
+            status: "synced" as const,
           };
-
-          if (!allowCloudSync || !syncedReportId) {
-            return baseItem;
-          }
 
           const upload = await requestEvidenceUploadUrl({
             reportId: syncedReportId,
@@ -1027,7 +1014,7 @@ function ReportSubmissionEvidencePage() {
         ...nextItems.map((item) =>
           createAuditEntry(
             "attached",
-            `${item.name} ${item.status === "synced" ? "uploaded to the evidence vault" : "stored locally only"} at ${formatEvidenceTimestamp(item.uploadedAt)}.`
+            `${item.name} uploaded to the evidence vault at ${formatEvidenceTimestamp(item.uploadedAt)}.`
           )
         ),
       ]);
@@ -1094,7 +1081,7 @@ function ReportSubmissionEvidencePage() {
   const refreshEvidenceDetails = async (item: EvidenceItem) => {
     if (!item.backendEvidenceId) {
       setEvidenceError(
-        "This item is local-only. Backend metadata is not available."
+        "Backend metadata is not available for this evidence item."
       );
       return;
     }
@@ -1326,10 +1313,24 @@ function ReportSubmissionEvidencePage() {
   const handleContinue = async () => {
     mergeCurrentReportDraft();
 
+    if (attachedFiles.some((item) => !item.backendEvidenceId)) {
+      setEvidenceError(
+        "Upload all evidence to the SafeSpeak vault before continuing to review."
+      );
+      return;
+    }
+
+    if (attachedFiles.some((item) => item.status === "restored")) {
+      setEvidenceError(
+        "Re-upload restored evidence files before continuing to review."
+      );
+      return;
+    }
+
     try {
       await persistReportDraftToBackend();
     } catch {
-      // Continuing to review should not be blocked by backend sync.
+      return;
     }
 
     router.push("/dashboard?view=reportsubmissionreview");
@@ -1468,6 +1469,14 @@ function ReportSubmissionEvidencePage() {
                 <span className="inline-flex items-center gap-1.5">
                   <IconAlertCircle size={13} />
                   {evidenceError}
+                </span>
+              </div>
+            ) : null}
+            {restoredDraftNotice ? (
+              <div className="mb-4 rounded-[12px] border border-[#fdeccf] bg-[#fff9ef] px-3 py-2 text-[12px] text-[#9a5b12]">
+                <span className="inline-flex items-center gap-1.5">
+                  <IconAlertCircle size={13} />
+                  {restoredDraftNotice}
                 </span>
               </div>
             ) : null}
@@ -1687,9 +1696,10 @@ function ReportSubmissionEvidencePage() {
                 })();
               }}
               onDecline={() => {
-                if (pendingFiles.length) {
-                  void attachFiles(pendingFiles, { forceCloudSync: false });
-                }
+                setPendingFiles([]);
+                setEvidenceError(
+                  "Evidence was not attached. SafeSpeak needs cloud-sync consent to upload files to the evidence vault."
+                );
                 setPendingTranscriptionItem(null);
                 setPendingConsentRequirement(null);
               }}

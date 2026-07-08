@@ -22,10 +22,12 @@ import {
 import {
   deleteReport,
   getReportStatus,
+  listReportSubmissions,
   listReports,
   markReportInfoOnly,
   requestReportDelete,
   type ReportRecord,
+  type ReportSubmissionRecord,
   withdrawReport,
 } from "@/lib/reports-client";
 import {
@@ -47,11 +49,67 @@ type HistoryReport = {
   team: string;
   date: string;
   report: ReportRecord;
+  submission?: ReportSubmissionRecord | null;
   icon: ReactNode;
   iconWrapClassName: string;
 };
 
-function normalizeHistoryStatus(status?: string): HistoryStatus {
+function isSubmissionSent(submission?: ReportSubmissionRecord | null): boolean {
+  if (!submission) {
+    return false;
+  }
+
+  return (
+    submission.actuallySent === true ||
+    submission.status === "submitted" ||
+    submission.status === "acknowledged"
+  );
+}
+
+function getSubmissionStatusLabel(
+  submission?: ReportSubmissionRecord | null
+): string | null {
+  if (!submission) {
+    return null;
+  }
+
+  if (isSubmissionSent(submission)) {
+    return "Shared through SafeSpeak";
+  }
+
+  if (submission.status === "requires_manual_action") {
+    return "Recorded for manual follow-up";
+  }
+
+  if (submission.status === "config_missing") {
+    return "Recorded - setup needed";
+  }
+
+  if (submission.status === "failed") {
+    return "Delivery failed";
+  }
+
+  return "Submission recorded";
+}
+
+function normalizeHistoryStatus(
+  status?: string,
+  submission?: ReportSubmissionRecord | null
+): HistoryStatus {
+  if (submission) {
+    if (isSubmissionSent(submission)) {
+      return "SUBMITTED";
+    }
+
+    if (
+      submission.status === "requires_manual_action" ||
+      submission.status === "config_missing" ||
+      submission.status === "failed"
+    ) {
+      return "ACTION REQUIRED";
+    }
+  }
+
   if (status === "submitted" || status === "received") {
     return "SUBMITTED";
   }
@@ -78,7 +136,10 @@ function normalizeHistoryStatus(status?: string): HistoryStatus {
   return "DRAFT";
 }
 
-function getHistoryMeta(status: HistoryStatus): {
+function getHistoryMeta(
+  status: HistoryStatus,
+  submission?: ReportSubmissionRecord | null
+): {
   team: string;
   icon: ReactNode;
   iconWrapClassName: string;
@@ -93,7 +154,7 @@ function getHistoryMeta(status: HistoryStatus): {
 
   if (status === "SUBMITTED") {
     return {
-      team: "Saved in SafeSpeak",
+      team: submission ? submission.destinationName : "Shared through SafeSpeak",
       icon: <IconHeartFilled size={14} />,
       iconWrapClassName: "bg-[#ffe9ea] text-[#f26161]",
     };
@@ -134,23 +195,29 @@ function formatHistoryDate(value?: string) {
     .toUpperCase();
 }
 
-function toHistoryReport(report: ReportRecord, resolvedStatus?: string): HistoryReport {
+function toHistoryReport(
+  report: ReportRecord,
+  resolvedStatus?: string,
+  submission?: ReportSubmissionRecord | null
+): HistoryReport {
   const statusAwareReport = {
     ...report,
     status: resolvedStatus ?? report.status,
   };
-  const historyStatus = normalizeHistoryStatus(statusAwareReport.status);
-  const meta = getHistoryMeta(historyStatus);
+  const historyStatus = normalizeHistoryStatus(statusAwareReport.status, submission);
+  const meta = getHistoryMeta(historyStatus, submission);
+  const submissionStatusLabel = getSubmissionStatusLabel(submission);
 
   return {
     id: report._id,
     status: historyStatus,
-    rawStatus: statusAwareReport.status,
-    statusLabel: getReportStatusLabel(statusAwareReport),
+    rawStatus: submission?.status ?? statusAwareReport.status,
+    statusLabel: submissionStatusLabel ?? getReportStatusLabel(statusAwareReport),
     title: report.context || report.incidentType || "SafeSpeak report",
     team: meta.team,
     date: formatHistoryDate(report.updatedAt ?? report.createdAt),
     report: statusAwareReport,
+    submission,
     icon: meta.icon,
     iconWrapClassName: meta.iconWrapClassName,
   };
@@ -202,7 +269,12 @@ function ReportSubmissionHistoryPage() {
       const reportsWithStatuses = await Promise.all(
         reportRecords.map(async (report) => {
           try {
-            const status = await getReportStatus(report._id);
+            const [status, submissions] = await Promise.all([
+              getReportStatus(report._id),
+              listReportSubmissions(report._id),
+            ]);
+            const latestSubmission = submissions[0] ?? null;
+
             return toHistoryReport(
               {
                 ...report,
@@ -210,7 +282,8 @@ function ReportSubmissionHistoryPage() {
                   status.deletionRequestedAt ?? report.deletionRequestedAt,
                 withdrawnAt: status.withdrawnAt ?? report.withdrawnAt,
               },
-              status.current
+              status.current,
+              latestSubmission
             );
           } catch {
             return toHistoryReport(report);
@@ -296,7 +369,11 @@ function ReportSubmissionHistoryPage() {
         setReports((currentReports) =>
           currentReports.map((currentReport) =>
             currentReport.id === updatedReport._id
-              ? toHistoryReport(updatedReport)
+              ? toHistoryReport(
+                  updatedReport,
+                  undefined,
+                  currentReport.submission ?? null
+                )
               : currentReport
           )
         );

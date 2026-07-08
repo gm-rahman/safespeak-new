@@ -19,25 +19,33 @@ import {
   type ConversationFlowRecommendation,
 } from "@/lib/conversation-flow";
 
-function fallbackRecommendations(): ConversationFlowRecommendation[] {
-  return [
-    {
-      id: "fallback-evidence",
-      title: "Evidence guidance",
-      description: "If it feels safe, keep screenshots, dates, names, and short notes about what happened.",
-      category: "general_support",
-      resourceType: "evidence_guidance",
-      ctaLabel: "Review evidence tips",
-    },
-    {
-      id: "fallback-support",
-      title: "Support options",
-      description: "If you want support now, look for a service that matches your location and situation.",
-      category: "general_support",
-      resourceType: "mental_health",
-      ctaLabel: "View support options",
-    },
-  ];
+function getConversationSessionIdFromUrl() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return (
+    new URLSearchParams(window.location.search).get("conversationSessionId") ??
+    undefined
+  );
+}
+
+function withConversationSessionId(
+  href: string,
+  conversationSessionId?: string | null
+) {
+  if (!conversationSessionId) {
+    return href;
+  }
+
+  const [pathname, hash = ""] = href.split("#", 2);
+  const [basePath, queryString = ""] = pathname.split("?", 2);
+  const params = new URLSearchParams(queryString);
+
+  params.set("conversationSessionId", conversationSessionId);
+
+  const nextHref = `${basePath}?${params.toString()}`;
+  return hash ? `${nextHref}#${hash}` : nextHref;
 }
 
 const toTelHref = (phone: string): string => {
@@ -123,6 +131,10 @@ function ReportSubmissionRecommendationsPage() {
   const [recommendations, setRecommendations] = useState<ConversationFlowRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadNotice, setLoadNotice] = useState<string | null>(null);
+  const [resolvedConversationSessionId, setResolvedConversationSessionId] =
+    useState<string | null>(null);
+  const [serverFallbackUsed, setServerFallbackUsed] = useState(false);
   const {
     pendingConsentRequirement,
     isGrantingConsent,
@@ -132,34 +144,49 @@ function ReportSubmissionRecommendationsPage() {
   } = useConsentGate();
 
   const loadRecommendations = useCallback(async () => {
-    const source = getAssistantTriageSource();
-    const conversationSessionId = source?.conversationSessionId;
+    const conversationSessionId =
+      getConversationSessionIdFromUrl() ??
+      getAssistantTriageSource()?.conversationSessionId;
+
+    setResolvedConversationSessionId(conversationSessionId ?? null);
 
     if (!conversationSessionId) {
-      setRecommendations(fallbackRecommendations());
+      setRecommendations([]);
+      setServerFallbackUsed(false);
+      setLoadNotice(
+        "Live recommendations are not available yet because this report is not linked to an active triage session."
+      );
       setLoading(false);
       return;
     }
 
     setLoading(true);
     setError(null);
+    setLoadNotice(null);
 
     try {
       const response = await fetchConversationFlowRecommendations(conversationSessionId);
 
-      setRecommendations(
-        response.recommendations.length > 0
-          ? response.recommendations
-          : fallbackRecommendations(),
+      setRecommendations(response.recommendations);
+      setServerFallbackUsed(Boolean(response.fallbackUsed));
+      setLoadNotice(
+        response.recommendations.length === 0
+          ? "No admin-managed recommendation is available for this triage session yet."
+          : null
       );
     } catch (fetchError) {
       if (captureConsentError(fetchError)) {
         setRecommendations([]);
+        setServerFallbackUsed(false);
         return;
       }
 
       setError(fetchError instanceof Error ? fetchError.message : null);
-      setRecommendations(fallbackRecommendations());
+      setRecommendations([]);
+      setServerFallbackUsed(false);
+      setLoadNotice(
+        "Recommendations could not be loaded from SafeSpeak right now."
+      );
     } finally {
       setLoading(false);
     }
@@ -184,8 +211,12 @@ function ReportSubmissionRecommendationsPage() {
 
   const handleDeclinePendingConsent = () => {
     clearPendingConsent();
-    setRecommendations(fallbackRecommendations());
-    setError("AI recommendations were not loaded because consent was declined. A local fallback set is shown.");
+    setRecommendations([]);
+    setServerFallbackUsed(false);
+    setError("AI recommendations were not loaded because consent was declined.");
+    setLoadNotice(
+      "Grant AI consent to load live SafeSpeak recommendations for this triage session."
+    );
     setLoading(false);
   };
 
@@ -239,7 +270,21 @@ function ReportSubmissionRecommendationsPage() {
 
           {error ? (
             <div className="mt-4 rounded-[16px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm text-[#607B90]">
-              Live recommendation data was unavailable, so a safe fallback set is shown.
+              {loadNotice ??
+                "Recommendations could not be loaded from SafeSpeak right now."}
+            </div>
+          ) : null}
+
+          {!error && loadNotice ? (
+            <div className="mt-4 rounded-[16px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm text-[#607B90]">
+              {loadNotice}
+            </div>
+          ) : null}
+
+          {serverFallbackUsed ? (
+            <div className="mt-4 rounded-[16px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm text-[#607B90]">
+              SafeSpeak is showing official fallback resources because no closer
+              admin-managed match was available for this triage session.
             </div>
           ) : null}
 
@@ -247,6 +292,11 @@ function ReportSubmissionRecommendationsPage() {
             {loading ? (
               <div className="rounded-[18px] border border-[#dce5f1] bg-white px-4 py-6 text-sm text-[#607B90]">
                 Loading recommendations...
+              </div>
+            ) : recommendations.length === 0 ? (
+              <div className="rounded-[18px] border border-[#dce5f1] bg-white px-4 py-6 text-sm text-[#607B90]">
+                No recommendation is ready yet. Return to support or triage to
+                continue this flow.
               </div>
             ) : (
               recommendations.map((item) => (
@@ -257,7 +307,10 @@ function ReportSubmissionRecommendationsPage() {
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href="/dashboard?view=reportsubmissiondetailedexplanations"
+              href={withConversationSessionId(
+                "/dashboard?view=reportsubmissiondetailedexplanations",
+                resolvedConversationSessionId
+              )}
               className="inline-flex h-11 items-center gap-2 rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.25)] transition hover:bg-[#0b528d]"
             >
               Read details, rights, and evidence guidance

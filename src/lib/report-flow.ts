@@ -4,24 +4,29 @@ import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 
 const REPORT_FLOW_DRAFT_KEY = "safespeak_report_flow_draft";
+const REPORT_FLOW_VIEW_QUERY_KEY = "view";
+const REPORT_FLOW_REPORT_ID_QUERY_KEY = "reportId";
+const REPORT_FLOW_DESTINATION_ID_QUERY_KEY = "destinationId";
+const REPORT_FLOW_SUBMISSION_ID_QUERY_KEY = "submissionId";
 
 export type ReportFlowDraft = {
   reportId?: string;
   selectedDestinationId?: string;
   latestSubmissionId?: string;
+  shareAnonymityMode?: "identified" | "anonymous" | "pseudonymous";
+  shareNotes?: string;
   preparedSubmission?: {
     destinationId: string;
     destinationName: string;
     destinationType?: string;
     channel: string;
     status:
+      | "ready_to_share"
       | "submitted"
       | "acknowledged"
       | "requires_manual_action"
       | "config_missing"
-      | "failed"
-      | "requires_review"
-      | "prepared_only";
+      | "failed";
     missingRequiredInfo?: string[];
     reason?: string;
     message?: string;
@@ -72,6 +77,78 @@ export function getReportFlowDraft(): ReportFlowDraft | null {
   }
 }
 
+export function getReportFlowQueryState(): Partial<
+  Pick<
+    ReportFlowDraft,
+    "reportId" | "selectedDestinationId" | "latestSubmissionId"
+  >
+> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const reportId = params.get(REPORT_FLOW_REPORT_ID_QUERY_KEY) ?? undefined;
+  const selectedDestinationId =
+    params.get(REPORT_FLOW_DESTINATION_ID_QUERY_KEY) ?? undefined;
+  const latestSubmissionId =
+    params.get(REPORT_FLOW_SUBMISSION_ID_QUERY_KEY) ?? undefined;
+
+  return {
+    reportId,
+    selectedDestinationId,
+    latestSubmissionId,
+  };
+}
+
+export function getResolvedReportFlowDraft(): ReportFlowDraft | null {
+  const draft = getReportFlowDraft();
+  const queryState = getReportFlowQueryState();
+
+  if (!draft && !queryState.reportId && !queryState.selectedDestinationId) {
+    return null;
+  }
+
+  return {
+    ...defaultReportFlowDraft,
+    ...draft,
+    ...queryState,
+    evidenceIds: draft?.evidenceIds ?? [],
+    updatedAt: draft?.updatedAt ?? new Date(0).toISOString(),
+  };
+}
+
+export function buildReportFlowHref(
+  view: string,
+  state: Partial<
+    Pick<
+      ReportFlowDraft,
+      "reportId" | "selectedDestinationId" | "latestSubmissionId"
+    >
+  > = {}
+): string {
+  const params = new URLSearchParams();
+
+  params.set(REPORT_FLOW_VIEW_QUERY_KEY, view);
+
+  if (state.reportId) {
+    params.set(REPORT_FLOW_REPORT_ID_QUERY_KEY, state.reportId);
+  }
+
+  if (state.selectedDestinationId) {
+    params.set(
+      REPORT_FLOW_DESTINATION_ID_QUERY_KEY,
+      state.selectedDestinationId
+    );
+  }
+
+  if (state.latestSubmissionId) {
+    params.set(REPORT_FLOW_SUBMISSION_ID_QUERY_KEY, state.latestSubmissionId);
+  }
+
+  return `/dashboard?${params.toString()}`;
+}
+
 export function saveReportFlowDraft(
   draft: Omit<ReportFlowDraft, "updatedAt">
 ): ReportFlowDraft {
@@ -93,7 +170,7 @@ export function saveReportFlowDraft(
 export function mergeReportFlowDraft(
   partialDraft: Partial<Omit<ReportFlowDraft, "updatedAt">>
 ): ReportFlowDraft {
-  const currentDraft = getReportFlowDraft();
+  const currentDraft = getResolvedReportFlowDraft();
 
   return saveReportFlowDraft({
     ...defaultReportFlowDraft,
