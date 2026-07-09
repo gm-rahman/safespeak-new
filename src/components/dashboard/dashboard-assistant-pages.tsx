@@ -417,7 +417,8 @@ function AssistantLegalCitationDetails({
       groundedLegalSource?.title ||
       "AIHW";
     const fallbackUrl =
-      groundedLegalSource?.citationUrl || "https://www.aihw.gov.au/";
+      groundedLegalSource?.citationUrl ||
+      "https://www.aihw.gov.au/family-domestic-and-sexual-violence/responses-and-outcomes/legal-systems";
 
     return (
       <div className="mt-2 rounded-[14px] border border-[#dce6f2] bg-[#f7fbff] px-3 py-2">
