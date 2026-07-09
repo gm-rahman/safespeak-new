@@ -27,6 +27,7 @@ import {
 } from "@/lib/report-authority-routing";
 import {
   buildReportFlowHref,
+  type PreparedSubmissionStatus,
   getResolvedReportFlowDraft,
 } from "@/lib/report-flow";
 import {
@@ -81,6 +82,22 @@ function getPreparedStatusLabel(status?: string): string {
   }
 
   return "Prepared";
+}
+
+function toPreparedSubmissionStatus(status?: string): PreparedSubmissionStatus {
+  if (isActualDeliveryStatus(status)) {
+    return status as PreparedSubmissionStatus;
+  }
+
+  if (
+    status === "requires_manual_action" ||
+    status === "config_missing" ||
+    status === "failed"
+  ) {
+    return status;
+  }
+
+  return "ready_to_share";
 }
 
 function ReportSubmissionSuccessPage() {
@@ -176,14 +193,9 @@ function ReportSubmissionSuccessPage() {
                 destinationName: resolvedLatestSubmission.destinationName,
                 destinationType: resolvedLatestSubmission.destinationType,
                 channel: resolvedLatestSubmission.channel,
-                status: isActualDeliveryStatus(resolvedLatestSubmission.status)
-                  ? resolvedLatestSubmission.status
-                  : resolvedLatestSubmission.status ===
-                      "requires_manual_action" ||
-                    resolvedLatestSubmission.status === "config_missing" ||
-                    resolvedLatestSubmission.status === "failed"
-                    ? resolvedLatestSubmission.status
-                    : "ready_to_share",
+                status: toPreparedSubmissionStatus(
+                  resolvedLatestSubmission.status
+                ),
                 missingRequiredInfo:
                   resolvedLatestSubmission.missingRequiredInfo,
                 message: resolvedLatestSubmission.deliveryMessage,
@@ -634,9 +646,9 @@ function ReportSubmissionSuccessPage() {
                       Needs: {selectedDestination.missingRequiredInfo.join(", ")}
                     </p>
                   ) : null}
-                  {preparedSubmission.message ? (
+                  {preparedSubmission?.message ? (
                     <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
-                      {preparedSubmission.message}
+                      {preparedSubmission?.message}
                     </p>
                   ) : null}
                 </>

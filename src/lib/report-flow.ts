@@ -1,5 +1,7 @@
 "use client";
 
+import type { Route } from "next";
+
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 
@@ -126,7 +128,7 @@ export function buildReportFlowHref(
       "reportId" | "selectedDestinationId" | "latestSubmissionId"
     >
   > = {}
-): string {
+): Route {
   const params = new URLSearchParams();
 
   params.set(REPORT_FLOW_VIEW_QUERY_KEY, view);
@@ -146,7 +148,7 @@ export function buildReportFlowHref(
     params.set(REPORT_FLOW_SUBMISSION_ID_QUERY_KEY, state.latestSubmissionId);
   }
 
-  return `/dashboard?${params.toString()}`;
+  return `/dashboard?${params.toString()}` as Route;
 }
 
 export function saveReportFlowDraft(
