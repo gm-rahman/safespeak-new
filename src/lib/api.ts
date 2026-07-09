@@ -20,8 +20,6 @@ type ApiRequestOptions = {
 };
 
 const DEFAULT_API_BASE_URL = "/api/v1";
-const DEFAULT_AI_AGENT_API_BASE_URL = "/api/ai-agent/v1";
-
 function normalizeApiBaseUrl(value: string): string {
   const trimmedValue = value.trim().replace(/\/+$/, "");
 
@@ -77,14 +75,6 @@ export function getApiBaseUrl(explicit?: string): string {
     explicit ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL;
 
   return normalizeApiBaseUrl(value);
-}
-
-export function getAiAgentApiBaseUrl(): string {
-  return normalizeApiBaseUrl(
-    // eslint-disable-next-line n/no-process-env
-    process.env.NEXT_PUBLIC_AI_AGENT_API_BASE_URL ??
-      DEFAULT_AI_AGENT_API_BASE_URL
-  );
 }
 
 async function parseJsonSafe(response: Response): Promise<unknown> {

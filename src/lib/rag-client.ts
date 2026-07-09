@@ -3,7 +3,7 @@
 import {
   ApiRequestError,
   apiRequest,
-  getAiAgentApiBaseUrl,
+  getApiBaseUrl,
   type ApiEnvelope,
 } from "@/lib/api";
 import { consentRequirements, ensureConsent } from "@/lib/consent";
@@ -153,7 +153,7 @@ async function ragApiRequest<TData>(
   try {
     return await apiRequest<TData>(path, {
       ...options,
-      baseUrl: getAiAgentApiBaseUrl(),
+      baseUrl: getApiBaseUrl(),
       headers,
     });
   } catch (error) {
@@ -165,7 +165,7 @@ async function ragApiRequest<TData>(
 
       return apiRequest<TData>(path, {
         ...options,
-        baseUrl: getAiAgentApiBaseUrl(),
+        baseUrl: getApiBaseUrl(),
         headers: retryHeaders,
       });
     }
