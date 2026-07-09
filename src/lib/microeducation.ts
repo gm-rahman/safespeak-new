@@ -2,6 +2,16 @@ import { apiRequest, getApiBaseUrl } from "@/lib/api";
 
 export type MicroEducationTone = "blue" | "orange" | "green" | "amber" | "violet" | "teal";
 export type MicroEducationChip = "harassment" | "rights" | "safety" | "mentalHealth";
+export type MicroEducationIncidentCategory =
+  | "domestic_violence"
+  | "workplace_bullying"
+  | "racism_discrimination"
+  | "online_abuse"
+  | "scam_fraud"
+  | "theft_property"
+  | "harassment"
+  | "mental_health_distress"
+  | "general_support";
 export type MicroEducationDuration = "quick" | "deep";
 export type MicroEducationFormat = "video" | "interactive" | "guide";
 
@@ -19,6 +29,8 @@ export type MicroEducationItem = {
   imageAlt?: string;
   tone: MicroEducationTone;
   chips: MicroEducationChip[];
+  incidentCategories?: MicroEducationIncidentCategory[];
+  matchKeywords?: string[];
   duration: MicroEducationDuration;
   format: MicroEducationFormat;
   sortOrder: number;
