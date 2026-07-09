@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -33,9 +34,9 @@ function getConversationSessionIdFromUrl() {
 function withConversationSessionId(
   href: string,
   conversationSessionId?: string | null
-) {
+): Route {
   if (!conversationSessionId) {
-    return href;
+    return href as Route;
   }
 
   const [pathname, hash = ""] = href.split("#", 2);
@@ -45,7 +46,7 @@ function withConversationSessionId(
   params.set("conversationSessionId", conversationSessionId);
 
   const nextHref = `${basePath}?${params.toString()}`;
-  return hash ? `${nextHref}#${hash}` : nextHref;
+  return (hash ? `${nextHref}#${hash}` : nextHref) as Route;
 }
 
 const toTelHref = (phone: string): string => {

@@ -71,7 +71,7 @@ type TimelineFieldKey =
   | "repeatedIncidents"
   | "injuries";
 
-const manualEntryTypes: Array<TimelineEntry["chip"]> = [
+const manualEntryTypes: Array<Exclude<TimelineEntry["chip"], "Evidence">> = [
   "Who",
   "What",
   "Where",
@@ -264,7 +264,7 @@ function ReportSubmissionReviewPage() {
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
   const [manualEntryType, setManualEntryType] =
-    useState<TimelineEntry["chip"]>("What");
+    useState<Exclude<TimelineEntry["chip"], "Evidence">>("What");
   const [manualEntryValue, setManualEntryValue] = useState("");
   const [isSavingTimeline, setIsSavingTimeline] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -1274,7 +1274,8 @@ function ReportSubmissionReviewPage() {
                         value={manualEntryType}
                         onChange={(event) =>
                           setManualEntryType(
-                            event.target.value as TimelineEntry["chip"]
+                            event.target
+                              .value as Exclude<TimelineEntry["chip"], "Evidence">
                           )
                         }
                         className="h-9 rounded-[8px] border border-[#dce5f1] bg-white px-2.5 text-[12px] font-semibold text-[#1f2a3a] outline-none"
