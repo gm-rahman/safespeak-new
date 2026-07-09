@@ -42,6 +42,21 @@ pnpm install
 pnpm dev
 ```
 
+3) Configure the frontend-to-backend connection:
+
+```sh
+cp .env.example .env.local
+```
+
+Default local integration values are already included:
+
+- `NEXT_PUBLIC_API_BASE_URL=/api/v1`
+- `NEXT_PUBLIC_AI_AGENT_API_BASE_URL=/api/ai-agent/v1`
+- `SAFESPEAK_BACKEND_ORIGIN=http://localhost:5000`
+- `SAFESPEAK_AI_AGENT_ORIGIN=http://localhost:8000`
+
+The frontend now talks to same-origin `/api/...` paths and Next.js rewrites those requests to your backend services. This keeps browser code free of hardcoded localhost or deployment URLs.
+
 ## Notes for adding your backend
 
 - The guestbook and profile pages are stubbed with client-side state; wire them to your Express API when ready.
@@ -51,7 +66,8 @@ pnpm dev
 ## SafeSpeak integration notes
 
 - Dashboard home now routes to explicit SafeSpeak scope flows for reporting, support, ScamShield, resources, local-intelligence placeholder, and Smart Dialler.
-- For Vercel, set `NEXT_PUBLIC_API_BASE_URL=https://safespeak-backend-ules.onrender.com/api/v1` so email login, Google login, and dashboard API calls target the Render backend instead of localhost.
+- For Vercel or any hosted frontend, keep `NEXT_PUBLIC_API_BASE_URL=/api/v1` and set `SAFESPEAK_BACKEND_ORIGIN` to your backend origin, for example `https://safespeak-backend-ules.onrender.com`.
+- If you deploy the AI agent separately, keep `NEXT_PUBLIC_AI_AGENT_API_BASE_URL=/api/ai-agent/v1` and set `SAFESPEAK_AI_AGENT_ORIGIN` to that service origin.
 - Persistent dashboard safety controls include Quick Exit, 000, 1800RESPECT, language toggle, covert-mode state, and Smart Dialler access.
 - Learn & Resources now uses `/dashboard?view=resources` as the main library entry, while micro-education remains separately reachable.
 - Landing page internals were intentionally left unchanged in this task.
