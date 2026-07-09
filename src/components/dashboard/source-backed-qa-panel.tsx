@@ -51,14 +51,15 @@ function CitationList({ citations }: { citations: RagAnswerCitation[] }) {
             citation.sourceType,
             citation.topic,
             citation.sectionRef ? `Section ${citation.sectionRef}` : undefined,
+            citation.sectionTitle ? `- ${citation.sectionTitle}` : undefined,
             citation.pageStart
-              ? `Page${citation.pageEnd && citation.pageEnd !== citation.pageStart ? "s" : ""} ${
+              ? `p. ${
                   citation.pageEnd && citation.pageEnd !== citation.pageStart
                     ? `${citation.pageStart}-${citation.pageEnd}`
                     : citation.pageStart
                 }`
               : citation.page
-                ? `Page ${citation.page}`
+                ? `p. ${citation.page}`
                 : undefined,
             citation.versionDate
               ? `Version ${formatCitationDate(citation.versionDate)}`

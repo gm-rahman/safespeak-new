@@ -48,5 +48,9 @@ export async function listPublishedMicroEducation(): Promise<MicroEducationItem[
 }
 
 export function getMicroEducationImageUrl(item: Pick<MicroEducationItem, "imagePath">): string | undefined {
-  return item.imagePath ? `${getApiBaseUrl()}${item.imagePath}` : undefined;
+  if (!item.imagePath) {
+    return undefined;
+  }
+
+  return /^https?:\/\//i.test(item.imagePath) ? item.imagePath : `${getApiBaseUrl()}${item.imagePath}`;
 }

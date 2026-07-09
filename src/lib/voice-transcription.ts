@@ -1,4 +1,4 @@
-import { apiRequest, getAiAgentApiBaseUrl } from "@/lib/api";
+import { apiRequest, getApiBaseUrl } from "@/lib/api";
 import { consentRequirements, ensureConsent } from "@/lib/consent";
 import { getSessionAwareAuthHeaders } from "@/lib/frontend-session";
 
@@ -53,7 +53,7 @@ export async function transcribeAssistantVoice(
     "/ai/transcribe-audio",
     {
       method: "POST",
-      baseUrl: getAiAgentApiBaseUrl(),
+      baseUrl: getApiBaseUrl(),
       headers,
       body: formData,
     }
@@ -74,7 +74,7 @@ export async function synthesizeAssistantVoice(
     "/ai/synthesize-speech",
     {
       method: "POST",
-      baseUrl: getAiAgentApiBaseUrl(),
+      baseUrl: getApiBaseUrl(),
       headers,
       body: {
         text,

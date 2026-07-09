@@ -3,7 +3,7 @@
 import {
   ApiRequestError,
   apiRequest,
-  getAiAgentApiBaseUrl,
+  getApiBaseUrl,
   type ApiEnvelope,
 } from "@/lib/api";
 import {
@@ -168,7 +168,7 @@ async function aiApiRequest<TData>(
   try {
     return await apiRequest<TData>(path, {
       ...options,
-      baseUrl: getAiAgentApiBaseUrl(),
+      baseUrl: getApiBaseUrl(),
       headers,
     });
   } catch (error) {
@@ -180,7 +180,7 @@ async function aiApiRequest<TData>(
 
       return apiRequest<TData>(path, {
         ...options,
-        baseUrl: getAiAgentApiBaseUrl(),
+        baseUrl: getApiBaseUrl(),
         headers: retryHeaders,
       });
     }
