@@ -148,6 +148,7 @@ const harmfulActivityPatterns = [
 type ConversationCitation = {
   sourceId?: string;
   title: string;
+  legislationName?: string;
   publisher?: string;
   url?: string;
   jurisdiction?: string;
@@ -289,13 +290,29 @@ function formatConversationSectionRef(sectionRef?: string) {
 function buildConversationCitationSummary(citation: ConversationCitation) {
   const sectionRef = formatConversationSectionRef(citation.sectionRef);
   const page = citation.pageStart ?? citation.page;
-  const pageLabel = page ? `p. ${page}` : "";
+  const pageLabel = page
+    ? `p. ${citation.pageEnd && citation.pageEnd !== page ? `${page}-${citation.pageEnd}` : page}`
+    : "";
   const versionLabel = citation.versionDate
     ? `version ${formatConversationCitationDate(citation.versionDate)}`
     : citation.lastUpdated
       ? `updated ${formatConversationCitationDate(citation.lastUpdated)}`
       : "";
-  return [citation.title, citation.publisher, sectionRef, pageLabel, versionLabel]
+  const sectionTitle = citation.sectionTitle ? `- ${citation.sectionTitle}` : "";
+  const amendmentLabel =
+    citation.amendmentStatus && citation.amendmentStatus !== "in_force"
+      ? citation.amendmentStatus.replace("_", " ")
+      : "";
+
+  return [
+    citation.title,
+    citation.publisher,
+    sectionRef,
+    sectionTitle,
+    pageLabel,
+    versionLabel,
+    amendmentLabel,
+  ]
     .filter(Boolean)
     .join(", ");
 }
@@ -331,6 +348,202 @@ function dedupeConversationCitations(citations: ConversationCitation[]) {
     seen.add(key);
     return true;
   });
+}
+
+function buildLegalCitationSummary(citation: ConversationCitation) {
+  const sectionValue = formatConversationSectionRef(citation.sectionRef);
+  const pageValue = citation.pageStart
+    ? citation.pageEnd && citation.pageEnd !== citation.pageStart
+      ? `${citation.pageStart}-${citation.pageEnd}`
+      : `${citation.pageStart}`
+    : citation.page
+      ? `${citation.page}`
+      : "";
+  const versionValue = citation.versionDate
+    ? formatConversationCitationDate(citation.versionDate)
+    : citation.commencementDate
+      ? formatConversationCitationDate(citation.commencementDate)
+      : "";
+
+  return [
+    { label: "Law", value: citation.legislationName || citation.title },
+    { label: "Section / number", value: sectionValue || "Not specified" },
+    {
+      label: "Section title",
+      value: citation.sectionTitle || "Not specified"
+    },
+    { label: "Page", value: pageValue ? `p. ${pageValue}` : "Not specified" },
+    {
+      label: "Version",
+      value: versionValue || "Not specified"
+    },
+    {
+      label: "Status",
+      value:
+        citation.amendmentStatus && citation.amendmentStatus !== "in_force"
+          ? citation.amendmentStatus.replace("_", " ")
+          : "in force"
+    }
+  ];
+}
+
+function AssistantLegalCitationDetails({
+  citations,
+  groundedLegalSource,
+  showDetails,
+}: {
+  citations: ConversationCitation[];
+  groundedLegalSource?: {
+    sourceId: string;
+    title?: string;
+    legislationName?: string;
+    citationUrl?: string;
+  };
+  showDetails: boolean;
+}) {
+  if (!showDetails) {
+    return null;
+  }
+
+  const legalCitations = dedupeConversationCitations(citations).filter(
+    (citation) =>
+      citation.sourceCategory === "official_legal_source" ||
+      /^(act|regulation|decision)$/i.test(citation.sourceType ?? "")
+  );
+
+  if (!legalCitations.length) {
+    const fallbackLaw =
+      groundedLegalSource?.legislationName ||
+      groundedLegalSource?.title ||
+      "AIHW";
+    const fallbackUrl =
+      groundedLegalSource?.citationUrl || "https://www.aihw.gov.au/";
+
+    return (
+      <div className="mt-2 rounded-[14px] border border-[#dce6f2] bg-[#f7fbff] px-3 py-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#72839b]">
+          Law details
+        </p>
+        <div className="mt-2 rounded-[12px] border border-[#e3edf7] bg-white px-3 py-2">
+          <p className="text-[11px] font-semibold text-[#1f2a3a]">{fallbackLaw}</p>
+          <div className="mt-1 space-y-0.5 text-[11px] leading-[1.45] text-[#4b5d73]">
+            <p>
+              <span className="font-semibold text-[#334255]">Law:</span> {fallbackLaw}
+            </p>
+            <p>
+              <span className="font-semibold text-[#334255]">Section / number:</span>{" "}
+              Not specified in RAG
+            </p>
+            <p>
+              <span className="font-semibold text-[#334255]">Section title:</span>{" "}
+              Not specified in RAG
+            </p>
+            <p>
+              <span className="font-semibold text-[#334255]">Page:</span> Not specified in RAG
+            </p>
+            <p>
+              <span className="font-semibold text-[#334255]">Version:</span> Not specified in RAG
+            </p>
+            <p>
+              <span className="font-semibold text-[#334255]">Law URL:</span>{" "}
+              <a
+                href={fallbackUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#2f6fca] underline-offset-2 hover:underline"
+              >
+                Open source
+              </a>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-[14px] border border-[#dce6f2] bg-[#f7fbff] px-3 py-2">
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#72839b]">
+        Law details
+      </p>
+      <div className="mt-2 space-y-2">
+        {legalCitations.map((citation) => {
+          const summaryRows = buildLegalCitationSummary(citation);
+          const citationKey =
+            citation.sourceId ??
+            `${citation.title}-${citation.url ?? ""}-${citation.sectionRef ?? ""}-${citation.pageStart ?? citation.page ?? ""}`;
+
+          return (
+            <div
+              key={citationKey}
+              className="rounded-[12px] border border-[#e3edf7] bg-white px-3 py-2"
+            >
+              <p className="text-[11px] font-semibold text-[#1f2a3a]">
+                {citation.legislationName || citation.title}
+              </p>
+              <div className="mt-1 space-y-0.5 text-[11px] leading-[1.45] text-[#4b5d73]">
+                {summaryRows.map((row) => (
+                  <p key={row.label}>
+                    <span className="font-semibold text-[#334255]">{row.label}:</span>{" "}
+                    {row.value}
+                  </p>
+                ))}
+                {citation.url ? (
+                  <p>
+                    <span className="font-semibold text-[#334255]">Law URL:</span>{" "}
+                    <a
+                      href={citation.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[#2f6fca] underline-offset-2 hover:underline"
+                    >
+                      Open source
+                    </a>
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function buildAssistantLawPrefix(message: {
+  role: string;
+  responseMeta?: {
+    citations?: ConversationCitation[];
+    groundedLegalSource?: {
+      sourceId: string;
+      title?: string;
+      legislationName?: string;
+      citationUrl?: string;
+    };
+  };
+}): string {
+  const groundedSource = message.responseMeta?.groundedLegalSource;
+  const legalCitation = (message.responseMeta?.citations ?? []).find(
+    (citation) =>
+      citation.sourceCategory === "official_legal_source" ||
+      /^(act|regulation|decision)$/i.test(citation.sourceType ?? "")
+  );
+
+  const lawName =
+    legalCitation?.legislationName ||
+    legalCitation?.title ||
+    groundedSource?.legislationName ||
+    groundedSource?.title;
+
+  if (!lawName) {
+    return "";
+  }
+
+  const section = legalCitation?.sectionRef
+    ? `, ${formatConversationSectionRef(legalCitation.sectionRef)}`
+    : "";
+
+  return `Law: ${lawName}${section}`;
 }
 
 function AssistantResponseCitations({
@@ -931,6 +1144,12 @@ function SafeSpeakAssistantConversationPage({
       assistantLanguage?: string;
       pendingHumanReview?: boolean;
       legalAwareness?: LegalAwareness;
+      groundedLegalSource?: {
+        sourceId: string;
+        title?: string;
+        legislationName?: string;
+        citationUrl?: string;
+      };
       assistantFormatPreference?: "paragraphs" | "bullets" | "mix";
       formatPreferenceUpdated?: boolean;
       subIntent?: string;
@@ -1632,6 +1851,135 @@ function SafeSpeakAssistantConversationPage({
       setError(null);
       let resolvedSessionId = conversationSessionId;
 
+      const processConversationFlowResponse = async (
+        response: Awaited<ReturnType<typeof appendConversationFlowMessage>>,
+        fallbackSessionId: string
+      ): Promise<boolean> => {
+        const nextTimeline = response.factExtraction?.timeline ?? {};
+        const responseSessionId =
+          response.responseMeta?.conversationSessionId ?? fallbackSessionId;
+
+        console.info(
+          "[SafeSpeak][frontend-response]",
+          JSON.stringify({
+            requestId,
+            responseSessionId,
+            userMessageId: response.userMessage.id,
+            userTurnNumber: response.userMessage.turnNumber,
+            assistantMessageId: response.assistantMessage.id,
+            assistantTurnNumber: response.assistantMessage.turnNumber,
+            selectedResponseSource:
+              (response.assistantMessage.metadata?.selectedResponseSource as
+                | string
+                | undefined) ??
+              (response.responseMeta as { selectedResponseSource?: string } | undefined)
+                ?.selectedResponseSource ??
+              "unknown",
+            intent:
+              (response.assistantMessage.metadata?.intent as string | undefined) ??
+              response.responseMeta?.intent ??
+              "unknown",
+            assistantPreview: response.assistantMessage.content.slice(0, 120),
+          })
+        );
+
+        if (requestId !== latestRequestIdRef.current) {
+          console.info(
+            "[SafeSpeak][frontend-response-ignored]",
+            JSON.stringify({
+              requestId,
+              latestRequestId: latestRequestIdRef.current,
+              assistantMessageId: response.assistantMessage.id,
+            })
+          );
+          return false;
+        }
+
+        if (response.assistantMessage.turnNumber <= latestAssistantTurnRef.current) {
+          console.info(
+            "[SafeSpeak][frontend-stale-assistant-ignored]",
+            JSON.stringify({
+              requestId,
+              assistantMessageId: response.assistantMessage.id,
+              assistantTurnNumber: response.assistantMessage.turnNumber,
+              latestAssistantTurnNumber: latestAssistantTurnRef.current,
+            })
+          );
+          return false;
+        }
+
+        if (responseSessionId && responseSessionId !== conversationSessionId) {
+          setConversationSessionId(responseSessionId);
+          resolvedSessionId = responseSessionId;
+        }
+
+        setTimeline((currentTimeline) => {
+          const nextKeys = Object.entries(nextTimeline)
+            .filter(([, value]) => value.trim().length > 0)
+            .map(([key]) => key);
+
+          setTimelineFieldOrder((currentOrder) => {
+            const mergedOrder = [...currentOrder];
+
+            nextKeys.forEach((key) => {
+              const hadValue =
+                typeof currentTimeline[key] === "string" &&
+                currentTimeline[key].trim().length > 0;
+
+              if (!hadValue && !mergedOrder.includes(key)) {
+                mergedOrder.push(key);
+              }
+            });
+
+            return mergedOrder.filter((key) => nextKeys.includes(key));
+          });
+
+          return nextTimeline;
+        });
+
+        const assistantMessage: ConversationUiMessage = {
+          role: "assistant",
+          content: response.assistantMessage.content,
+          messageId: response.assistantMessage.id,
+          turnNumber: response.assistantMessage.turnNumber,
+          responseMeta: {
+            citations: response.responseMeta?.citations,
+            confidence: response.responseMeta?.confidence,
+            intent: response.responseMeta?.intent,
+            triageReady: response.responseMeta?.triageReady,
+            nextAction: response.responseMeta?.nextAction,
+            conversationSessionId: responseSessionId,
+            selectedResponseSource: response.responseMeta?.selectedResponseSource,
+            responseSource: response.responseMeta?.responseSource,
+            model: response.responseMeta?.model,
+            ragStatus: response.responseMeta?.ragStatus,
+            showSources: response.responseMeta?.showSources,
+            sourceDisplayReason: response.responseMeta?.sourceDisplayReason,
+            reviewStatus: response.responseMeta?.reviewStatus,
+            ragUnavailable: response.responseMeta?.rag?.unavailable,
+            assistantLanguage: response.responseMeta?.assistantLanguage,
+            pendingHumanReview: Boolean(response.triage?.humanReviewRecommended),
+          },
+        };
+        latestAssistantTurnRef.current = response.assistantMessage.turnNumber;
+
+        if (options.speakResponse) {
+          setMessages((currentMessages) => [...currentMessages, assistantMessage]);
+          void playAssistantSpeech(response.assistantMessage.content, {
+            continueVoiceSession: options.continueVoiceSession,
+            language: response.responseMeta?.assistantLanguage,
+          });
+        } else {
+          setMessages((currentMessages) => [...currentMessages, assistantMessage]);
+        }
+
+        if (isActionableConversationTriage(response)) {
+          setShowTriageCta(true);
+        }
+
+        return true;
+      };
+
       console.info(
         "[SafeSpeak][frontend-request]",
         JSON.stringify({
@@ -1681,133 +2029,13 @@ function SafeSpeakAssistantConversationPage({
           content: message,
           language: transcriptionLanguage,
         });
-        const nextTimeline = response.factExtraction?.timeline ?? {};
-        const responseSessionId =
-          response.responseMeta?.conversationSessionId ?? resolvedSessionId;
-
-        console.info(
-          "[SafeSpeak][frontend-response]",
-          JSON.stringify({
-            requestId,
-            responseSessionId,
-            userMessageId: response.userMessage.id,
-            userTurnNumber: response.userMessage.turnNumber,
-            assistantMessageId: response.assistantMessage.id,
-            assistantTurnNumber: response.assistantMessage.turnNumber,
-            selectedResponseSource:
-              (response.assistantMessage.metadata?.selectedResponseSource as
-                | string
-                | undefined) ??
-              (response.responseMeta as { selectedResponseSource?: string } | undefined)
-                ?.selectedResponseSource ??
-              "unknown",
-            intent:
-              (response.assistantMessage.metadata?.intent as string | undefined) ??
-              response.responseMeta?.intent ??
-              "unknown",
-            assistantPreview: response.assistantMessage.content.slice(0, 120),
-          })
+        const handled = await processConversationFlowResponse(
+          response,
+          resolvedSessionId
         );
 
-        if (requestId !== latestRequestIdRef.current) {
-          console.info(
-            "[SafeSpeak][frontend-response-ignored]",
-            JSON.stringify({
-              requestId,
-              latestRequestId: latestRequestIdRef.current,
-              assistantMessageId: response.assistantMessage.id,
-            })
-          );
+        if (!handled) {
           return;
-        }
-
-        if (response.assistantMessage.turnNumber <= latestAssistantTurnRef.current) {
-          console.info(
-            "[SafeSpeak][frontend-stale-assistant-ignored]",
-            JSON.stringify({
-              requestId,
-              assistantMessageId: response.assistantMessage.id,
-              assistantTurnNumber: response.assistantMessage.turnNumber,
-              latestAssistantTurnNumber: latestAssistantTurnRef.current,
-            })
-          );
-          return;
-        }
-
-        if (responseSessionId && responseSessionId !== conversationSessionId) {
-          setConversationSessionId(responseSessionId);
-          resolvedSessionId = responseSessionId;
-        }
-
-        setTimeline((currentTimeline) => {
-          const nextKeys = Object.entries(nextTimeline)
-            .filter(([, value]) => value.trim().length > 0)
-            .map(([key]) => key);
-
-          setTimelineFieldOrder((currentOrder) => {
-            const mergedOrder = [...currentOrder];
-
-            nextKeys.forEach((key) => {
-              const hadValue =
-                typeof currentTimeline[key] === "string" &&
-                currentTimeline[key].trim().length > 0;
-
-              if (!hadValue && !mergedOrder.includes(key)) {
-                mergedOrder.push(key);
-              }
-            });
-
-            return mergedOrder.filter((key) => nextKeys.includes(key));
-          });
-
-          return nextTimeline;
-        });
-        const assistantMessage: ConversationUiMessage = {
-          role: "assistant",
-          content: response.assistantMessage.content,
-          messageId: response.assistantMessage.id,
-          turnNumber: response.assistantMessage.turnNumber,
-          responseMeta: {
-            citations: response.responseMeta?.citations,
-            confidence: response.responseMeta?.confidence,
-            intent: response.responseMeta?.intent,
-            triageReady: response.responseMeta?.triageReady,
-            nextAction: response.responseMeta?.nextAction,
-            conversationSessionId: responseSessionId,
-            selectedResponseSource: response.responseMeta?.selectedResponseSource,
-            responseSource: response.responseMeta?.responseSource,
-            model: response.responseMeta?.model,
-            ragStatus: response.responseMeta?.ragStatus,
-            showSources: response.responseMeta?.showSources,
-            sourceDisplayReason: response.responseMeta?.sourceDisplayReason,
-            reviewStatus: response.responseMeta?.reviewStatus,
-            ragUnavailable: response.responseMeta?.rag?.unavailable,
-            assistantLanguage: response.responseMeta?.assistantLanguage,
-            pendingHumanReview: Boolean(
-              response.triage?.humanReviewRecommended
-            ),
-          },
-        };
-        latestAssistantTurnRef.current = response.assistantMessage.turnNumber;
-
-        if (options.speakResponse) {
-          setMessages((currentMessages) => [
-            ...currentMessages,
-            assistantMessage,
-          ]);
-          void playAssistantSpeech(response.assistantMessage.content, {
-            continueVoiceSession: options.continueVoiceSession,
-            language: response.responseMeta?.assistantLanguage,
-          });
-        } else {
-          setMessages((currentMessages) => [
-            ...currentMessages,
-            assistantMessage,
-          ]);
-        }
-
-        if (isActionableConversationTriage(response)) {
-          setShowTriageCta(true);
         }
       } catch (conversationFlowError) {
         if (captureConsentError(conversationFlowError)) {
@@ -1819,6 +2047,49 @@ function SafeSpeakAssistantConversationPage({
           };
           setVoiceAvatarState("idle");
           return;
+        }
+
+        if (
+          conversationFlowError instanceof ApiRequestError &&
+          conversationFlowError.status >= 500 &&
+          resolvedSessionId
+        ) {
+          try {
+            const freshSession = await createConversationFlowSession({
+              selectedTopic: initialTopic ?? initialCategory,
+              jurisdiction: useNswLegalAwareness ? "NSW" : undefined,
+            });
+
+            setConversationSessionId(freshSession.id);
+            resolvedSessionId = freshSession.id;
+
+            const retryResponse = await appendConversationFlowMessage({
+              conversationSessionId: freshSession.id,
+              content: message,
+              language: transcriptionLanguage,
+            });
+            const handledRetry = await processConversationFlowResponse(
+              retryResponse,
+              freshSession.id
+            );
+
+            if (handledRetry) {
+              return;
+            }
+          } catch (retryError) {
+            console.warn(
+              "[SafeSpeak][frontend-conversation-retry-failed]",
+              JSON.stringify({
+                requestId,
+                originalStatus:
+                  conversationFlowError instanceof ApiRequestError
+                    ? conversationFlowError.status
+                    : undefined,
+                retryStatus:
+                  retryError instanceof ApiRequestError ? retryError.status : undefined,
+              })
+            );
+          }
         }
 
         try {
@@ -2757,6 +3028,13 @@ function SafeSpeakAssistantConversationPage({
                 <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 px-2 pb-4">
                   {messages.map((message, index) => {
                     const displayContent = getAssistantDisplayContent(message);
+                    const lawPrefix =
+                      message.role === "assistant"
+                        ? buildAssistantLawPrefix(message)
+                        : "";
+                    const displayText = lawPrefix
+                      ? `${lawPrefix}\n\n${displayContent}`
+                      : displayContent;
 
                     return (
                       <div
@@ -2778,19 +3056,31 @@ function SafeSpeakAssistantConversationPage({
                             }`}
                           >
                             {message.role === "assistant" ? (
-                              <AssistantMessageRenderer content={displayContent} />
+                              <AssistantMessageRenderer content={displayText} />
                             ) : (
-                              displayContent
+                              displayText
                             )}
                           </div>
                           {message.role === "assistant" ? (
-                            <AssistantResponseCitations
-                              citations={message.responseMeta?.citations ?? []}
-                              showSources={Boolean(
-                                message.responseMeta?.showSources
-                              )}
-                              answerText={displayContent}
-                            />
+                            <>
+                              <AssistantLegalCitationDetails
+                                citations={message.responseMeta?.citations ?? []}
+                                groundedLegalSource={message.responseMeta?.groundedLegalSource}
+                                showDetails={Boolean(
+                                  message.responseMeta?.showSources &&
+                                    (message.responseMeta?.sourceDisplayReason === "legal_lookup" ||
+                                      message.responseMeta?.sourceDisplayReason ===
+                                        "explicit_citation_request")
+                                )}
+                              />
+                              <AssistantResponseCitations
+                                citations={message.responseMeta?.citations ?? []}
+                                showSources={Boolean(
+                                  message.responseMeta?.showSources
+                                )}
+                                answerText={displayContent}
+                              />
+                            </>
                           ) : null}
                         </div>
                       </div>

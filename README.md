@@ -53,12 +53,12 @@ Default local integration values are already included:
 - `NEXT_PUBLIC_API_BASE_URL=/api/v1`
 - `SAFESPEAK_BACKEND_ORIGIN=http://localhost:5000`
 
-The frontend now talks to same-origin `/api/...` paths and Next.js rewrites those requests to your backend services. This keeps browser code free of hardcoded localhost or deployment URLs.
+The frontend now talks to same-origin `/api/...` paths and Next.js rewrites those requests to your backend services, including the backend AI and RAG endpoints. This keeps browser code free of hardcoded localhost or deployment URLs and removes the old separate AI-agent dependency for the timeline assistant flow.
 
 ## Notes for adding your backend
 
 - The guestbook and profile pages are stubbed with client-side state; wire them to your Express API when ready.
-- The `.env.example` file is empty because no server-side secrets are required now. Add any `NEXT_PUBLIC_*` variables you need for your API endpoints.
+- The `.env.example` file now includes the frontend API base and backend origin used by the rewrite layer. Add any other `NEXT_PUBLIC_*` variables you need for your API endpoints.
 - Docker and Drizzle configs were removed. Reintroduce your own tooling as needed for your backend stack.
 
 ## SafeSpeak integration notes
