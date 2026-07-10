@@ -26,10 +26,12 @@ import hackerImage from "@/assets/hacker.jpg";
 import identifyBulling from "@/assets/identifyBulling.svg?url";
 import safeReporting from "@/assets/safe_reporting.svg?url";
 import {
+  type MicroEducationCategory,
   type MicroEducationItem,
   type MicroEducationTone,
   getMicroEducationImageUrl,
-  listPublishedMicroEducation,
+  listPublishedMicroEducationByCategory,
+  listPublishedMicroEducationCategories,
 } from "@/lib/microeducation";
 import { cn } from "@/lib/utils";
 
@@ -462,6 +464,57 @@ function MicroCardLesson({
   );
 }
 
+function MicroCategoryCard({
+  category,
+  onOpen,
+}: {
+  category: MicroEducationCategory;
+  onOpen: () => void;
+}) {
+  const iconLabel = (category.iconName || category.name).slice(0, 2).toUpperCase();
+
+  return (
+    <motion.button
+      type="button"
+      layout
+      className="relative min-h-[164px] overflow-hidden rounded-[24px] p-5 text-left shadow-[0_10px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.024)] sm:p-6 md:h-[192px] xl:rounded-[32px] xl:p-8"
+      style={{
+        backgroundColor: category.backgroundColor,
+        color: category.textColor,
+        backgroundImage: category.imageUrl
+          ? `linear-gradient(90deg, rgba(8, 29, 48, 0.62), rgba(8, 29, 48, 0.24)), url(${category.imageUrl})`
+          : undefined,
+        backgroundSize: category.imageUrl ? "cover" : undefined,
+        backgroundPosition: category.imageUrl ? "center" : undefined,
+      }}
+      onClick={onOpen}
+      aria-label={category.name}
+    >
+      <div className="absolute bottom-0 left-0 h-24 w-24 rounded-full bg-white/10 blur-[12px]" />
+      <div className="relative flex h-full flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
+            {category.cardCount ?? 0} cards
+          </p>
+          <h3
+            className={`${interFont.className} mt-2 text-[26px] font-bold leading-[1.05] tracking-normal sm:text-3xl`}
+          >
+            {category.name}
+          </h3>
+          {category.description ? (
+            <p className="mt-2 max-w-[420px] text-xs leading-5 opacity-85">
+              {category.description}
+            </p>
+          ) : null}
+        </div>
+        <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-white/25 text-sm font-bold backdrop-blur-sm sm:h-14 sm:w-14 xl:h-16 xl:w-16 xl:rounded-[24px]">
+          {iconLabel}
+        </span>
+      </div>
+    </motion.button>
+  );
+}
+
 function MicroCardArticle({
   title,
   badge,
@@ -615,8 +668,11 @@ function MicroCardsPage() {
   const { t } = useTranslation();
   const prefersReducedMotion = useReducedMotion();
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [categories, setCategories] = useState<MicroEducationCategory[]>([]);
   const [adminCards, setAdminCards] = useState<MicroEducationItem[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isLoadingCards, setIsLoadingCards] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const pushedHistoryRef = useRef(false);
@@ -624,12 +680,54 @@ function MicroCardsPage() {
   useEffect(() => {
     let isMounted = true;
 
+    const loadCategories = async () => {
+      setIsLoadingCategories(true);
+      setLoadError(null);
+
+      try {
+        const items = await listPublishedMicroEducationCategories();
+
+        if (isMounted) {
+          setCategories(items);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Micro-card categories could not be loaded."
+          );
+          setCategories([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingCategories(false);
+        }
+      }
+    };
+
+    void loadCategories();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
     const loadCards = async () => {
+      if (!activeCategoryId) {
+        setAdminCards([]);
+        setIsLoadingCards(false);
+        return;
+      }
+
       setIsLoadingCards(true);
       setLoadError(null);
 
       try {
-        const items = await listPublishedMicroEducation();
+        const items = await listPublishedMicroEducationByCategory(activeCategoryId);
 
         if (isMounted) {
           setAdminCards(items);
@@ -655,9 +753,11 @@ function MicroCardsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [activeCategoryId]);
 
   const cards = adminCards.map(toMicroCardItem);
+  const activeCategory =
+    categories.find((category) => category.id === activeCategoryId) ?? null;
 
   const activeCard = cards.find((card) => card.id === activeCardId) ?? null;
   const activeCardDetail = activeCard ? getMicroCardDetail(activeCard) : null;
@@ -671,6 +771,14 @@ function MicroCardsPage() {
     : { duration: 0.24, ease: "easeOut" };
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredCategories = categories.filter((category) => {
+    if (!normalizedQuery) return true;
+
+    return (
+      category.name.toLowerCase().includes(normalizedQuery) ||
+      (category.description ?? "").toLowerCase().includes(normalizedQuery)
+    );
+  });
   const filteredCards = cards.filter((card) => {
     if (!normalizedQuery) return true;
 
@@ -740,6 +848,13 @@ function MicroCardsPage() {
     }
   };
 
+  const closeActiveCategory = () => {
+    setActiveCategoryId(null);
+    setActiveCardId(null);
+    setAdminCards([]);
+    setSearchQuery("");
+  };
+
   const openAdjacentCard = (direction: -1 | 1) => {
     if (!activeCard) {
       return;
@@ -769,11 +884,17 @@ function MicroCardsPage() {
         <div className="mx-auto w-full max-w-[1136px]">
           <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
             <Link
-              href="/dashboard"
+              href={activeCategory ? "#" : "/dashboard"}
+              onClick={(event) => {
+                if (activeCategory) {
+                  event.preventDefault();
+                  closeActiveCategory();
+                }
+              }}
               className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
             >
               <IconChevronLeft size={14} />
-              {t("dashboard.microcards.cyberBullying")}
+              {activeCategory ? t("dashboard.microcards.title") : t("dashboard.microcards.cyberBullying")}
             </Link>
             <Link
               href="/dashboard"
@@ -790,7 +911,7 @@ function MicroCardsPage() {
               {t("dashboard.microcards.title")}
             </h1>
             <p className="mt-1 text-sm text-[#5f6f86]">
-              {t("dashboard.microcards.cyberBullying")}
+              {activeCategory?.name ?? t("dashboard.microcards.cyberBullying")}
             </p>
 
             <div className="relative mt-4 max-w-[540px]">
@@ -808,55 +929,94 @@ function MicroCardsPage() {
             </div>
 
             <div className="mt-6 flex flex-col gap-5 xl:gap-6">
-              {microCardRows.map((row) =>
-                row.variant === "full" ? (
-                  row.cards.map((card, cardIndex) => (
-                    <MicroCardLesson
-                      key={card.id}
-                      id={card.id}
-                      title={card.title}
-                      iconSrc={card.iconSrc}
-                      tone={toneForMicroCardRow(row.variant, cardIndex)}
-                      readTimeLabel={card.readTimeLabel}
-                      className="min-h-[164px] md:min-h-[220px] xl:h-[240px]"
-                      isActive={activeCardId === card.id}
+              {!activeCategory ? (
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
+                  {filteredCategories.map((category) => (
+                    <MicroCategoryCard
+                      key={category.id}
+                      category={category}
                       onOpen={() => {
-                        pushedHistoryRef.current = false;
-                        setActiveCardId(card.id);
+                        setSearchQuery("");
+                        setActiveCategoryId(category.id);
                       }}
                     />
-                  ))
-                ) : (
-                  <div
-                    key={row.cards.map((card) => card.id).join("-")}
-                    className={cn(
-                      "grid grid-cols-1 gap-5 md:gap-6",
-                      row.variant === "narrow-wide"
-                        ? "md:grid-cols-[minmax(0,467fr)_minmax(0,645fr)]"
-                        : "md:grid-cols-[minmax(0,645fr)_minmax(0,467fr)]"
-                    )}
-                  >
-                    {row.cards.map((card, cardIndex) => (
-                      <MicroCardLesson
-                        key={card.id}
-                        id={card.id}
-                        title={card.title}
-                        iconSrc={card.iconSrc}
-                        tone={toneForMicroCardRow(row.variant, cardIndex)}
-                        readTimeLabel={card.readTimeLabel}
-                        className="min-h-[164px] md:h-[192px]"
-                        isActive={activeCardId === card.id}
-                        onOpen={() => {
-                          pushedHistoryRef.current = false;
-                          setActiveCardId(card.id);
-                        }}
-                      />
-                    ))}
-                  </div>
-                )
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {microCardRows.map((row) =>
+                    row.variant === "full" ? (
+                      row.cards.map((card, cardIndex) => (
+                        <MicroCardLesson
+                          key={card.id}
+                          id={card.id}
+                          title={card.title}
+                          iconSrc={card.iconSrc}
+                          tone={toneForMicroCardRow(row.variant, cardIndex)}
+                          readTimeLabel={card.readTimeLabel}
+                          className="min-h-[164px] md:min-h-[220px] xl:h-[240px]"
+                          isActive={activeCardId === card.id}
+                          onOpen={() => {
+                            pushedHistoryRef.current = false;
+                            setActiveCardId(card.id);
+                          }}
+                        />
+                      ))
+                    ) : (
+                      <div
+                        key={row.cards.map((card) => card.id).join("-")}
+                        className={cn(
+                          "grid grid-cols-1 gap-5 md:gap-6",
+                          row.variant === "narrow-wide"
+                            ? "md:grid-cols-[minmax(0,467fr)_minmax(0,645fr)]"
+                            : "md:grid-cols-[minmax(0,645fr)_minmax(0,467fr)]"
+                        )}
+                      >
+                        {row.cards.map((card, cardIndex) => (
+                          <MicroCardLesson
+                            key={card.id}
+                            id={card.id}
+                            title={card.title}
+                            iconSrc={card.iconSrc}
+                            tone={toneForMicroCardRow(row.variant, cardIndex)}
+                            readTimeLabel={card.readTimeLabel}
+                            className="min-h-[164px] md:h-[192px]"
+                            isActive={activeCardId === card.id}
+                            onOpen={() => {
+                              pushedHistoryRef.current = false;
+                              setActiveCardId(card.id);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )
+                  )}
+                </>
               )}
 
-              {filteredCards.length === 0 ? (
+              {!activeCategory && filteredCategories.length === 0 ? (
+                <article className="rounded-2xl border border-[#dce5f1] bg-white p-6 text-center">
+                  <p className="text-sm font-semibold text-[#22344a]">
+                    {isLoadingCategories
+                      ? "Loading categories..."
+                      : loadError
+                        ? "Micro-card categories could not be loaded."
+                        : categories.length === 0
+                          ? "No published micro-card categories are available yet."
+                          : "No categories match that search."}
+                  </p>
+                  <p className="mt-1 text-xs text-[#6f8197]">
+                    {isLoadingCategories
+                      ? "Please wait while published categories load."
+                      : (loadError ??
+                        (categories.length === 0
+                          ? "Publish categories and assign cards from the admin dashboard to show them here."
+                          : "Try searching by category name or description."))}
+                  </p>
+                </article>
+              ) : null}
+
+              {activeCategory && filteredCards.length === 0 ? (
                 <article className="rounded-2xl border border-[#dce5f1] bg-white p-6 text-center">
                   <p className="text-sm font-semibold text-[#22344a]">
                     {isLoadingCards

@@ -4,6 +4,20 @@ export type MicroEducationTone = "blue" | "orange" | "green" | "amber" | "violet
 export type MicroEducationChip = "harassment" | "rights" | "safety" | "mentalHealth";
 export type MicroEducationDuration = "quick" | "deep";
 export type MicroEducationFormat = "video" | "interactive" | "guide";
+export type MicroEducationCategoryStatus = "draft" | "published";
+
+export type MicroEducationCategory = {
+  id: string;
+  name: string;
+  description?: string;
+  backgroundColor: string;
+  textColor: string;
+  iconName?: string;
+  imageUrl?: string;
+  status: MicroEducationCategoryStatus;
+  sortOrder: number;
+  cardCount?: number;
+};
 
 export type MicroEducationItem = {
   id: string;
@@ -17,6 +31,8 @@ export type MicroEducationItem = {
   detailBody: string;
   detailTakeaway: string;
   imageAlt?: string;
+  categoryId?: string;
+  category?: MicroEducationCategory;
   tone: MicroEducationTone;
   chips: MicroEducationChip[];
   duration: MicroEducationDuration;
@@ -31,6 +47,24 @@ export type MicroEducationItem = {
 
 export async function listPublishedMicroEducation(): Promise<MicroEducationItem[]> {
   const response = await apiRequest<{ items: MicroEducationItem[] }>("/microeducation");
+
+  return response.data.items;
+}
+
+export async function listPublishedMicroEducationCategories(): Promise<MicroEducationCategory[]> {
+  const response = await apiRequest<{ categories: MicroEducationCategory[] }>(
+    "/microeducation/categories",
+  );
+
+  return response.data.categories;
+}
+
+export async function listPublishedMicroEducationByCategory(
+  categoryId: string,
+): Promise<MicroEducationItem[]> {
+  const response = await apiRequest<{ items: MicroEducationItem[] }>(
+    `/microeducation/categories/${categoryId}/cards`,
+  );
 
   return response.data.items;
 }
