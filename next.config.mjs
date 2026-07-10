@@ -11,9 +11,6 @@ const nextConfig = (phase) => ({
     const backendOrigin = stripTrailingSlashes(
       process.env.SAFESPEAK_BACKEND_ORIGIN || "http://localhost:5000"
     );
-    const aiAgentOrigin = stripTrailingSlashes(
-      process.env.SAFESPEAK_AI_AGENT_ORIGIN || "http://localhost:8000"
-    );
 
     return [
       {
@@ -23,10 +20,6 @@ const nextConfig = (phase) => ({
       {
         source: "/api/auth/:path*",
         destination: `${backendOrigin}/api/auth/:path*`,
-      },
-      {
-        source: "/api/ai-agent/v1/:path*",
-        destination: `${aiAgentOrigin}/api/v1/:path*`,
       },
     ];
   },

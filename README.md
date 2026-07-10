@@ -51,23 +51,20 @@ cp .env.example .env.local
 Default local integration values are already included:
 
 - `NEXT_PUBLIC_API_BASE_URL=/api/v1`
-- `NEXT_PUBLIC_AI_AGENT_API_BASE_URL=/api/ai-agent/v1`
 - `SAFESPEAK_BACKEND_ORIGIN=http://localhost:5000`
-- `SAFESPEAK_AI_AGENT_ORIGIN=http://localhost:8000`
 
-The frontend now talks to same-origin `/api/...` paths and Next.js rewrites those requests to your backend services. This keeps browser code free of hardcoded localhost or deployment URLs.
+The frontend now talks to same-origin `/api/...` paths and Next.js rewrites those requests to your backend services, including the backend AI and RAG endpoints. This keeps browser code free of hardcoded localhost or deployment URLs and removes the old separate AI-agent dependency for the timeline assistant flow.
 
 ## Notes for adding your backend
 
 - The guestbook and profile pages are stubbed with client-side state; wire them to your Express API when ready.
-- The `.env.example` file is empty because no server-side secrets are required now. Add any `NEXT_PUBLIC_*` variables you need for your API endpoints.
+- The `.env.example` file now includes the frontend API base and backend origin used by the rewrite layer. Add any other `NEXT_PUBLIC_*` variables you need for your API endpoints.
 - Docker and Drizzle configs were removed. Reintroduce your own tooling as needed for your backend stack.
 
 ## SafeSpeak integration notes
 
 - Dashboard home now routes to explicit SafeSpeak scope flows for reporting, support, ScamShield, resources, local-intelligence placeholder, and Smart Dialler.
 - For Vercel or any hosted frontend, keep `NEXT_PUBLIC_API_BASE_URL=/api/v1` and set `SAFESPEAK_BACKEND_ORIGIN` to your backend origin, for example `https://safespeak-backend-ules.onrender.com`.
-- If you deploy the AI agent separately, keep `NEXT_PUBLIC_AI_AGENT_API_BASE_URL=/api/ai-agent/v1` and set `SAFESPEAK_AI_AGENT_ORIGIN` to that service origin.
 - Persistent dashboard safety controls include Quick Exit, 000, 1800RESPECT, language toggle, covert-mode state, and Smart Dialler access.
 - Learn & Resources now uses `/dashboard?view=resources` as the main library entry, while micro-education remains separately reachable.
 - Landing page internals were intentionally left unchanged in this task.

@@ -1,4 +1,4 @@
-import { apiRequest, getAiAgentApiBaseUrl } from "./api";
+import { apiRequest, getApiBaseUrl } from "./api";
 import type { AssistantIncidentCategory } from "./assistant-categories";
 import { consentRequirements, ensureConsent } from "./consent";
 import { getSessionAwareAuthHeaders } from "./frontend-session";
@@ -261,7 +261,7 @@ export async function sendTimelineAssistantMessage(input: {
       "/rag/timeline-assistant",
       {
         method: "POST",
-        baseUrl: getAiAgentApiBaseUrl(),
+        baseUrl: getApiBaseUrl(),
         headers,
         body: normalizedInput,
       }
@@ -276,7 +276,7 @@ export async function sendTimelineAssistantMessage(input: {
       "/rag/timeline-assistant",
       {
         method: "POST",
-        baseUrl: getAiAgentApiBaseUrl(),
+        baseUrl: getApiBaseUrl(),
         headers,
         body: normalizedInput,
       }
