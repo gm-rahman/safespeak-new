@@ -29,6 +29,7 @@ function ReportSubmissionFrame({
   title,
   subtitle,
   step,
+  skipSupportStep = false,
   backHref,
   backLabel,
   children,
@@ -36,18 +37,27 @@ function ReportSubmissionFrame({
   title: string;
   subtitle: string;
   step: ReportSubmissionStep;
+  skipSupportStep?: boolean;
   backHref?: Route;
   backLabel?: string;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const resolvedStep = step === "evidence" ? "details" : step;
-  const activeStepIndex = reportSubmissionSteps.findIndex(
+  const visibleSteps = skipSupportStep
+    ? reportSubmissionSteps.filter((item) => item.key !== "support")
+    : reportSubmissionSteps;
+  const resolvedStep =
+    step === "evidence"
+      ? "details"
+      : step === "support" && skipSupportStep
+        ? "details"
+        : step;
+  const activeStepIndex = visibleSteps.findIndex(
     (item) => item.key === resolvedStep
   );
 
   return (
-    <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
+    <div className="px-2 pb-36 pt-2 sm:px-4 sm:pb-44 sm:pt-4">
       <div className="mx-auto flex min-h-[996px] w-full max-w-[1184px] flex-col">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           {backHref ? (
@@ -92,7 +102,7 @@ function ReportSubmissionFrame({
 
             <div className="flex flex-col gap-1 sm:items-end">
               <div className="flex items-center gap-1.5">
-                {reportSubmissionSteps.map((item, index) => (
+                {visibleSteps.map((item, index) => (
                   <span
                     key={item.key}
                     className={cn(
@@ -105,7 +115,7 @@ function ReportSubmissionFrame({
               <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8fa0b6]">
                 {t("dashboard.reportSubmission.stepOf", {
                   current: activeStepIndex + 1,
-                  total: reportSubmissionSteps.length,
+                  total: visibleSteps.length,
                 })}
               </p>
             </div>

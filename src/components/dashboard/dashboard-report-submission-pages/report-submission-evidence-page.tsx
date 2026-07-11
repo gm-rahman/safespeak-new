@@ -304,13 +304,13 @@ function EvidenceVaultCard({
 
   if (item.kind === "image") {
     return (
-      <article className="group relative min-h-[232px] overflow-hidden rounded-[24px] bg-[#0f172a] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)]">
+      <article className="group relative min-h-[148px] overflow-hidden rounded-[20px] bg-[#0f172a] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)]">
         {item.previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={item.previewUrl}
             alt={item.name}
-            className="absolute inset-0 h-full w-full object-cover opacity-90"
+            className="absolute inset-0 h-full w-full object-cover opacity-90 transition group-hover:scale-105"
           />
         ) : (
           <>
@@ -319,24 +319,24 @@ function EvidenceVaultCard({
             <div className="absolute bottom-0 left-[49.5%] top-[48%] w-1 bg-[#f7d552]" />
           </>
         )}
-        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.6)_0%,rgba(0,0,0,0)_50%,rgba(0,0,0,0)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.75)_0%,rgba(0,0,0,0.2)_50%,rgba(0,0,0,0)_100%)]" />
         <button
           type="button"
           onClick={() => onRemove(item)}
           disabled={isBusy}
-          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md"
+          className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md transition hover:bg-black/60"
           aria-label={`Remove ${item.name}`}
         >
-          <IconX size={14} />
+          <IconX size={12} />
         </button>
-        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-3 text-white">
-          <span className="inline-flex min-w-0 items-center gap-2">
-            <IconPhoto size={14} className="opacity-80" />
-            <span className="truncate text-xs font-medium opacity-90">
+        <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 text-white">
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <IconPhoto size={12} className="opacity-80" />
+            <span className="truncate text-[11px] font-medium opacity-90">
               {item.name}
             </span>
           </span>
-          <span className="shrink-0 text-xs opacity-70">{item.sizeLabel}</span>
+          <span className="shrink-0 text-[10px] opacity-70">{item.sizeLabel}</span>
         </div>
       </article>
     );
@@ -344,7 +344,7 @@ function EvidenceVaultCard({
 
   if (item.kind === "video") {
     return (
-      <article className="relative min-h-[232px] overflow-hidden rounded-[24px] bg-[#111827] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)]">
+      <article className="relative min-h-[148px] overflow-hidden rounded-[20px] bg-[#111827] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-2px_rgba(0,0,0,0.1)]">
         {item.previewUrl ? (
           <video
             src={item.previewUrl}
@@ -361,25 +361,25 @@ function EvidenceVaultCard({
               canUseBackendActions ? onTranscribe(item) : undefined
             }
             disabled={!canUseBackendActions || isBusy}
-            className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/20 text-white backdrop-blur-sm"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-white/20 text-white backdrop-blur-sm transition hover:scale-105 hover:bg-white/30"
             aria-label={`Process ${item.name}`}
           >
-            <IconPlayerPlayFilled size={22} />
+            <IconPlayerPlayFilled size={16} />
           </button>
         </div>
         <button
           type="button"
           onClick={() => onRemove(item)}
           disabled={isBusy}
-          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md"
+          className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md transition hover:bg-black/60"
           aria-label={`Remove ${item.name}`}
         >
-          <IconX size={14} />
+          <IconX size={12} />
         </button>
-        <div className="absolute bottom-3 left-3 max-w-[72%] truncate text-xs font-medium text-white">
+        <div className="absolute bottom-2.5 left-2.5 max-w-[65%] truncate text-[11px] font-medium text-white">
           {item.name}
         </div>
-        <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-2 py-1 text-xs font-medium text-white">
+        <span className="absolute bottom-2.5 right-2.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-medium text-white">
           {statusText}
         </span>
       </article>
@@ -388,45 +388,45 @@ function EvidenceVaultCard({
 
   if (item.kind === "audio") {
     return (
-      <article className="relative flex min-h-[232px] flex-col justify-center rounded-[24px] border-2 border-dashed border-[#FDBA74] bg-white px-4 py-10 shadow-[0_1px_2px_rgba(0,0,0,0.05)] sm:px-8">
+      <article className="relative flex min-h-[148px] flex-col justify-center rounded-[20px] border-2 border-dashed border-[#FDBA74] bg-white px-3 py-4 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
         <button
           type="button"
           onClick={() => onRemove(item)}
           disabled={isBusy}
-          className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center text-[#94A3B8]"
+          className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center text-[#94A3B8] transition hover:text-[#475569]"
           aria-label={`Remove ${item.name}`}
         >
-          <IconX size={18} />
+          <IconX size={14} />
         </button>
-        <div className="mx-auto w-full max-w-[276px]">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#EA580C]">
-              <IconMicrophone size={18} />
+        <div className="mx-auto w-full max-w-[220px]">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#EA580C]">
+              <IconMicrophone size={14} />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-[#1E293B]">
+              <span className="block truncate text-xs font-semibold text-[#1E293B]">
                 {item.name}
               </span>
-              <span className="block text-xs font-medium text-[#F97316]">
+              <span className="block text-[10px] font-medium text-[#F97316]">
                 {isBusy ? "Processing..." : statusText}
               </span>
             </span>
           </div>
-          <div className="mt-5 h-2 rounded-full bg-[#F1F5F9]">
+          <div className="mt-2.5 h-1.5 rounded-full bg-[#F1F5F9]">
             <div
               className={cn(
-                "h-2 rounded-full bg-[#FF8F00]",
+                "h-1.5 rounded-full bg-[#FF8F00]",
                 isBusy ? "w-1/2" : "w-full"
               )}
             />
           </div>
-          <div className="mt-3 flex items-center justify-between gap-2 text-xs text-[#64748B]">
+          <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-[#64748B]">
             <span>{item.sizeLabel}</span>
             <button
               type="button"
               onClick={() => onTranscribe(item)}
               disabled={!canUseBackendActions || isBusy}
-              className="font-semibold text-[#0F5D9F] disabled:text-[#94A3B8]"
+              className="font-bold text-[#0F5D9F] hover:underline disabled:text-[#94A3B8] disabled:no-underline"
             >
               Transcribe
             </button>
@@ -437,34 +437,34 @@ function EvidenceVaultCard({
   }
 
   return (
-    <article className="relative grid min-h-[232px] place-items-center rounded-[24px] border border-[#E2E8F0] bg-white p-6 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+    <article className="relative grid min-h-[148px] place-items-center rounded-[20px] border border-[#E2E8F0] bg-white p-4 text-center shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
       <button
         type="button"
         onClick={() => onRemove(item)}
         disabled={isBusy}
-        className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center text-[#94A3B8]"
+        className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center text-[#94A3B8] transition hover:text-[#475569]"
         aria-label={`Remove ${item.name}`}
       >
-        <IconX size={18} />
+        <IconX size={14} />
       </button>
       <div>
-        <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-[16px] bg-[#FFF7ED] text-[#F97316]">
+        <span className="mx-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#FFF7ED] text-[#F97316]">
           {item.name.toLowerCase().endsWith(".pdf") ? (
-            <IconFileTypePdf size={28} />
+            <IconFileTypePdf size={18} />
           ) : (
-            <IconFileText size={28} />
+            <IconFileText size={18} />
           )}
         </span>
-        <p className="mt-3 max-w-[180px] truncate text-sm font-medium text-[#1E293B]">
+        <p className="mt-1.5 max-w-[150px] truncate text-xs font-semibold text-[#1E293B]">
           {item.name}
         </p>
-        <p className="mt-1 text-xs text-[#94A3B8]">{item.sizeLabel}</p>
-        <div className="mt-4 flex justify-center gap-3 text-xs">
+        <p className="mt-0.5 text-[10px] text-[#94A3B8]">{item.sizeLabel}</p>
+        <div className="mt-2.5 flex justify-center gap-2.5 text-[10px]">
           <button
             type="button"
             onClick={() => onRefresh(item)}
             disabled={!canUseBackendActions || isBusy}
-            className="font-semibold text-[#0F5D9F] disabled:text-[#94A3B8]"
+            className="font-bold text-[#0F5D9F] hover:underline disabled:text-[#94A3B8] disabled:no-underline"
           >
             Details
           </button>
@@ -472,7 +472,7 @@ function EvidenceVaultCard({
             type="button"
             onClick={() => onVerify(item)}
             disabled={!canUseBackendActions || isBusy}
-            className="font-semibold text-[#0F5D9F] disabled:text-[#94A3B8]"
+            className="font-bold text-[#0F5D9F] hover:underline disabled:text-[#94A3B8] disabled:no-underline"
           >
             Verify
           </button>
@@ -1534,8 +1534,8 @@ function ReportSubmissionEvidencePage({
       backHref={backHref}
       backLabel={fromTriage ? "Support" : "Report Submission"}
     >
-      <div className="mt-4 grid gap-4 xl:grid-cols-[1.7fr_1fr]">
-        <section className="rounded-[20px] border border-[#dbe5f1] bg-[#fbfdff] p-5">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="rounded-[20px] border border-[#dbe5f1] bg-[#fbfdff] p-5 space-y-4">
           {evidenceError ? (
             <div className="mb-4 rounded-[14px] border border-[#fde2e2] bg-[#fff5f5] px-4 py-3 text-[12px] text-[#b45353]">
               <span className="inline-flex items-center gap-1.5">
@@ -1639,85 +1639,85 @@ function ReportSubmissionEvidencePage({
           </div>
         </section>
 
-        <aside />
-      </div>
-
-      <section className="mt-4 rounded-[20px] border border-[#dbe5f1] bg-white p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <section className="rounded-[20px] border border-[#dbe5f1] bg-white p-5 flex flex-col justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-              Evidence
-            </p>
-            <h3 className="mt-1 text-2xl font-bold text-[#0f172a]">
-              Attach supporting files
-            </h3>
-            <p className="mt-1 text-sm text-[#64748B]">
-              Add screenshots, documents, audio, video, or photos if you want them included with the report.
-            </p>
-          </div>
-          <span className="inline-flex h-8 w-fit items-center rounded-full border border-[#FED7AA] bg-[#FFEDD5] px-3 text-sm font-semibold text-[#C2410C]">
-            {readyFileCount} file{readyFileCount === 1 ? "" : "s"} ready
-          </span>
-        </div>
-
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          {primaryEvidenceItems.map((item) => (
-            <EvidenceVaultCard
-              key={item.id}
-              item={item}
-              onRemove={handleDeleteEvidence}
-              onRefresh={refreshEvidenceDetails}
-              onVerify={handleVerifyEvidenceHash}
-              onTranscribe={handleTranscribeEvidence}
-              isBusy={isEvidenceItemBusy(item)}
-            />
-          ))}
-
-          {secondaryEvidenceItems.map((item) => (
-            <EvidenceVaultCard
-              key={item.id}
-              item={item}
-              onRemove={handleDeleteEvidence}
-              onRefresh={refreshEvidenceDetails}
-              onVerify={handleVerifyEvidenceHash}
-              onTranscribe={handleTranscribeEvidence}
-              isBusy={isEvidenceItemBusy(item)}
-            />
-          ))}
-
-          <article
-            role="button"
-            tabIndex={0}
-            onClick={() => fileInputRef.current?.click()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                fileInputRef.current?.click();
-              }
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              void handleFilesSelected(event.dataTransfer.files);
-            }}
-            className="grid min-h-[232px] cursor-pointer place-items-center rounded-[24px] border-2 border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-6 py-10 text-center transition hover:border-[#FDBA74] hover:bg-white"
-          >
-            <div>
-              <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-white text-[#FF8F00] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                <IconFolderFilled size={26} />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                  Evidence
+                </p>
+                <h3 className="mt-1 text-2xl font-bold text-[#0f172a]">
+                  Attach supporting files
+                </h3>
+                <p className="mt-1 text-xs text-[#64748B]">
+                  Add screenshots, documents, audio, video, or photos if you want them included with the report.
+                </p>
+              </div>
+              <span className="inline-flex h-8 w-fit items-center rounded-full border border-[#FED7AA] bg-[#FFEDD5] px-3 text-xs font-semibold text-[#C2410C]">
+                {readyFileCount} file{readyFileCount === 1 ? "" : "s"} ready
               </span>
-              <h3 className="mt-4 text-sm font-semibold text-[#334155]">
-                Drag, drop, or click to upload
-              </h3>
-              <p className="mx-auto mt-1 max-w-[240px] text-xs leading-5 text-[#64748B]">
-                Images, video, audio, PDF, DOC, DOCX, and TXT files are supported.
-              </p>
             </div>
-          </article>
-        </div>
-      </section>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              {primaryEvidenceItems.map((item) => (
+                <EvidenceVaultCard
+                  key={item.id}
+                  item={item}
+                  onRemove={handleDeleteEvidence}
+                  onRefresh={refreshEvidenceDetails}
+                  onVerify={handleVerifyEvidenceHash}
+                  onTranscribe={handleTranscribeEvidence}
+                  isBusy={isEvidenceItemBusy(item)}
+                />
+              ))}
+
+              {secondaryEvidenceItems.map((item) => (
+                <EvidenceVaultCard
+                  key={item.id}
+                  item={item}
+                  onRemove={handleDeleteEvidence}
+                  onRefresh={refreshEvidenceDetails}
+                  onVerify={handleVerifyEvidenceHash}
+                  onTranscribe={handleTranscribeEvidence}
+                  isBusy={isEvidenceItemBusy(item)}
+                />
+              ))}
+
+              <article
+                role="button"
+                tabIndex={0}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  void handleFilesSelected(event.dataTransfer.files);
+                }}
+                className="grid min-h-[148px] cursor-pointer place-items-center rounded-[20px] border-2 border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-4 py-6 text-center transition hover:border-[#FDBA74] hover:bg-white"
+              >
+                <div>
+                  <span className="mx-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-[#FF8F00] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                    <IconFolderFilled size={18} />
+                  </span>
+                  <h3 className="mt-2 text-xs font-semibold text-[#334155]">
+                    Drag, drop, or click to upload
+                  </h3>
+                  <p className="mx-auto mt-0.5 max-w-[180px] text-[10px] leading-4 text-[#64748B]">
+                    Images, video, audio, PDF, DOC, DOCX, and TXT are supported.
+                  </p>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+      </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#e2e8f0] pt-4">
         <div className="flex flex-wrap items-center gap-3">

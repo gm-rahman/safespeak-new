@@ -29,6 +29,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import { ReportSubmissionFrame } from "./report-submission-frame";
 import { useConsentGate } from "@/hooks/use-consent-gate";
 import { getAssistantTriageSource } from "@/lib/assistant-triage";
 import {
@@ -969,34 +970,15 @@ function ReportSubmissionSupportPage() {
   };
 
   return (
-    <div className="px-2 pb-12 pt-2 sm:px-4 sm:pb-10 sm:pt-4">
-      <div className="mx-auto flex w-full max-w-[1184px] flex-col">
-        <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
-          <Link
-            href="/dashboard?view=assistantconversation"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
-          >
-            <IconChevronLeft size={14} />
-            {t("dashboard.assistant.triage.aiConversation")}
-          </Link>
-          <Link
-            href="/dashboard?view=reportsubmissionhistory"
-            aria-label="View report history"
-            className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[#9ba8bb] transition hover:text-[#74879e]"
-          >
-            <IconClock size={12} />
-          </Link>
-        </div>
-
-        <main className="mx-auto flex w-full max-w-[1136px] flex-col gap-8 pt-3 sm:gap-9">
-          <section>
-            <h1 className="text-[22px] font-extrabold leading-7 text-[#004E92] sm:text-3xl sm:leading-9">
-              {t("dashboard.assistant.triage.title")}
-            </h1>
-            <p className="mt-1 text-sm font-medium leading-6 text-[#6B7280] sm:text-base">
-              {t("dashboard.assistant.triage.subtitle")}
-            </p>
-          </section>
+    <>
+      <ReportSubmissionFrame
+      title={t("dashboard.assistant.triage.title")}
+      subtitle={t("dashboard.assistant.triage.subtitle")}
+      step="support"
+      backHref={resolvedConversationSessionId ? (`/dashboard?view=assistantconversation&conversationSessionId=${resolvedConversationSessionId}` as Route) : "/dashboard?view=assistantconversation"}
+      backLabel={t("dashboard.assistant.triage.aiConversation")}
+    >
+      <div className="mx-auto flex w-full max-w-[1136px] flex-col gap-8 pt-3 sm:gap-9">
 
           <section>
             <article className="relative overflow-hidden rounded-[28px] bg-white px-5 py-8 text-center shadow-[0_10px_40px_-10px_rgba(0,0,0,0.08)] sm:rounded-[38px] sm:px-8 sm:py-10 lg:rounded-[48px] lg:px-12 lg:py-12">
@@ -1491,6 +1473,19 @@ function ReportSubmissionSupportPage() {
                 </section>
               ) : null}
 
+              <div className="mt-8 flex justify-center border-t border-[#e2e8f0] pt-6">
+                <Link
+                  href={withConversationSessionId(
+                    "/dashboard?view=reportsubmissiondetails&fromTriage=1",
+                    resolvedConversationSessionId
+                  )}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#ff8f00] px-8 text-xs font-bold text-white shadow-[0_8px_20px_rgba(255,143,0,0.3)] transition hover:bg-[#ec8200]"
+                >
+                  Continue to Incident Details
+                  <IconArrowRight size={14} className="text-white" />
+                </Link>
+              </div>
+
               <footer className="border-t border-[#F3F4F6] pt-8">
                 <div className="mx-auto flex max-w-[760px] flex-col gap-2 text-center text-xs leading-5 text-[#9CA3AF]">
                   {(consentGovernance?.messages ?? []).map((message) => (
@@ -1501,8 +1496,8 @@ function ReportSubmissionSupportPage() {
               </footer>
             </>
           ) : null}
-        </main>
-      </div>
+        </div>
+      </ReportSubmissionFrame>
 
       {activeMicroCard ? (
         <MicroCardDetailOverlay
@@ -1514,7 +1509,7 @@ function ReportSubmissionSupportPage() {
           showNavigation={suggestedMicroCards.length > 1}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 

@@ -1,6 +1,8 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -19,6 +21,7 @@ import {
 } from "@tabler/icons-react";
 
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import { ReportSubmissionFrame } from "./report-submission-frame";
 import { useConsentGate } from "@/hooks/use-consent-gate";
 import {
   type AuthorityMatch,
@@ -152,7 +155,12 @@ function getShareNotice(submission: ReportSubmissionRecord): string {
   return "Sharing outcome has been recorded in SafeSpeak.";
 }
 
+const withTriageParam = (href: Route, fromTriage: boolean): Route =>
+  (fromTriage ? `${href}&fromTriage=1` : href) as Route;
+
 function ReportSubmissionSharePage() {
+  const searchParams = useSearchParams();
+  const fromTriage = searchParams.get("fromTriage") === "1";
   const reportDraft = useMemo(() => getResolvedReportFlowDraft(), []);
   const {
     pendingConsentRequirement,
@@ -182,6 +190,7 @@ function ReportSubmissionSharePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [isSharePreviewVisible, setIsSharePreviewVisible] = useState(false);
   const [anonymityMode, setAnonymityMode] = useState<
     "identified" | "anonymous" | "pseudonymous"
   >(reportDraft?.shareAnonymityMode ?? "identified");
@@ -514,9 +523,13 @@ function ReportSubmissionSharePage() {
   };
 
   const handleShareSelected = () => {
-    if (selectedDestination) {
-      void submitToDestination(selectedDestination.destinationId);
+    if (!selectedDestination) {
+      return;
     }
+
+    setShareError(null);
+    setShareNotice(null);
+    setIsSharePreviewVisible(true);
   };
 
   const handleAllowSharingConsent = async () => {
@@ -569,51 +582,29 @@ function ReportSubmissionSharePage() {
     : selectedDestination
       ? "Ready for secure sharing"
       : "Awaiting recipient selection";
-  const reviewHref = buildReportFlowHref("reportsubmissionreview", {
-    reportId: reportDraft?.reportId,
-    selectedDestinationId:
-      selectedDestination?.destinationId ??
-      selectedDestinationId ??
-      reportDraft?.selectedDestinationId,
-    latestSubmissionId:
-      latestSubmission?._id ?? reportDraft?.latestSubmissionId,
-  });
+  const reviewHref = withTriageParam(
+    buildReportFlowHref("reportsubmissionreview", {
+      reportId: reportDraft?.reportId,
+      selectedDestinationId:
+        selectedDestination?.destinationId ??
+        selectedDestinationId ??
+        reportDraft?.selectedDestinationId,
+      latestSubmissionId:
+        latestSubmission?._id ?? reportDraft?.latestSubmissionId,
+    }),
+    fromTriage
+  );
 
   return (
-    <div className="px-6 pb-12 pt-12">
-      <div className="mx-auto flex w-full max-w-[1184px] flex-col">
-        <div className="flex h-[60px] items-center justify-between border-b border-[#d9e2ee] px-6 py-[10px]">
-          <Link
-            href={reviewHref}
-            className="inline-flex items-center gap-2 text-[#111827]"
-          >
-            <IconChevronLeft size={18} stroke={2} />
-            <span className="inline-block text-[13px] font-bold leading-[20px]">
-              Recipient Review
-            </span>
-          </Link>
-          <Link
-            href="/dashboard?view=reportsubmissionhistory"
-            aria-label="View report history"
-            className="inline-flex h-6 w-6 items-center justify-center text-[#7f91a8] transition hover:text-[#5f728a]"
-          >
-            <IconClock size={14} />
-          </Link>
-        </div>
-
-        <article className="mt-5 rounded-[16px] border border-[#dce5f1] bg-[#f7fafe] p-4 sm:p-6">
-          <div className="mx-auto max-w-[660px] text-center">
-            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-              Secure sharing
-            </p>
-            <h3 className="mt-1 text-[22px] font-bold text-[#10243d]">
-              Share report securely
-            </h3>
-            <p className="mt-2 text-[12px] leading-[18px] text-[#7789a1]">
-              Confirm the recommended authority, consent, and report package
-              before SafeSpeak sends anything to an external department.
-            </p>
-          </div>
+    <ReportSubmissionFrame
+      title="Share report securely"
+      subtitle="Confirm the recommended authority, consent, and report package before SafeSpeak sends anything to an external department."
+      step={latestSubmission ? "done" : "share"}
+      skipSupportStep={!fromTriage}
+      backHref={reviewHref}
+      backLabel="Review"
+    >
+      <div className="mt-4">
 
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <div className="rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
@@ -846,70 +837,181 @@ function ReportSubmissionSharePage() {
               </article>
             </section>
 
-            <section className="space-y-4" />
+            <section className="space-y-4">
+              <article className="rounded-[16px] border border-[#dbe7f4] bg-white p-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                  Selected recipient
+                </p>
+                <h5 className="mt-2 text-lg font-bold text-[#1f2a3a]">
+                  {selectedRecipientName}
+                </h5>
+                <p className="mt-1.5 text-xs text-[#60728a]">
+                  Status: <span className="font-semibold text-[#0f5d9f]">{preparedStatusLabel}</span>
+                </p>
+                <p className="mt-2 text-xs leading-[1.6] text-[#60728a]">
+                  {selectedRecipientMessage}
+                </p>
+                {!latestSubmission && deliveryReadinessCopy ? (
+                  <p className="mt-3 rounded-[10px] border border-[#dbe7f4] bg-[#f8fbff] px-3 py-2 text-xs leading-[1.5] text-[#526982]">
+                    {deliveryReadinessCopy}
+                  </p>
+                ) : null}
+              </article>
+
+              {!latestSubmission ? (
+                <article className="rounded-[16px] border border-[#dbe7f4] bg-white p-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3] mb-3">
+                    Sharing options
+                  </p>
+                  <div className="space-y-4">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-xs font-semibold text-[#526982]">
+                        Identity mode
+                      </span>
+                      <select
+                        value={anonymityMode}
+                        onChange={(event) =>
+                          setAnonymityMode(
+                            event.target.value as
+                              | "identified"
+                              | "anonymous"
+                              | "pseudonymous"
+                          )
+                        }
+                        className="h-10 w-full rounded-[10px] border border-[#dce5f1] bg-white px-3 text-xs font-medium text-[#1f2a3a] outline-none transition focus:border-[#0f5d9f] focus:ring-1 focus:ring-[#0f5d9f]"
+                      >
+                        <option value="identified">Identified (Name & contact info shared)</option>
+                        <option value="anonymous">Anonymous (No identity details shared)</option>
+                        <option value="pseudonymous">Pseudonymous (Use SafeSpeak alias)</option>
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-xs font-semibold text-[#526982]">
+                        Submission notes (Optional)
+                      </span>
+                      <textarea
+                        value={shareNotes}
+                        onChange={(event) => setShareNotes(event.target.value)}
+                        placeholder="Add a routing note or specific request..."
+                        rows={3}
+                        className="w-full resize-none rounded-[10px] border border-[#dce5f1] bg-white px-3 py-2 text-xs text-[#1f2a3a] outline-none transition focus:border-[#0f5d9f] focus:ring-1 focus:ring-[#0f5d9f] placeholder:text-[#9eb0c7]"
+                      />
+                    </label>
+                  </div>
+                </article>
+              ) : null}
+
+              <article className="overflow-hidden rounded-[16px] border border-[#dbe7f4] bg-white shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                <div className="flex flex-col divide-y divide-[#edf2f8]">
+                  <div className="flex flex-col gap-3 p-5">
+                    <button
+                      type="button"
+                      onClick={handleShareSelected}
+                      disabled={!canSubmit}
+                      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#ff8f00] px-5 text-xs font-bold text-white shadow-[0_10px_22px_rgba(255,143,0,0.28)] transition hover:bg-[#ec8200] disabled:cursor-not-allowed disabled:bg-[#ffd39b] disabled:text-white/80"
+                    >
+                      {isSubmitting ? (
+                        <IconLoader2 size={14} className="animate-spin" />
+                      ) : (
+                        <IconShare size={13} />
+                      )}
+                      Share report securely
+                    </button>
+                    
+                    <Link
+                      href={reviewHref}
+                      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border border-[#dbe7f4] bg-white px-5 text-xs font-bold text-[#526982] transition hover:bg-[#f8fbff]"
+                    >
+                      Review recipients
+                      <IconArrowRight size={13} />
+                    </Link>
+                  </div>
+                  
+                  <div className="flex items-center justify-between bg-[#f8fbff] px-5 py-3 text-xs">
+                    <Link
+                      href="/dashboard?view=reportsubmissionhistory"
+                      className="inline-flex items-center gap-1.5 font-semibold text-[#ff8f00] hover:underline"
+                    >
+                      <IconFolderFilled size={13} />
+                      Save to History
+                    </Link>
+                    
+                    <span className="inline-flex items-center gap-1 font-semibold text-[#9a5b12]">
+                      <IconBoltFilled size={12} />
+                      {readinessBadgeLabel}
+                    </span>
+                  </div>
+                </div>
+              </article>
+            </section>
           </div>
 
-          <div className="mt-4 rounded-[12px] border border-[#e5ebf4] bg-white px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-              Selected recipient
-            </p>
-            <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
-              {selectedRecipientName}
-            </p>
-            <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
-              Status: {preparedStatusLabel}
-            </p>
-            <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
-              {selectedRecipientMessage}
-            </p>
-            {!latestSubmission && deliveryReadinessCopy ? (
-              <p className="mt-2 rounded-[10px] border border-[#dbe7f4] bg-[#f8fbff] px-3 py-2 text-[10px] leading-[15px] text-[#526982]">
-                {deliveryReadinessCopy}
-              </p>
-            ) : null}
-          </div>
+          {isSharePreviewVisible ? (
+            <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0f172a]/30 px-4">
+              <div className="w-full max-w-[640px] rounded-[20px] border border-[#dbe7f4] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.24)]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+                  Share preview
+                </p>
+                <h4 className="mt-2 text-[24px] font-bold text-[#1f2a3a]">
+                  Nothing will be sent yet
+                </h4>
+                <p className="mt-2 text-[12px] leading-[1.6] text-[#60728a]">
+                  This popup only previews what would be shared. No external
+                  service has been contacted and no submission has been
+                  recorded.
+                </p>
 
-          <div className="mt-4 overflow-hidden rounded-[12px] border border-[#e5ebf4] bg-white">
-            <div className="grid grid-cols-1 divide-y divide-[#edf2f8] lg:grid-cols-[0.75fr_1.25fr] lg:divide-x lg:divide-y-0">
-              <Link
-                href="/dashboard?view=reportsubmissionhistory"
-                className="inline-flex min-h-[64px] items-center justify-center gap-2 px-4 text-[11px] font-semibold text-[#ff8f00]"
-              >
-                <IconFolderFilled size={13} />
-                Save to History
-              </Link>
-              <div className="flex min-h-[64px] flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-center">
-                <button
-                  type="button"
-                  onClick={handleShareSelected}
-                  disabled={!canSubmit}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#ff8f00] px-5 text-[11px] font-bold text-white shadow-[0_10px_22px_rgba(255,143,0,0.28)] transition hover:bg-[#ec8200] disabled:cursor-not-allowed disabled:bg-[#ffd39b] disabled:text-white/80"
-                >
-                  {isSubmitting ? (
-                    <IconLoader2 size={14} className="animate-spin" />
-                  ) : (
-                    <IconShare size={13} />
-                  )}
-                  Share report securely
-                </button>
-                <Link
-                  href={reviewHref}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#dbe7f4] bg-white px-5 text-[11px] font-bold text-[#526982] transition hover:bg-[#f8fbff]"
-                >
-                  Review recipients
-                  <IconArrowRight size={13} />
-                </Link>
-                <span className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold text-[#9a5b12]">
-                  <IconBoltFilled size={12} />
-                  {readinessBadgeLabel}
-                </span>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[12px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                      Recipient
+                    </p>
+                    <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
+                      {selectedRecipientName}
+                    </p>
+                  </div>
+                  <div className="rounded-[12px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                      Evidence included
+                    </p>
+                    <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
+                      {evidenceCount} item{evidenceCount === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <div className="rounded-[12px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                      Identity mode
+                    </p>
+                    <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
+                      {anonymityMode.charAt(0).toUpperCase() +
+                        anonymityMode.slice(1)}
+                    </p>
+                  </div>
+                  <div className="rounded-[12px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                      Submission notes
+                    </p>
+                    <p className="mt-1 text-[12px] text-[#526982]">
+                      {shareNotes.trim() || "No submission notes added."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsSharePreviewVisible(false)}
+                    className="inline-flex h-11 items-center justify-center rounded-full border border-[#dbe7f4] bg-white px-5 text-[12px] font-bold text-[#526982] transition hover:bg-[#f8fbff]"
+                  >
+                    Close preview
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-
-        </article>
-      </div>
-    </div>
+          ) : null}
+        </div>
+      </ReportSubmissionFrame>
   );
 }
 

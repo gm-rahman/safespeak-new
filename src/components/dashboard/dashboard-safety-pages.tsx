@@ -1,6 +1,8 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -62,6 +64,68 @@ const joinLines = (values: string[] | undefined): string =>
 const getSafetyPlanId = (plan: SafetyPlanRecord): string | undefined =>
   plan._id ?? plan.id;
 
+function getMicroCardSurface(card: MicroEducationItem): {
+  backgroundColor: string;
+  color: string;
+  borderColor: string;
+} {
+  if (card.category?.backgroundColor && card.category?.textColor) {
+    return {
+      backgroundColor: card.category.backgroundColor,
+      color: card.category.textColor,
+      borderColor: "rgba(255,255,255,0.18)",
+    };
+  }
+
+  const toneMap: Record<
+    MicroEducationItem["tone"],
+    { backgroundColor: string; color: string; borderColor: string }
+  > = {
+    blue: {
+      backgroundColor: "#01579B",
+      color: "#FFFFFF",
+      borderColor: "rgba(255,255,255,0.18)",
+    },
+    orange: {
+      backgroundColor: "#E67E22",
+      color: "#FFFFFF",
+      borderColor: "rgba(255,255,255,0.18)",
+    },
+    green: {
+      backgroundColor: "#0D9488",
+      color: "#FFFFFF",
+      borderColor: "rgba(255,255,255,0.18)",
+    },
+    amber: {
+      backgroundColor: "#FFB300",
+      color: "#1F2937",
+      borderColor: "rgba(31,41,55,0.12)",
+    },
+    violet: {
+      backgroundColor: "#6D28D9",
+      color: "#FFFFFF",
+      borderColor: "rgba(255,255,255,0.18)",
+    },
+    teal: {
+      backgroundColor: "#0F766E",
+      color: "#FFFFFF",
+      borderColor: "rgba(255,255,255,0.18)",
+    },
+  };
+
+  return toneMap[card.tone];
+}
+
+function getMicroCardHref(card: MicroEducationItem): Route {
+  const categoryId = card.categoryId ?? card.category?.id;
+
+  if (!categoryId) {
+    return "/dashboard?view=microcards" as Route;
+  }
+
+  return `/dashboard?view=microcards&categoryId=${encodeURIComponent(categoryId)}&cardId=${encodeURIComponent(card.id)}` as Route;
+}
+
 function ResourcesPage() {
   const [resources, setResources] = useState<ContentResourceItem[]>([]);
   const [microCards, setMicroCards] = useState<MicroEducationItem[]>([]);
@@ -105,18 +169,6 @@ function ResourcesPage() {
   return (
     <div className="px-2 pb-5 pt-2 sm:px-4 sm:pb-8 sm:pt-4">
       <div className="mx-auto w-full max-w-[1184px] space-y-4">
-        <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
-          >
-            <IconChevronLeft size={14} />
-            Learn & Resources
-          </Link>
-          <Link href="/dashboard" className="text-xs font-medium text-[#7b8798]">
-            Home
-          </Link>
-        </div>
 
         <section className="rounded-[22px] border border-[#dce5f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
           <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
@@ -130,14 +182,8 @@ function ResourcesPage() {
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
-              href="/dashboard?view=microeducation"
-              className="inline-flex h-10 items-center rounded-full bg-[#0f5d9f] px-5 text-xs font-bold text-white"
-            >
-              Open micro-education
-            </Link>
-            <Link
               href="/dashboard?view=microcards"
-              className="inline-flex h-10 items-center rounded-full border border-[#d7e1ee] px-5 text-xs font-semibold text-[#334155]"
+              className="inline-flex h-10 items-center rounded-full border border-[#d7e1ee] px-5 text-xs font-semibold text-[#FFFFFF]  bg-[#0f5d9f]"
             >
               Browse micro-cards
             </Link>
@@ -226,20 +272,30 @@ function ResourcesPage() {
 
             <div className="mt-4 space-y-3">
               {microCards.length > 0 ? (
-                microCards.map((card) => (
-                  <article
-                    key={card.id}
-                    className="rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] p-4"
-                  >
-                    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                      {card.tag}
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-[#1f2a3a]">{card.title}</p>
-                    <p className="mt-1 text-[11px] leading-[1.55] text-[#60728a]">
-                      {card.summary}
-                    </p>
-                  </article>
-                ))
+                microCards.map((card) => {
+                  const surface = getMicroCardSurface(card);
+
+                  return (
+                    <Link
+                      key={card.id}
+                      href={getMicroCardHref(card)}
+                      className="block rounded-[18px] border p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)]"
+                      style={{
+                        backgroundColor: surface.backgroundColor,
+                        color: surface.color,
+                        borderColor: surface.borderColor,
+                      }}
+                    >
+                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] opacity-80">
+                        {card.category?.name || card.tag}
+                      </p>
+                      <p className="mt-1 text-sm font-bold">{card.title}</p>
+                      <p className="mt-1 text-[11px] leading-[1.55] opacity-85">
+                        {card.summary}
+                      </p>
+                    </Link>
+                  );
+                })
               ) : (
                 <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] p-4 text-[11px] text-[#60728a]">
                   Micro-education content will appear here when published.
@@ -248,10 +304,10 @@ function ResourcesPage() {
             </div>
 
             <Link
-              href="/dashboard?view=microeducation"
+              href="/dashboard?view=microcards"
               className="mt-4 inline-flex h-10 items-center rounded-full border border-[#d7e1ee] px-5 text-xs font-semibold text-[#334155]"
             >
-              Open all learning content
+              Browse micro-card categories
               <IconArrowRight size={13} className="ml-1" />
             </Link>
           </aside>
@@ -1272,6 +1328,7 @@ function LocalIntelligencePage() {
 }
 
 function SmartDiallerPage() {
+  const router = useRouter();
   const { profile } = useSafeSpeakProfile();
   const [selectedContactId, setSelectedContactId] =
     useState<SmartDialerContactId>("respect");
@@ -1298,13 +1355,14 @@ function SmartDiallerPage() {
     <div className="px-2 pb-5 pt-2 sm:px-4 sm:pb-8 sm:pt-4">
       <div className="mx-auto w-full max-w-[1184px] space-y-4">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937] hover:underline"
           >
             <IconChevronLeft size={14} />
             Smart Dialler
-          </Link>
+          </button>
           <Link href="/dashboard/explorer" className="text-xs font-medium text-[#7b8798]">
             Get Support
           </Link>

@@ -28,7 +28,7 @@ import { useTranslation } from "react-i18next";
 
 import sendIcon from "@/assets/sendIcon.svg?url";
 import { AssistantMessageRenderer } from "@/components/chat/assistant-message-renderer";
-import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+// import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
 import {
   VoiceAvatarAnimation,
@@ -3009,7 +3009,7 @@ function SafeSpeakAssistantConversationPage({
 
         <div className="mt-4 min-h-0 flex-1 flex flex-col">
           <div className="relative flex flex-1 flex-col bg-transparent px-2 pb-2 pt-2 h-full min-h-0 sm:px-3 xl:min-h-[520px]">
-            {pendingConsentRequirement ? (
+            {/* {pendingConsentRequirement ? (
               <div className="relative z-30 mb-3 max-w-[560px]">
                 <ConsentRequiredCard
                   requirement={pendingConsentRequirement}
@@ -3020,7 +3020,7 @@ function SafeSpeakAssistantConversationPage({
                   onDecline={handleDeclinePendingConsent}
                 />
               </div>
-            ) : null}
+            ) : null} */}
             <div className="relative min-h-0 flex-1 overflow-hidden">
               <div
                 data-testid="ai-conversation-chat"

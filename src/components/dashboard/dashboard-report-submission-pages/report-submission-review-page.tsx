@@ -1,6 +1,8 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -18,7 +20,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 
-import { SourceBackedQaPanel } from "@/components/dashboard/source-backed-qa-panel";
+import { ReportSubmissionFrame } from "./report-submission-frame";
 import {
   buildReportFlowHref,
   getResolvedReportFlowDraft,
@@ -218,7 +220,12 @@ const toMailHref = (email: string, destinationName: string): string => {
   return `mailto:${email}?subject=${subject}`;
 };
 
+const withTriageParam = (href: Route, fromTriage: boolean): Route =>
+  (fromTriage ? `${href}&fromTriage=1` : href) as Route;
+
 function ReportSubmissionReviewPage() {
+  const searchParams = useSearchParams();
+  const fromTriage = searchParams.get("fromTriage") === "1";
   const reportDraft = useMemo(() => getResolvedReportFlowDraft(), []);
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>([]);
   const [backendStructuredFields, setBackendStructuredFields] = useState<
@@ -227,10 +234,6 @@ function ReportSubmissionReviewPage() {
   const [currentStructuredFields, setCurrentStructuredFields] = useState<
     Record<string, unknown>
   >(reportDraft?.structuredFields ?? {});
-  const [reportStatus, setReportStatus] = useState<string>("draft");
-  const [reportRef, setReportRef] = useState<string | null>(
-    reportDraft?.reportId ?? null
-  );
   const [reportLanguage, setReportLanguage] = useState("en");
   const [reportJurisdiction, setReportJurisdiction] = useState("NSW");
   const [destinations, setDestinations] = useState<ReportDestinationPreview[]>(
@@ -256,8 +259,6 @@ function ReportSubmissionReviewPage() {
   const [statusHistoryEntries, setStatusHistoryEntries] = useState<
     StatusHistoryEntry[]
   >([]);
-  const [hasLocalOnlyTimelineContent, setHasLocalOnlyTimelineContent] =
-    useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(reportDraft?.reportId));
   const [isLoadingSubmissionPreviews, setIsLoadingSubmissionPreviews] =
     useState(false);
@@ -288,9 +289,6 @@ function ReportSubmissionReviewPage() {
 
         setTimelineEntries(localEntries);
         setExpandedEntryId(localEntries[0]?.id ?? null);
-        setHasLocalOnlyTimelineContent(
-          localEntries.some((entry) => entry.isLocalOnly)
-        );
         setIsLoading(false);
       }
 
@@ -348,13 +346,8 @@ function ReportSubmissionReviewPage() {
         );
 
         setTimelineEntries(backendEntries);
-        setHasLocalOnlyTimelineContent(false);
         setExpandedEntryId(backendEntries[0]?.id ?? null);
         setStatusHistoryEntries(buildStatusHistoryEntries(timeline));
-        setReportStatus(
-          status.current ?? status.status ?? syncedReport.status ?? "draft"
-        );
-        setReportRef(syncedReport.refNo ?? syncedReport._id);
         setReportLanguage(syncedReport.language ?? "en");
         setReportJurisdiction(syncedReport.jurisdiction ?? "NSW");
         setDestinations(destinationOptions);
@@ -417,9 +410,7 @@ function ReportSubmissionReviewPage() {
         setCurrentStructuredFields({});
         setTimelineEntries([]);
         setExpandedEntryId(null);
-        setHasLocalOnlyTimelineContent(false);
         setStatusHistoryEntries([]);
-        setReportStatus("draft");
         setDestinations([]);
         setSelectedDestinationId(null);
         setSelectedDestinationIds([]);
@@ -552,7 +543,6 @@ function ReportSubmissionReviewPage() {
     });
 
     if (!reportDraft?.reportId) {
-      setHasLocalOnlyTimelineContent(true);
       return;
     }
 
@@ -573,8 +563,6 @@ function ReportSubmissionReviewPage() {
       setTimelineEntries(
         buildStructuredTimelineEntries(savedStructuredFields, savedStructuredFields)
       );
-      setHasLocalOnlyTimelineContent(false);
-      setReportStatus(savedReport.status ?? reportStatus);
       setTimelineStatusMessage(
         trimmedValue
           ? "Timeline saved to SafeSpeak."
@@ -586,7 +574,6 @@ function ReportSubmissionReviewPage() {
         ...buildDraftFieldPatch(fieldKey, trimmedValue),
       });
     } catch (error) {
-      setHasLocalOnlyTimelineContent(true);
       setLoadError(
         error instanceof Error
           ? error.message
@@ -710,53 +697,35 @@ function ReportSubmissionReviewPage() {
     }
   };
 
-  const shareHref = buildReportFlowHref("reportsubmissionshare", {
-    reportId: reportDraft?.reportId,
-    selectedDestinationId:
-      fallbackDestination?.destinationId ?? selectedDestinationId ?? reportDraft?.selectedDestinationId,
-  });
+  const shareHref = withTriageParam(
+    buildReportFlowHref("reportsubmissionshare", {
+      reportId: reportDraft?.reportId,
+      selectedDestinationId:
+        fallbackDestination?.destinationId ??
+        selectedDestinationId ??
+        reportDraft?.selectedDestinationId,
+    }),
+    fromTriage
+  );
   const canContinueToShare =
     Boolean(fallbackDestination) &&
     !loadError &&
     !isLoading;
 
   return (
-    <div className="px-6 pb-12 pt-12">
-      <div className="mx-auto flex min-h-[1063px] w-full max-w-[1280px] flex-col bg-[#f4f7fb]">
-        <div className="flex h-[60px] w-full items-center justify-between border-b border-[#d9e2ee] px-6 py-[10px]">
-          <Link
-            href="/dashboard?view=reportsubmissionevidence"
-            className="inline-flex items-center gap-2 text-[#111827]"
-          >
-            <IconChevronLeft size={18} stroke={2} />
-            <span
-              className="inline-block h-7 whitespace-nowrap text-[18px] font-bold leading-[28px] tracking-[0]"
-              style={{ fontFamily: "Inter, sans-serif" }}
-            >
-              Timeline Builder
-            </span>
-          </Link>
-          <Link
-            href="/dashboard?view=reportsubmissionhistory"
-            aria-label="View report history"
-            className="inline-flex h-6 w-6 items-center justify-center text-[#7f91a8] transition hover:text-[#5f728a]"
-          >
-            <IconClock size={14} />
-          </Link>
-        </div>
-
-        <div className="flex flex-col gap-12 px-6 pb-12 pt-12">
-          <header className="flex min-h-[111px] flex-col items-center justify-center gap-3 px-6">
-            <h2 className="text-center text-[36px] font-bold leading-[40px] tracking-[-0.9px] text-[#0f52ba]">
-              Evidence Review
-            </h2>
-            <p className="max-w-[430px] text-center text-[12px] leading-[16px] text-[#6f7f93]">
-              If AI-assisted structuring was used, verify the timeline below
-              before continuing to the secure sharing step.
-            </p>
-          </header>
-
-          <article className="mx-auto min-h-[700px] w-full max-w-[1136px] bg-transparent">
+    <ReportSubmissionFrame
+      title="Evidence Review"
+      subtitle="If AI-assisted structuring was used, verify the timeline below before continuing to the secure sharing step."
+      step="review"
+      skipSupportStep={!fromTriage}
+      backHref={
+        fromTriage
+          ? ("/dashboard?view=reportsubmissionevidence&fromTriage=1" as Route)
+          : ("/dashboard?view=reportsubmissionevidence" as Route)
+      }
+      backLabel="Details"
+    >
+      <div className="mt-4">
             {loadError ? (
               <div className="mb-4 rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#b45353]">
                 <span className="inline-flex items-center gap-1.5">
@@ -770,24 +739,6 @@ function ReportSubmissionReviewPage() {
                 {timelineStatusMessage}
               </div>
             ) : null}
-            <div className="mb-4 flex items-center justify-between rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
-              <p className="text-[11px] font-semibold text-[#1f2a3a]">
-                Current backend status: {reportStatus}
-              </p>
-              <div className="flex items-center gap-3">
-                {isSavingTimeline ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#60728a]">
-                    <IconLoader2 size={12} className="animate-spin" />
-                    Saving timeline...
-                  </span>
-                ) : null}
-                {reportRef ? (
-                  <p className="text-[10px] text-[#8ea0b8]">
-                  SafeSpeak ref {reportRef.slice(-6)}
-                  </p>
-                ) : null}
-              </div>
-            </div>
             {statusHistoryEntries.length ? (
               <div className="mb-4 rounded-[12px] border border-[#dce5f1] bg-white px-4 py-3">
                 <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
@@ -814,26 +765,6 @@ function ReportSubmissionReviewPage() {
                 </div>
               </div>
             ) : null}
-            <div className="mb-4 rounded-[12px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3 text-[11px] leading-[1.55] text-[#60728a]">
-              Choose a police, government, or support contact from the
-              admin-managed directory. SafeSpeak will not call, email, or share
-              anything automatically; you decide whether to contact directly or
-              share the reviewed report information.
-              {hasLocalOnlyTimelineContent ? (
-                <span className="mt-2 block font-semibold text-[#9a5b12]">
-                  Some review fields are not synced to SafeSpeak yet. Save them
-                  successfully before continuing to secure sharing.
-                </span>
-              ) : null}
-            </div>
-            <SourceBackedQaPanel
-              title="Review with approved sources"
-              description="Ask a cited question before sharing. If approved sources are insufficient, SafeSpeak shows a fallback and no fake citations."
-              language={reportLanguage}
-              jurisdiction={reportJurisdiction === "NSW" ? "NSW" : "AU"}
-              defaultQuestion="What should I review before choosing a support or government contact?"
-              className="mb-4"
-            />
             <div className="mb-4 rounded-[16px] border border-[#dce5f1] bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1357,17 +1288,15 @@ function ReportSubmissionReviewPage() {
                   handleContinueToShare();
                 }}
                 aria-disabled={!canContinueToShare}
-                className="inline-flex h-[44px] w-full max-w-[392px] items-center justify-center rounded-[8px] bg-[#ff9800] px-8 text-[11px] font-bold text-white shadow-[0_8px_20px_rgba(255,152,0,0.34)]"
+                className="inline-flex h-11 w-full max-w-[392px] items-center justify-center rounded-full bg-[#ff8f00] px-8 text-xs font-bold text-white shadow-[0_10px_24px_rgba(255,143,0,0.2)] transition hover:bg-[#ec8200] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Continue to secure sharing
                 <IconChevronRight size={14} className="ml-1" />
               </Link>
             </div>
-          </article>
-        </div>
-      </div>
-    </div>
-  );
+          </div>
+        </ReportSubmissionFrame>
+      );
 }
 
 export { ReportSubmissionReviewPage };

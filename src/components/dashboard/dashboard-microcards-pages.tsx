@@ -2,6 +2,7 @@
 
 import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -665,17 +666,27 @@ function MicroCardArticle({
 }
 
 function MicroCardsPage() {
+  const router = useRouter();
   const { t } = useTranslation();
+  const searchParams = useSearchParams();
   const prefersReducedMotion = useReducedMotion();
+  const [routeCategoryId] = useState(() => searchParams.get("categoryId"));
+  const [routeCardId] = useState(() => searchParams.get("cardId"));
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
-  const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(
+    () => routeCategoryId
+  );
+  const [activeCardId, setActiveCardId] = useState<string | null>(
+    () => routeCardId
+  );
   const [categories, setCategories] = useState<MicroEducationCategory[]>([]);
   const [adminCards, setAdminCards] = useState<MicroEducationItem[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isLoadingCards, setIsLoadingCards] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const pushedHistoryRef = useRef(false);
+  const appliedRouteCategoryRef = useRef(false);
+  const appliedRouteCardRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -712,6 +723,23 @@ function MicroCardsPage() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      !routeCategoryId ||
+      appliedRouteCategoryRef.current ||
+      isLoadingCategories ||
+      categories.length === 0
+    ) {
+      return;
+    }
+
+    if (categories.some((category) => category.id === routeCategoryId)) {
+      setActiveCategoryId(routeCategoryId);
+    }
+
+    appliedRouteCategoryRef.current = true;
+  }, [categories, isLoadingCategories, routeCategoryId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -761,6 +789,24 @@ function MicroCardsPage() {
 
   const activeCard = cards.find((card) => card.id === activeCardId) ?? null;
   const activeCardDetail = activeCard ? getMicroCardDetail(activeCard) : null;
+
+  useEffect(() => {
+    if (
+      !routeCardId ||
+      appliedRouteCardRef.current ||
+      !activeCategoryId ||
+      isLoadingCards ||
+      cards.length === 0
+    ) {
+      return;
+    }
+
+    if (cards.some((card) => card.id === routeCardId)) {
+      setActiveCardId(routeCardId);
+    }
+
+    appliedRouteCardRef.current = true;
+  }, [activeCategoryId, cards, isLoadingCards, routeCardId]);
 
   const sharedTransition: Transition = prefersReducedMotion
     ? { duration: 0 }
@@ -884,17 +930,22 @@ function MicroCardsPage() {
         <div className="mx-auto w-full max-w-[1136px]">
           <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
             <Link
-              href={activeCategory ? "#" : "/dashboard"}
+              href={activeCategoryId ? "#" : "/dashboard"}
               onClick={(event) => {
-                if (activeCategory) {
+                if (activeCategoryId) {
                   event.preventDefault();
                   closeActiveCategory();
+                } else {
+                  event.preventDefault();
+                  router.back();
                 }
               }}
               className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
             >
               <IconChevronLeft size={14} />
-              {activeCategory ? t("dashboard.microcards.title") : t("dashboard.microcards.cyberBullying")}
+              {activeCategoryId
+                ? t("dashboard.microcards.title")
+                : t("dashboard.microcards.cyberBullying")}
             </Link>
             <Link
               href="/dashboard"
@@ -929,7 +980,7 @@ function MicroCardsPage() {
             </div>
 
             <div className="mt-6 flex flex-col gap-5 xl:gap-6">
-              {!activeCategory ? (
+              {!activeCategoryId ? (
                 <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
                   {filteredCategories.map((category) => (
                     <MicroCategoryCard
@@ -994,7 +1045,7 @@ function MicroCardsPage() {
                 </>
               )}
 
-              {!activeCategory && filteredCategories.length === 0 ? (
+              {!activeCategoryId && filteredCategories.length === 0 ? (
                 <article className="rounded-2xl border border-[#dce5f1] bg-white p-6 text-center">
                   <p className="text-sm font-semibold text-[#22344a]">
                     {isLoadingCategories
@@ -1016,7 +1067,7 @@ function MicroCardsPage() {
                 </article>
               ) : null}
 
-              {activeCategory && filteredCards.length === 0 ? (
+              {activeCategoryId && filteredCards.length === 0 ? (
                 <article className="rounded-2xl border border-[#dce5f1] bg-white p-6 text-center">
                   <p className="text-sm font-semibold text-[#22344a]">
                     {isLoadingCards
