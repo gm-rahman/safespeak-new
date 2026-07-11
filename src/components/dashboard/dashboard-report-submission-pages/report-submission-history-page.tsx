@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -251,6 +252,7 @@ async function runReportLifecycleAction(
 }
 
 function ReportSubmissionHistoryPage() {
+  const router = useRouter();
   const [reports, setReports] = useState<HistoryReport[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeFilter, setActiveFilter] = useState<
@@ -393,23 +395,34 @@ function ReportSubmissionHistoryPage() {
     }
   };
 
+  const handleReturnToPreviousPage = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+
+    router.push("/dashboard?view=reportsubmissionrecommendations");
+  };
+
   return (
     <div className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4">
       <div className="mx-auto w-full max-w-[1184px]">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
-          <Link
-            href="/dashboard?view=reportsubmissionrecommendations"
+          <button
+            type="button"
+            onClick={handleReturnToPreviousPage}
             className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
           >
             <IconChevronLeft size={14} />
             Your Reports
-          </Link>
-          <Link
-            href="/dashboard?view=reportsubmissionrecommendations"
+          </button>
+          <button
+            type="button"
+            onClick={handleReturnToPreviousPage}
             className="text-xs font-medium text-[#7b8798]"
           >
             Cancel
-          </Link>
+          </button>
         </div>
 
         <article className="mt-3 rounded-[20px] border border-[#dce5f1] bg-[#f7fafe] p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5">

@@ -1,12 +1,10 @@
 "use client";
 
-import type { Route } from "next";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   IconChevronLeft,
-  IconChevronRight,
   IconClock,
   IconMail,
   IconPhoneCall,
@@ -29,24 +27,6 @@ function getConversationSessionIdFromUrl() {
     new URLSearchParams(window.location.search).get("conversationSessionId") ??
     undefined
   );
-}
-
-function withConversationSessionId(
-  href: string,
-  conversationSessionId?: string | null
-): Route {
-  if (!conversationSessionId) {
-    return href as Route;
-  }
-
-  const [pathname, hash = ""] = href.split("#", 2);
-  const [basePath, queryString = ""] = pathname.split("?", 2);
-  const params = new URLSearchParams(queryString);
-
-  params.set("conversationSessionId", conversationSessionId);
-
-  const nextHref = `${basePath}?${params.toString()}`;
-  return (hash ? `${nextHref}#${hash}` : nextHref) as Route;
 }
 
 const toTelHref = (phone: string): string => {
@@ -133,8 +113,6 @@ function ReportSubmissionRecommendationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadNotice, setLoadNotice] = useState<string | null>(null);
-  const [resolvedConversationSessionId, setResolvedConversationSessionId] =
-    useState<string | null>(null);
   const [serverFallbackUsed, setServerFallbackUsed] = useState(false);
   const {
     pendingConsentRequirement,
@@ -148,8 +126,6 @@ function ReportSubmissionRecommendationsPage() {
     const conversationSessionId =
       getConversationSessionIdFromUrl() ??
       getAssistantTriageSource()?.conversationSessionId;
-
-    setResolvedConversationSessionId(conversationSessionId ?? null);
 
     if (!conversationSessionId) {
       setRecommendations([]);
@@ -247,11 +223,8 @@ function ReportSubmissionRecommendationsPage() {
         </div>
 
         <article className="mt-3 rounded-[18px] border border-[#dce5f1] bg-[#f7fafe] p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-6">
-          <p className="max-w-3xl text-sm leading-6 text-[#526B80]">
-            These recommendations are filtered by the current triage result, location, risk level, and admin-managed resources. SafeSpeak does not call, email, or send details automatically; choose an option only if you want to contact that service.
-          </p>
           {pendingConsentRequirement ? (
-            <div className="mt-4 max-w-[620px]">
+            <div className="max-w-[620px]">
               <ConsentRequiredCard
                 requirement={pendingConsentRequirement}
                 isSubmitting={isGrantingConsent || loading}
@@ -295,28 +268,12 @@ function ReportSubmissionRecommendationsPage() {
                 Loading recommendations...
               </div>
             ) : recommendations.length === 0 ? (
-              <div className="rounded-[18px] border border-[#dce5f1] bg-white px-4 py-6 text-sm text-[#607B90]">
-                No recommendation is ready yet. Return to support or triage to
-                continue this flow.
-              </div>
+              <></>
             ) : (
               recommendations.map((item) => (
                 <RecommendationCard key={item.id} item={item} />
               ))
             )}
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href={withConversationSessionId(
-                "/dashboard?view=reportsubmissiondetailedexplanations",
-                resolvedConversationSessionId
-              )}
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-[#0f5d9f] px-6 text-[12px] font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.25)] transition hover:bg-[#0b528d]"
-            >
-              Read details, rights, and evidence guidance
-              <IconChevronRight size={14} />
-            </Link>
           </div>
         </article>
       </div>

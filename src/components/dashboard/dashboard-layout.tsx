@@ -97,7 +97,6 @@ const REPORT_VIEWS: HomeView[] = [
   "reportsubmissionevidence",
   "reportsubmissionreview",
   "reportsubmissionshare",
-  "reportsubmissionsuccess",
 ];
 
 const SCAMSHIELD_VIEWS: HomeView[] = [

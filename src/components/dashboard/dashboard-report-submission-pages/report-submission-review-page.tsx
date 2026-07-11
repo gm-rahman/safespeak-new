@@ -25,6 +25,10 @@ import {
   mergeReportFlowDraft,
 } from "@/lib/report-flow";
 import {
+  getMockDestinations,
+  REPORT_SUBMISSION_MOCK_MODE,
+} from "@/lib/report-submission-mock";
+import {
   type ReportDestinationPreview,
   type ReportSubmissionPayloadPreview,
   getReport,
@@ -664,9 +668,14 @@ function ReportSubmissionReviewPage() {
     destinations.find(
       (destination) => destination.destinationId === selectedDestinationId
     ) ?? null;
+  const mockDestinations = REPORT_SUBMISSION_MOCK_MODE
+    ? getMockDestinations(reportDraft)
+    : [];
+  const fallbackDestination =
+    selectedDestination ?? destinations[0] ?? mockDestinations[0] ?? null;
 
   const handleContinueToShare = () => {
-    const destination = selectedDestination ?? destinations[0] ?? null;
+    const destination = fallbackDestination;
 
     if (destination) {
       mergeReportFlowDraft({
@@ -686,7 +695,7 @@ function ReportSubmissionReviewPage() {
           message:
             destination.missingRequiredInfo.length > 0
               ? "Review the missing details before final sharing."
-              : "Recipient reviewed. Continue to secure sharing to confirm and send.",
+              : "Recipient reviewed. Continue to confirm and send.",
           updatedAt: new Date().toISOString(),
         },
       });
@@ -704,16 +713,12 @@ function ReportSubmissionReviewPage() {
   const shareHref = buildReportFlowHref("reportsubmissionshare", {
     reportId: reportDraft?.reportId,
     selectedDestinationId:
-      selectedDestination?.destinationId ??
-      selectedDestinationId ??
-      reportDraft?.selectedDestinationId,
+      fallbackDestination?.destinationId ?? selectedDestinationId ?? reportDraft?.selectedDestinationId,
   });
   const canContinueToShare =
-    Boolean(reportDraft?.reportId) &&
-    Boolean(selectedDestination ?? destinations[0]) &&
+    Boolean(fallbackDestination) &&
     !loadError &&
-    !isLoading &&
-    !hasLocalOnlyTimelineContent;
+    !isLoading;
 
   return (
     <div className="px-6 pb-12 pt-12">

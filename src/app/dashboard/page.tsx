@@ -112,7 +112,7 @@ export default async function DashboardPage({
   } else if (view === "reportsubmissionshare") {
     homeView = "reportsubmissionshare";
   } else if (view === "reportsubmissionsuccess") {
-    homeView = "reportsubmissionsuccess";
+    homeView = "reportsubmissionshare";
   }
 
   return (

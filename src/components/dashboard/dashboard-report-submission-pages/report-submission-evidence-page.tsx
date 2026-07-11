@@ -1,30 +1,25 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import type { Route } from "next";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   IconAlertCircle,
-  IconBoltFilled,
-  IconCheck,
-  IconChevronLeft,
   IconChevronRight,
-  IconClock,
-  IconDownload,
   IconFileText,
   IconFileTypePdf,
   IconFolderFilled,
+  IconMapPin,
   IconMicrophone,
   IconPhoto,
   IconPlayerPlayFilled,
-  IconRefresh,
-  IconShieldCheck,
-  IconTrash,
   IconX,
 } from "@tabler/icons-react";
 
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
+import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import { getAssistantTriageSource } from "@/lib/assistant-triage";
 import {
   ConsentRequiredError,
   type ConsentRequirement,
@@ -33,6 +28,10 @@ import {
   getCurrentConsent,
   grantConsent,
 } from "@/lib/consent";
+import {
+  type DashboardCardFlowId,
+  getDashboardCardFlow,
+} from "@/lib/dashboard-card-flows";
 import {
   type EvidenceAuditChainEntry,
   type EvidenceHashVerification,
@@ -52,12 +51,18 @@ import {
 } from "@/lib/evidence-client";
 import { getReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
 import {
+  getMockReportId,
+  REPORT_SUBMISSION_MOCK_MODE,
+} from "@/lib/report-submission-mock";
+import {
   type ReportCreateInput,
   createReport,
   getReport,
   updateReport,
 } from "@/lib/reports-client";
 import { cn } from "@/lib/utils";
+
+import { ReportSubmissionFrame } from "./report-submission-frame";
 
 type EvidenceKind = "image" | "video" | "audio" | "document";
 
@@ -272,95 +277,6 @@ async function loadEvidenceDetailPatch(
   };
 }
 
-function EvidenceCard({
-  item,
-  onRemove,
-}: {
-  item: EvidenceItem;
-  onRemove: (id: string) => void;
-}) {
-  const icon =
-    item.kind === "image" ? (
-      <IconPhoto size={16} />
-    ) : item.kind === "video" ? (
-      <IconPlayerPlayFilled size={16} />
-    ) : item.kind === "audio" ? (
-      <IconMicrophone size={16} />
-    ) : item.name.toLowerCase().endsWith(".pdf") ? (
-      <IconFileTypePdf size={16} />
-    ) : (
-      <IconFileText size={16} />
-    );
-
-  const accent =
-    item.kind === "audio"
-      ? "bg-[#fff1e4] text-[#ff8f00]"
-      : item.kind === "video"
-        ? "bg-[#eef3ff] text-[#335fd6]"
-        : item.kind === "image"
-          ? "bg-[#eafbf1] text-[#1a8b52]"
-          : "bg-[#f3f4f6] text-[#56637a]";
-  const isDeleted = item.status === "deleted" || Boolean(item.deletedAt);
-
-  return (
-    <article className="relative rounded-[16px] border border-[#dde7f2] bg-white p-4">
-      {!isDeleted ? (
-        <button
-          type="button"
-          onClick={() => onRemove(item.id)}
-          className="absolute right-2 top-2 inline-flex h-5 w-5 items-center justify-center rounded-full text-[#a7b4c6]"
-          aria-label={`Remove ${item.name}`}
-        >
-          <IconX size={12} />
-        </button>
-      ) : null}
-      <div className="flex min-h-[132px] items-start gap-3">
-        <span
-          className={cn(
-            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-            accent
-          )}
-        >
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate pr-4 text-[11px] font-semibold text-[#1f2a3a]">
-            {item.name}
-          </p>
-          <p className="mt-1 text-[10px] text-[#8ea0b8]">{item.sizeLabel}</p>
-          <p className="mt-1 text-[10px] text-[#8ea0b8]">
-            {formatEvidenceTimestamp(item.uploadedAt)}
-          </p>
-          <p className="mt-3 font-mono text-[10px] leading-5 text-[#50627a]">
-            SHA-256 {item.sha256Hash.slice(0, 20)}...
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="inline-flex h-5 items-center rounded-full bg-[#f5f8fc] px-2.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[#66788d]">
-              {item.kind}
-            </span>
-            <span
-              className={cn(
-                "inline-flex h-5 items-center rounded-full px-2.5 text-[9px] font-bold uppercase tracking-[0.08em]",
-                isDeleted
-                  ? "bg-[#fef2f2] text-[#b42318]"
-                  : item.status === "restored"
-                    ? "bg-[#fff1e4] text-[#d97706]"
-                    : "bg-[#e8f7ee] text-[#15803d]"
-              )}
-            >
-              {isDeleted
-                ? "Deleted"
-                : item.status === "restored"
-                  ? "Re-upload needed"
-                  : "Attached"}
-            </span>
-          </div>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 function EvidenceVaultCard({
   item,
   onRemove,
@@ -566,11 +482,52 @@ function EvidenceVaultCard({
   );
 }
 
-function ReportSubmissionEvidencePage() {
+function ReportSubmissionEvidencePage({
+  initialCategory,
+  initialTopic,
+  initialMessage,
+}: {
+  initialCategory?: AssistantIncidentCategory;
+  initialTopic?: DashboardCardFlowId;
+  initialMessage?: string;
+}) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const audioInputRef = useRef<HTMLInputElement | null>(null);
   const [reportDraft, setReportDraft] = useState(() => getReportFlowDraft());
+  const fromTriage = searchParams.get("fromTriage") === "1";
+  const conversationSessionId = searchParams.get("conversationSessionId");
+  const contextFlow = useMemo(
+    () => (initialTopic ? getDashboardCardFlow(initialTopic) : null),
+    [initialTopic]
+  );
+  const assistantSource = useMemo(() => getAssistantTriageSource(), []);
+  const backHref = useMemo(() => {
+    if (!fromTriage) {
+      return undefined;
+    }
+
+    return (conversationSessionId
+      ? `/dashboard?view=reportsubmissionsupport&conversationSessionId=${conversationSessionId}`
+      : "/dashboard?view=reportsubmissionsupport") as Route;
+  }, [conversationSessionId, fromTriage]);
+  const defaultIncidentTitle =
+    reportDraft?.title ||
+    (initialCategory && contextFlow
+      ? `${contextFlow.title} incident report`
+      : "Incident report");
+  const defaultIncidentDate =
+    reportDraft?.date || new Date().toISOString().slice(0, 10);
+  const defaultIncidentLocation =
+    reportDraft?.location || assistantSource?.timeline.where || "";
+  const defaultNarrative =
+    reportDraft?.summary ||
+    initialMessage?.trim() ||
+    assistantSource?.timeline.what ||
+    "";
+  const [title, setTitle] = useState(defaultIncidentTitle);
+  const [date, setDate] = useState(defaultIncidentDate);
+  const [location, setLocation] = useState(defaultIncidentLocation);
   const [description, setDescription] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<EvidenceItem[]>([]);
@@ -601,9 +558,6 @@ function ReportSubmissionEvidencePage() {
   const [deletingEvidenceId, setDeletingEvidenceId] = useState<string | null>(
     null
   );
-  const [verificationInputs, setVerificationInputs] = useState<
-    Record<string, string>
-  >({});
 
   const mergeDraft = (
     partialDraft: Parameters<typeof mergeReportFlowDraft>[0]
@@ -614,6 +568,59 @@ function ReportSubmissionEvidencePage() {
 
     return nextDraft;
   };
+
+  useEffect(() => {
+    setDescription((currentDescription) => currentDescription || defaultNarrative);
+  }, [defaultNarrative]);
+
+  useEffect(() => {
+    const latestDraft = getReportFlowDraft();
+
+    setReportDraft(
+      mergeReportFlowDraft({
+        reportId: latestDraft?.reportId,
+        title,
+        date,
+        location,
+        summary: description,
+        structuredFields: {
+          ...(latestDraft?.structuredFields ?? {}),
+          who:
+            (latestDraft?.structuredFields?.who as string | undefined) ??
+            assistantSource?.timeline.who,
+          how:
+            (latestDraft?.structuredFields?.how as string | undefined) ??
+            assistantSource?.timeline.how,
+          witnesses:
+            (latestDraft?.structuredFields?.witnesses as string | undefined) ??
+            assistantSource?.timeline.witnesses,
+          injuries:
+            (latestDraft?.structuredFields?.injuries as string | undefined) ??
+            assistantSource?.timeline.injuries,
+          what: description,
+          when: date,
+          where: location,
+        },
+        incidentCategory: initialCategory ?? latestDraft?.incidentCategory,
+        incidentType: latestDraft?.incidentType ?? initialCategory,
+        topic: initialTopic ?? latestDraft?.topic,
+        starterPrompt: initialMessage?.trim() ?? latestDraft?.starterPrompt,
+        evidenceIds: latestDraft?.evidenceIds ?? [],
+      })
+    );
+  }, [
+    assistantSource?.timeline.how,
+    assistantSource?.timeline.injuries,
+    assistantSource?.timeline.witnesses,
+    assistantSource?.timeline.who,
+    date,
+    description,
+    initialCategory,
+    initialMessage,
+    initialTopic,
+    location,
+    title,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -651,7 +658,10 @@ function ReportSubmissionEvidencePage() {
         savedAt?: string;
       };
 
-      setDescription(parsed.description ?? "");
+      setTitle((currentTitle) => currentTitle || defaultIncidentTitle);
+      setDate((currentDate) => currentDate || defaultIncidentDate);
+      setLocation((currentLocation) => currentLocation || defaultIncidentLocation);
+      setDescription(parsed.description ?? defaultNarrative);
       setSupportMessage(parsed.supportMessage ?? "");
       setDraftSavedAt(
         parsed.savedAt
@@ -681,20 +691,17 @@ function ReportSubmissionEvidencePage() {
     } catch {
       window.localStorage.removeItem(DRAFT_STORAGE_KEY);
     }
-  }, []);
-
-  useEffect(() => {
-    if (reportDraft?.summary) {
-      setDescription(
-        (currentDescription) => currentDescription || reportDraft.summary
-      );
-    }
-  }, [reportDraft?.summary]);
+  }, [
+    defaultIncidentDate,
+    defaultIncidentLocation,
+    defaultIncidentTitle,
+    defaultNarrative,
+  ]);
 
   useEffect(() => {
     const reportId = reportDraft?.reportId;
 
-    if (!reportId) {
+    if (!reportId || REPORT_SUBMISSION_MOCK_MODE) {
       return;
     }
 
@@ -726,6 +733,15 @@ function ReportSubmissionEvidencePage() {
 
         setDescription(
           (currentDescription) => currentDescription || nextDescription
+        );
+        setTitle((currentTitle) => currentTitle || reportDraft?.title || defaultIncidentTitle);
+        setDate((currentDate) => currentDate || reportDraft?.date || defaultIncidentDate);
+        setLocation(
+          (currentLocation) =>
+            currentLocation ||
+            reportDraft?.location ||
+            (typeof structuredFields.where === "string" ? structuredFields.where : "") ||
+            defaultIncidentLocation
         );
         setSupportMessage(
           (currentSupportMessage) => currentSupportMessage || nextSupportMessage
@@ -790,7 +806,16 @@ function ReportSubmissionEvidencePage() {
     return () => {
       isActive = false;
     };
-  }, [reportDraft?.reportId]);
+  }, [
+    defaultIncidentDate,
+    defaultIncidentLocation,
+    defaultIncidentTitle,
+    reportDraft?.date,
+    reportDraft?.location,
+    reportDraft?.reportId,
+    reportDraft?.summary,
+    reportDraft?.title,
+  ]);
 
   const buildReportPayload = (
     nextEvidenceItems = attachedFiles
@@ -802,22 +827,25 @@ function ReportSubmissionEvidencePage() {
     const narrative =
       description.trim() ||
       reportDraft?.summary ||
-      supportMessage.trim() ||
-      "Evidence draft";
+      "Incident report draft";
 
     return {
       language: "en",
       jurisdiction: "NSW",
-      context: reportDraft?.title || "SafeSpeak incident report",
+      context: title.trim() || reportDraft?.title || "SafeSpeak incident report",
       originalNarrative: narrative,
       incidentType:
-        reportDraft?.incidentType ?? reportDraft?.incidentCategory ?? undefined,
+        reportDraft?.incidentType ??
+        initialCategory ??
+        reportDraft?.incidentCategory ??
+        undefined,
       structuredFields: {
         ...existingStructuredFields,
+        incidentTitle: title.trim() || undefined,
         what: narrative,
-        when: reportDraft?.date || (existingStructuredFields.when as string),
+        when: date || (existingStructuredFields.when as string),
         where:
-          reportDraft?.location || (existingStructuredFields.where as string),
+          location || (existingStructuredFields.where as string),
         supportMessage: supportMessage.trim() || undefined,
         evidenceItems: activeEvidenceItems.map((item) => ({
           evidenceId: item.backendEvidenceId,
@@ -847,9 +875,9 @@ function ReportSubmissionEvidencePage() {
       .map((item) => item.backendEvidenceId)
       .filter((item): item is string => Boolean(item));
     const nextDraft: Parameters<typeof mergeReportFlowDraft>[0] = {
-      title: reportDraft?.title || payload.context || "",
-      date: reportDraft?.date || "",
-      location: reportDraft?.location || "",
+      title: title.trim() || payload.context || "",
+      date,
+      location,
       summary: payload.originalNarrative ?? "",
       structuredFields: payload.structuredFields,
       incidentType:
@@ -878,6 +906,14 @@ function ReportSubmissionEvidencePage() {
     setEvidenceError(null);
 
     try {
+      if (REPORT_SUBMISSION_MOCK_MODE) {
+        return mergeCurrentReportDraft(nextEvidenceItems, {
+          _id: getMockReportId(reportDraft),
+          incidentType:
+            reportDraft?.incidentType ?? initialCategory ?? undefined,
+        });
+      }
+
       const payload = buildReportPayload(nextEvidenceItems);
       const savedReport = reportDraft?.reportId
         ? await updateReport(reportDraft.reportId, payload)
@@ -916,6 +952,56 @@ function ReportSubmissionEvidencePage() {
     setIsUploadingEvidence(true);
 
     try {
+      if (REPORT_SUBMISSION_MOCK_MODE) {
+        const nextItems: EvidenceItem[] = await Promise.all(
+          fileList.map(async (file) => {
+            const uploadedAt = new Date().toISOString();
+
+            return {
+              id: `${file.name}-${file.lastModified}-${Math.random()
+                .toString(36)
+                .slice(2, 8)}`,
+              backendEvidenceId: undefined,
+              name: file.name,
+              sizeLabel: formatFileSize(file.size),
+              kind: inferEvidenceKind(file),
+              sha256Hash: await computeSha256Hash(file),
+              uploadedAt,
+              mimeType: file.type || "application/octet-stream",
+              sizeBytes: file.size,
+              previewUrl:
+                file.type.startsWith("image/") || file.type.startsWith("video/")
+                  ? URL.createObjectURL(file)
+                  : undefined,
+              status: "attached" as const,
+            };
+          })
+        );
+
+        setAttachedFiles((currentItems) => [...currentItems, ...nextItems]);
+        setAuditTrail((currentTrail) => [
+          ...currentTrail,
+          ...nextItems.map((item) =>
+            createAuditEntry(
+              "attached",
+              `${item.name} attached locally in mock mode.`
+            )
+          ),
+        ]);
+        mergeDraft({
+          reportId: getMockReportId(reportDraft),
+          evidenceIds: [
+            ...new Set([
+              ...(reportDraft?.evidenceIds ?? []),
+              ...nextItems.map((item) => item.id),
+            ]),
+          ],
+        });
+        setPendingFiles([]);
+        setPendingConsentRequirement(null);
+        return;
+      }
+
       const currentConsent = await getCurrentConsent();
       const allowCloudSync =
         options?.forceCloudSync || currentConsent.cloud_sync;
@@ -1118,13 +1204,6 @@ function ReportSubmissionEvidencePage() {
     }
   };
 
-  const updateVerificationInput = (itemId: string, value: string) => {
-    setVerificationInputs((currentInputs) => ({
-      ...currentInputs,
-      [itemId]: value,
-    }));
-  };
-
   const handleVerifyEvidenceHash = async (item: EvidenceItem) => {
     if (!item.backendEvidenceId) {
       setEvidenceError(
@@ -1133,9 +1212,7 @@ function ReportSubmissionEvidencePage() {
       return;
     }
 
-    const providedHash = (
-      verificationInputs[item.id] ?? item.sha256Hash
-    ).trim();
+    const providedHash = item.sha256Hash.trim();
 
     if (!/^[a-f\d]{64}$/i.test(providedHash)) {
       setEvidenceError(
@@ -1313,7 +1390,10 @@ function ReportSubmissionEvidencePage() {
   const handleContinue = async () => {
     mergeCurrentReportDraft();
 
-    if (attachedFiles.some((item) => !item.backendEvidenceId)) {
+    if (
+      !REPORT_SUBMISSION_MOCK_MODE &&
+      attachedFiles.some((item) => !item.backendEvidenceId)
+    ) {
       setEvidenceError(
         "Upload all evidence to the SafeSpeak vault before continuing to review."
       );
@@ -1327,10 +1407,14 @@ function ReportSubmissionEvidencePage() {
       return;
     }
 
-    try {
+    if (!REPORT_SUBMISSION_MOCK_MODE) {
+      try {
+        await persistReportDraftToBackend();
+      } catch {
+        return;
+      }
+    } else {
       await persistReportDraftToBackend();
-    } catch {
-      return;
     }
 
     router.push("/dashboard?view=reportsubmissionreview");
@@ -1443,294 +1527,299 @@ function ReportSubmissionEvidencePage() {
     isTranscribingEvidenceId === item.id;
 
   return (
-    <div className="px-2 pb-8 pt-2 sm:px-4 sm:pb-10 sm:pt-4">
-      <div className="mx-auto flex w-full max-w-[1184px] flex-col">
-        <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
-          <Link
-            href="/dashboard?view=reportsubmissiondetails"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-[#1f2937]"
-          >
-            <IconChevronLeft size={14} />
-            Report Submission
-          </Link>
-          <Link
-            href="/dashboard?view=reportsubmissionhistory"
-            aria-label="View report history"
-            className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[#9ba8bb] transition hover:text-[#74879e]"
-          >
-            <IconClock size={12} />
-          </Link>
-        </div>
-
-        <main className="mx-auto flex w-full max-w-[1136px] flex-col gap-8 px-0 pt-4">
-          <section className="rounded-[24px] border border-[#E2E8F0] bg-white p-5 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05)] sm:p-6">
-            {evidenceError ? (
-              <div className="mb-4 rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[12px] text-[#b45353]">
-                <span className="inline-flex items-center gap-1.5">
-                  <IconAlertCircle size={13} />
-                  {evidenceError}
-                </span>
-              </div>
-            ) : null}
-            {restoredDraftNotice ? (
-              <div className="mb-4 rounded-[12px] border border-[#fdeccf] bg-[#fff9ef] px-3 py-2 text-[12px] text-[#9a5b12]">
-                <span className="inline-flex items-center gap-1.5">
-                  <IconAlertCircle size={13} />
-                  {restoredDraftNotice}
-                </span>
-              </div>
-            ) : null}
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="inline-flex items-center gap-2 text-lg font-semibold leading-7 text-[#1E293B]">
-                <span className="inline-flex h-7 w-7 items-center justify-center text-[#FF8F00]">
-                  <IconBoltFilled size={18} />
-                </span>
-                Incident Description
-              </h2>
-              <span className="text-xs font-semibold uppercase tracking-[0.05em] text-[#94A3B8]">
-                Required
+    <ReportSubmissionFrame
+      title="Incident Details"
+      subtitle="Write the story once, add any supporting files, and review everything before you choose where to send it."
+      step="details"
+      backHref={backHref}
+      backLabel={fromTriage ? "Support" : "Report Submission"}
+    >
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1.7fr_1fr]">
+        <section className="rounded-[20px] border border-[#dbe5f1] bg-[#fbfdff] p-5">
+          {evidenceError ? (
+            <div className="mb-4 rounded-[14px] border border-[#fde2e2] bg-[#fff5f5] px-4 py-3 text-[12px] text-[#b45353]">
+              <span className="inline-flex items-center gap-1.5">
+                <IconAlertCircle size={13} />
+                {evidenceError}
               </span>
             </div>
-
-            <div className="relative mt-4">
-              <textarea
-                rows={5}
-                placeholder="Describe the incident details thoroughly. Include time, location, and involved parties..."
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                className="min-h-[160px] w-full resize-none rounded-[16px] border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-4 pr-32 text-base leading-[1.62] text-[#1E293B] outline-none placeholder:text-[#94A3B8]"
-              />
-              <button
-                type="button"
-                onClick={() => audioInputRef.current?.click()}
-                className="absolute bottom-4 right-4 inline-flex h-[42px] items-center gap-2 rounded-[8px] border border-[#E2E8F0] bg-white px-3 text-sm font-medium text-[#475569] shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:bg-[#F8FAFC]"
-              >
-                <IconMicrophone size={16} />
-                Dictate
-              </button>
-            </div>
-          </section>
-
-          <section className="flex flex-col gap-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-2xl font-extrabold leading-8 text-[#0F172A]">
-                  Attached Files
-                </h2>
-                <p className="mt-1 text-base leading-6 text-[#64748B]">
-                  Upload evidence to support your report.
-                </p>
-              </div>
-              <span className="inline-flex h-[30px] w-fit items-center rounded-full border border-[#FED7AA] bg-[#FFEDD5] px-3 text-sm font-semibold text-[#C2410C]">
-                {readyFileCount} Files Ready
+          ) : null}
+          {restoredDraftNotice ? (
+            <div className="mb-4 rounded-[14px] border border-[#fdeccf] bg-[#fff9ef] px-4 py-3 text-[12px] text-[#9a5b12]">
+              <span className="inline-flex items-center gap-1.5">
+                <IconAlertCircle size={13} />
+                {restoredDraftNotice}
               </span>
             </div>
-
-            {primaryEvidenceItems.length ? (
-              <div className="grid gap-6 lg:grid-cols-3">
-                {primaryEvidenceItems.map((item) => (
-                  <EvidenceVaultCard
-                    key={item.id}
-                    item={item}
-                    onRemove={handleDeleteEvidence}
-                    onRefresh={refreshEvidenceDetails}
-                    onVerify={handleVerifyEvidenceHash}
-                    onTranscribe={handleTranscribeEvidence}
-                    isBusy={isEvidenceItemBusy(item)}
-                  />
-                ))}
-              </div>
-            ) : null}
-
-            <div className="grid gap-6 lg:grid-cols-2">
-              {secondaryEvidenceItems.map((item) => (
-                <EvidenceVaultCard
-                  key={item.id}
-                  item={item}
-                  onRemove={handleDeleteEvidence}
-                  onRefresh={refreshEvidenceDetails}
-                  onVerify={handleVerifyEvidenceHash}
-                  onTranscribe={handleTranscribeEvidence}
-                  isBusy={isEvidenceItemBusy(item)}
-                />
-              ))}
-
-              <article
-                role="button"
-                tabIndex={0}
-                onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    fileInputRef.current?.click();
-                  }
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  handleFilesSelected(event.dataTransfer.files);
-                }}
-                className="grid min-h-[232px] cursor-pointer place-items-center rounded-[24px] border-2 border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-6 py-10 text-center transition hover:border-[#FDBA74] hover:bg-white"
-              >
-                <div>
-                  <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-white text-[#FF8F00] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                    <IconFolderFilled size={26} />
-                  </span>
-                  <h3 className="mt-4 text-sm font-semibold text-[#334155]">
-                    Drag & Drop or Click
-                  </h3>
-                  <p className="mx-auto mt-1 max-w-[220px] text-xs leading-4 text-[#64748B]">
-                    Support for images, video, audio, and PDF documents.
-                  </p>
-                </div>
-              </article>
-            </div>
-          </section>
-
-          <section className="flex min-h-[66px] items-center gap-4 rounded-full border border-[#F1F5F9] bg-white py-2 pl-6 pr-2 shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-4px_rgba(0,0,0,0.1)]">
-            <input
-              type="text"
-              placeholder="Type a message to support..."
-              value={supportMessage}
-              onChange={(event) => setSupportMessage(event.target.value)}
-              className="min-w-0 flex-1 bg-transparent px-3 py-2 text-base text-[#1E293B] outline-none placeholder:text-[#94A3B8]"
-            />
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={() => audioInputRef.current?.click()}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#94A3B8] transition hover:bg-[#F8FAFC]"
-                aria-label="Dictate support message"
-              >
-                <IconMicrophone size={20} />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void saveDraft();
-                }}
-                disabled={isPersistingReport}
-                className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#FF8F00] text-white shadow-[0_0_15px_rgba(251,140,0,0.3)]"
-                aria-label="Send support message"
-              >
-                <IconChevronRight size={22} />
-              </button>
-            </div>
-          </section>
-
-          <footer className="border-t border-[#E2E8F0] bg-white/80 px-4 py-4 backdrop-blur-md sm:px-10 lg:px-[208px]">
-            <div className="mx-auto flex max-w-[720px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                onClick={() => {
-                  void saveDraft();
-                }}
-                disabled={isPersistingReport}
-                className="inline-flex h-9 items-center justify-center rounded-[8px] px-4 text-sm font-medium text-[#64748B] transition hover:bg-[#F8FAFC]"
-              >
-                {isPersistingReport ? "Saving..." : "Save as Draft"}
-              </button>
-              {draftSavedAt ? (
-                <span className="text-center text-xs text-[#94A3B8]">
-                  Draft saved at {draftSavedAt}
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => {
-                  void handleContinue();
-                }}
-                disabled={isPersistingReport || isUploadingEvidence}
-                className="inline-flex h-12 min-w-[167px] items-center justify-center rounded-[16px] bg-[#FF8F00] px-12 text-base font-semibold text-white shadow-[0_10px_15px_-3px_rgba(249,115,22,0.3),0_4px_6px_-4px_rgba(249,115,22,0.3)]"
-              >
-                {isPersistingReport ? "Saving..." : "Continue"}
-              </button>
-            </div>
-          </footer>
-
-          {pendingConsentRequirement ? (
-            <ConsentRequiredCard
-              requirement={pendingConsentRequirement as ConsentRequirement}
-              isSubmitting={isGrantingConsent}
-              onAllow={() => {
-                void (async () => {
-                  const requirement = pendingConsentRequirement;
-
-                  if (!requirement) {
-                    return;
-                  }
-
-                  setIsGrantingConsent(true);
-
-                  try {
-                    await grantConsent(
-                      getConsentGrantFlags(requirement),
-                      requirement.source
-                    );
-
-                    if (pendingFiles.length) {
-                      await attachFiles(pendingFiles, {
-                        forceCloudSync: true,
-                      });
-                    } else if (pendingTranscriptionItem) {
-                      await handleTranscribeEvidence(pendingTranscriptionItem);
-                    } else {
-                      await persistReportDraftToBackend();
-                    }
-
-                    setPendingFiles([]);
-                    setPendingTranscriptionItem(null);
-                    setPendingConsentRequirement(null);
-                  } catch (error) {
-                    setEvidenceError(
-                      error instanceof Error
-                        ? error.message
-                        : "Consent could not be saved."
-                    );
-                  } finally {
-                    setPendingTranscriptionItem(null);
-                    setIsGrantingConsent(false);
-                  }
-                })();
-              }}
-              onDecline={() => {
-                setPendingFiles([]);
-                setEvidenceError(
-                  "Evidence was not attached. SafeSpeak needs cloud-sync consent to upload files to the evidence vault."
-                );
-                setPendingTranscriptionItem(null);
-                setPendingConsentRequirement(null);
-              }}
-            />
           ) : null}
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
-            className="hidden"
-            onChange={(event) => {
-              handleFilesSelected(event.target.files);
-              event.target.value = "";
-            }}
-          />
-          <input
-            ref={audioInputRef}
-            type="file"
-            accept="audio/*"
-            capture="user"
-            className="hidden"
-            onChange={(event) => {
-              handleFilesSelected(event.target.files);
-              event.target.value = "";
-            }}
-          />
-        </main>
+          {contextFlow ? (
+            <div className="mb-4 rounded-[16px] border border-[#dbe5f1] bg-white px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Preselected context
+              </p>
+              <p className="mt-1 text-sm font-semibold text-[#1f2a3a]">
+                {contextFlow.title}
+              </p>
+            </div>
+          ) : null}
+
+          <div className="space-y-4">
+            <div>
+              <label
+                htmlFor="incident-title"
+                className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]"
+              >
+                Incident title
+              </label>
+              <input
+                id="incident-title"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className="mt-1 h-11 w-full rounded-2xl border border-[#d7e1ee] bg-white px-4 text-sm font-semibold text-[#1f2a3a] outline-none"
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="incident-date"
+                  className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]"
+                >
+                  Date
+                </label>
+                <input
+                  id="incident-date"
+                  type="date"
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                  className="mt-1 h-11 w-full rounded-2xl border border-[#d7e1ee] bg-white px-4 text-sm text-[#1f2a3a] outline-none"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="incident-location"
+                  className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]"
+                >
+                  Location
+                </label>
+                <div className="relative mt-1">
+                  <IconMapPin
+                    size={16}
+                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#90a1b6]"
+                  />
+                  <input
+                    id="incident-location"
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-[#d7e1ee] bg-white pl-10 pr-4 text-sm text-[#1f2a3a] outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="incident-summary"
+                className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]"
+              >
+                What happened
+              </label>
+              <div className="mt-1 rounded-[22px] border border-[#d7e1ee] bg-white p-3">
+                <textarea
+                  id="incident-summary"
+                  rows={7}
+                  placeholder="Describe what happened in your own words. Include who was involved, where it happened, and anything you want the receiving team to understand."
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  className="min-h-[180px] w-full resize-none bg-transparent text-sm leading-7 text-[#1f2a3a] outline-none placeholder:text-[#94A3B8]"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside />
       </div>
-    </div>
+
+      <section className="mt-4 rounded-[20px] border border-[#dbe5f1] bg-white p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+              Evidence
+            </p>
+            <h3 className="mt-1 text-2xl font-bold text-[#0f172a]">
+              Attach supporting files
+            </h3>
+            <p className="mt-1 text-sm text-[#64748B]">
+              Add screenshots, documents, audio, video, or photos if you want them included with the report.
+            </p>
+          </div>
+          <span className="inline-flex h-8 w-fit items-center rounded-full border border-[#FED7AA] bg-[#FFEDD5] px-3 text-sm font-semibold text-[#C2410C]">
+            {readyFileCount} file{readyFileCount === 1 ? "" : "s"} ready
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          {primaryEvidenceItems.map((item) => (
+            <EvidenceVaultCard
+              key={item.id}
+              item={item}
+              onRemove={handleDeleteEvidence}
+              onRefresh={refreshEvidenceDetails}
+              onVerify={handleVerifyEvidenceHash}
+              onTranscribe={handleTranscribeEvidence}
+              isBusy={isEvidenceItemBusy(item)}
+            />
+          ))}
+
+          {secondaryEvidenceItems.map((item) => (
+            <EvidenceVaultCard
+              key={item.id}
+              item={item}
+              onRemove={handleDeleteEvidence}
+              onRefresh={refreshEvidenceDetails}
+              onVerify={handleVerifyEvidenceHash}
+              onTranscribe={handleTranscribeEvidence}
+              isBusy={isEvidenceItemBusy(item)}
+            />
+          ))}
+
+          <article
+            role="button"
+            tabIndex={0}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              void handleFilesSelected(event.dataTransfer.files);
+            }}
+            className="grid min-h-[232px] cursor-pointer place-items-center rounded-[24px] border-2 border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-6 py-10 text-center transition hover:border-[#FDBA74] hover:bg-white"
+          >
+            <div>
+              <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-white text-[#FF8F00] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                <IconFolderFilled size={26} />
+              </span>
+              <h3 className="mt-4 text-sm font-semibold text-[#334155]">
+                Drag, drop, or click to upload
+              </h3>
+              <p className="mx-auto mt-1 max-w-[240px] text-xs leading-5 text-[#64748B]">
+                Images, video, audio, PDF, DOC, DOCX, and TXT files are supported.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#e2e8f0] pt-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              void saveDraft();
+            }}
+            disabled={isPersistingReport}
+            className="inline-flex h-10 items-center justify-center rounded-full border border-[#d7e1ee] px-5 text-sm font-semibold text-[#475569]"
+          >
+            {isPersistingReport ? "Saving..." : "Save draft"}
+          </button>
+          {draftSavedAt ? (
+            <span className="text-xs text-[#94A3B8]">
+              Draft saved at {draftSavedAt}
+            </span>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            void handleContinue();
+          }}
+          disabled={isPersistingReport || isUploadingEvidence}
+          className="inline-flex h-11 items-center rounded-full bg-[#0f5d9f] px-6 text-sm font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.2)]"
+        >
+          {isPersistingReport ? "Saving..." : "Continue to Review"}
+          <IconChevronRight size={16} className="ml-1" />
+        </button>
+      </div>
+
+      {pendingConsentRequirement ? (
+        <div className="mt-4">
+          <ConsentRequiredCard
+            requirement={pendingConsentRequirement as ConsentRequirement}
+            isSubmitting={isGrantingConsent}
+            onAllow={() => {
+              void (async () => {
+                const requirement = pendingConsentRequirement;
+
+                if (!requirement) {
+                  return;
+                }
+
+                setIsGrantingConsent(true);
+
+                try {
+                  await grantConsent(
+                    getConsentGrantFlags(requirement),
+                    requirement.source
+                  );
+
+                  if (pendingFiles.length) {
+                    await attachFiles(pendingFiles, {
+                      forceCloudSync: true,
+                    });
+                  } else if (pendingTranscriptionItem) {
+                    await handleTranscribeEvidence(pendingTranscriptionItem);
+                  } else {
+                    await persistReportDraftToBackend();
+                  }
+
+                  setPendingFiles([]);
+                  setPendingTranscriptionItem(null);
+                  setPendingConsentRequirement(null);
+                } catch (error) {
+                  setEvidenceError(
+                    error instanceof Error
+                      ? error.message
+                      : "Consent could not be saved."
+                  );
+                } finally {
+                  setPendingTranscriptionItem(null);
+                  setIsGrantingConsent(false);
+                }
+              })();
+            }}
+            onDecline={() => {
+              setPendingFiles([]);
+              setEvidenceError(
+                "Evidence was not attached. SafeSpeak needs cloud-sync consent to upload files to the evidence vault."
+              );
+              setPendingTranscriptionItem(null);
+              setPendingConsentRequirement(null);
+            }}
+          />
+        </div>
+      ) : null}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
+        className="hidden"
+        onChange={(event) => {
+          void handleFilesSelected(event.target.files);
+          event.target.value = "";
+        }}
+      />
+    </ReportSubmissionFrame>
   );
 }
 

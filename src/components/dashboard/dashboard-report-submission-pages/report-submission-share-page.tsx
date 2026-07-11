@@ -6,10 +6,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   IconAlertCircle,
   IconArrowRight,
+  IconBoltFilled,
   IconCheck,
   IconChevronLeft,
   IconClock,
-  IconInfoCircleFilled,
+  IconFolderFilled,
   IconLoader2,
   IconMail,
   IconPhone,
@@ -32,6 +33,14 @@ import {
   mergeReportFlowDraft,
 } from "@/lib/report-flow";
 import {
+  createMockSubmission,
+  getMockDestinations,
+  getMockReportId,
+  getMockReportRef,
+  getMockReportStatus,
+  REPORT_SUBMISSION_MOCK_MODE,
+} from "@/lib/report-submission-mock";
+import {
   type ReportDestinationPreview,
   type ReportSubmissionRecord,
   getReport,
@@ -40,17 +49,6 @@ import {
   listReportSubmissions,
   submitReportToDestination,
 } from "@/lib/reports-client";
-
-function getSummaryText(
-  draftSummary?: string,
-  destination?: ReportDestinationPreview | null
-): string {
-  return (
-    draftSummary?.trim() ||
-    destination?.payloadPreview?.summary?.trim() ||
-    "Report summary pending final confirmation"
-  );
-}
 
 function getRequiredInfoLabel(match: AuthorityMatch | null): string {
   if (!match) {
@@ -112,6 +110,30 @@ function getDeliveryReadinessCopy(match: AuthorityMatch | null): string | null {
   return "This destination has an automated delivery channel configured. SafeSpeak will only send after your consent and final confirmation.";
 }
 
+function getPreparedStatusLabel(status?: PreparedSubmissionStatus): string {
+  if (status === "ready_to_share") {
+    return "Ready for secure sharing";
+  }
+
+  if (status === "config_missing") {
+    return "Not sent - partner setup needed";
+  }
+
+  if (status === "requires_manual_action") {
+    return "Prepared for manual follow-up";
+  }
+
+  if (status === "failed") {
+    return "Delivery failed";
+  }
+
+  if (status === "submitted" || status === "acknowledged") {
+    return "Shared through SafeSpeak";
+  }
+
+  return "Prepared";
+}
+
 function getShareNotice(submission: ReportSubmissionRecord): string {
   if (submission.actuallySent || isActualDeliveryStatus(submission.status)) {
     return submission.externalReference
@@ -166,6 +188,45 @@ function ReportSubmissionSharePage() {
   const [shareNotes, setShareNotes] = useState(reportDraft?.shareNotes ?? "");
 
   useEffect(() => {
+    if (REPORT_SUBMISSION_MOCK_MODE) {
+      const mockDestinations = getMockDestinations(reportDraft);
+      const selectedMockDestination =
+        mockDestinations.find(
+          (destination) =>
+            destination.destinationId === reportDraft?.selectedDestinationId
+        ) ??
+        mockDestinations[0] ??
+        null;
+      const mockSubmission =
+        selectedMockDestination && reportDraft?.latestSubmissionId
+          ? createMockSubmission({
+              draft: reportDraft,
+              destination: selectedMockDestination,
+              anonymityMode: reportDraft?.shareAnonymityMode ?? "identified",
+              notes: reportDraft?.shareNotes,
+            })
+          : null;
+
+      setReportRef(getMockReportRef());
+      setReportStatus(getMockReportStatus(reportDraft));
+      setDestinationOptions(mockDestinations);
+      setLatestSubmission(mockSubmission);
+      setSelectedDestinationId(
+        reportDraft?.selectedDestinationId ??
+          selectedMockDestination?.destinationId ??
+          null
+      );
+      setShareError(null);
+      setIsLoadingDestinations(false);
+      mergeReportFlowDraft({
+        reportId: getMockReportId(reportDraft),
+        selectedDestinationId:
+          reportDraft?.selectedDestinationId ??
+          selectedMockDestination?.destinationId,
+      });
+      return;
+    }
+
     if (!reportDraft?.reportId) {
       setIsLoadingDestinations(false);
       return;
@@ -317,22 +378,65 @@ function ReportSubmissionSharePage() {
     selectedDestination?.missingRequiredInfo ??
     selectedMatch?.missingRequiredInfo ??
     [];
-  const summaryText = getSummaryText(reportDraft?.summary, selectedDestination);
   const evidenceCount =
     reportDraft?.evidenceIds?.length ??
     selectedDestination?.payloadPreview?.evidence?.length ??
     0;
-  const requiredConsentFlags =
-    selectedDestination?.requiredConsentFlags ??
-    (selectedMatch?.consentRequired ? ["report_destination_submit"] : []);
+  const alternativeMatches = authorityMatches
+    .filter((match) => match.destinationId !== selectedMatch?.destinationId)
+    .slice(0, 4);
   const canSubmit =
-    Boolean(reportDraft?.reportId) &&
+    Boolean(reportDraft?.reportId || REPORT_SUBMISSION_MOCK_MODE) &&
     Boolean(selectedDestination) &&
     !latestSubmission &&
     !missingRequiredInfo.length &&
     !isSubmitting;
 
   const submitToDestination = async (destinationId: string) => {
+    if (REPORT_SUBMISSION_MOCK_MODE) {
+      const destination = destinationOptions.find(
+        (option) => option.destinationId === destinationId
+      );
+
+      if (!destination) {
+        setShareError("This mock recipient is not available anymore.");
+        return;
+      }
+
+      const submission = createMockSubmission({
+        draft: reportDraft,
+        destination,
+        anonymityMode,
+        notes:
+          shareNotes.trim() ||
+          `Mock shared from SafeSpeak: ${destination.destinationName}`,
+      });
+
+      mergeReportFlowDraft({
+        reportId: getMockReportId(reportDraft),
+        selectedDestinationId: destination.destinationId,
+        latestSubmissionId: submission._id,
+        preparedSubmission: {
+          destinationId: destination.destinationId,
+          destinationName: destination.destinationName,
+          destinationType: destination.destinationType,
+          channel: destination.channel,
+          status: toPreparedSubmissionStatus(submission.status),
+          missingRequiredInfo: destination.missingRequiredInfo,
+          reason: destination.reason,
+          message: submission.deliveryMessage,
+          actuallySent: submission.actuallySent,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      setLatestSubmission(submission);
+      setReportStatus(submission.status);
+      setShareError(null);
+      setShareNotice(getShareNotice(submission));
+      setPendingShareDestinationId(null);
+      return;
+    }
+
     if (!reportDraft?.reportId) {
       setShareError(
         "This draft needs a backend SafeSpeak report before it can be shared through the platform."
@@ -444,7 +548,28 @@ function ReportSubmissionSharePage() {
   };
   const deliveryReadinessCopy = getDeliveryReadinessCopy(selectedMatch);
   const deliveryActionLabel = getDeliveryActionLabel(selectedMatch);
-  const successHref = buildReportFlowHref("reportsubmissionsuccess", {
+  const preparedStatusLabel = getPreparedStatusLabel(
+    latestSubmission
+      ? toPreparedSubmissionStatus(latestSubmission.status)
+      : reportDraft?.preparedSubmission?.status ?? "ready_to_share"
+  );
+  const selectedRecipientName =
+    latestSubmission?.destinationName ??
+    selectedDestination?.destinationName ??
+    selectedMatch?.destinationName ??
+    "No recipient selected";
+  const selectedRecipientMessage = latestSubmission
+    ? getShareNotice(latestSubmission)
+    : missingRequiredInfo.length
+      ? `Review recipients first. This authority still needs: ${missingRequiredInfo.join(", ")}.`
+      : reportDraft?.preparedSubmission?.message ??
+        "Recipient reviewed. Continue to secure sharing to confirm and send.";
+  const readinessBadgeLabel = latestSubmission
+    ? "Shared through SafeSpeak"
+    : selectedDestination
+      ? "Ready for secure sharing"
+      : "Awaiting recipient selection";
+  const reviewHref = buildReportFlowHref("reportsubmissionreview", {
     reportId: reportDraft?.reportId,
     selectedDestinationId:
       selectedDestination?.destinationId ??
@@ -459,12 +584,12 @@ function ReportSubmissionSharePage() {
       <div className="mx-auto flex w-full max-w-[1184px] flex-col">
         <div className="flex h-[60px] items-center justify-between border-b border-[#d9e2ee] px-6 py-[10px]">
           <Link
-            href={successHref}
+            href={reviewHref}
             className="inline-flex items-center gap-2 text-[#111827]"
           >
             <IconChevronLeft size={18} stroke={2} />
             <span className="inline-block text-[13px] font-bold leading-[20px]">
-              Secure Sharing
+              Recipient Review
             </span>
           </Link>
           <Link
@@ -551,30 +676,22 @@ function ReportSubmissionSharePage() {
           <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
             <section className="space-y-4">
               <article className="rounded-[16px] border border-[#dbe7f4] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
-                      Recommended recipient
-                    </p>
-                    <h4 className="mt-1 text-[20px] font-bold text-[#10243d]">
-                      {selectedMatch?.destinationName ??
-                        "No authority selected"}
-                    </h4>
-                  </div>
-                  {isLoadingDestinations ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe7f4] bg-[#f8fbff] px-3 py-1 text-[10px] font-semibold text-[#60728a]">
-                      <IconLoader2 size={12} className="animate-spin" />
-                      Checking admin records
-                    </span>
-                  ) : selectedMatch ? (
-                    <span className="inline-flex h-8 items-center rounded-full bg-[#0f5d9f] px-3 text-[10px] font-bold text-white">
-                      Match: {selectedMatch.confidence}%
-                    </span>
-                  ) : null}
-                </div>
-
                 {selectedMatch ? (
                   <>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#cfe0f3] bg-[#f8fbff] p-4">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+                          Primary recommendation
+                        </p>
+                        <h5 className="mt-1 text-[20px] font-bold text-[#10243d]">
+                          {selectedMatch.destinationName}
+                        </h5>
+                      </div>
+                      <span className="inline-flex h-8 items-center rounded-full bg-[#0f5d9f] px-3 text-[10px] font-bold text-white">
+                        Best match: {selectedMatch.confidence}%
+                      </span>
+                    </div>
+
                     <div className="mt-3 flex flex-wrap gap-2">
                       {selectedMatch.tags.map((tag) => (
                         <span
@@ -683,8 +800,8 @@ function ReportSubmissionSharePage() {
                   </Link>
                 </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
-                  {authorityMatches.length ? (
-                    authorityMatches.slice(0, 4).map((match) => {
+                  {alternativeMatches.length ? (
+                    alternativeMatches.map((match) => {
                       const isSelected =
                         match.destinationId === selectedMatch?.destinationId;
 
@@ -729,152 +846,67 @@ function ReportSubmissionSharePage() {
               </article>
             </section>
 
-            <section className="space-y-4">
-              <article className="rounded-[16px] border border-[#dbe7f4] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-                <div className="inline-flex items-center gap-2">
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#e8f7ef] text-[#0b8b54]">
-                    <IconInfoCircleFilled size={14} />
-                  </span>
-                  <h4 className="text-[15px] font-bold text-[#1f2a3a]">
-                    Report package
-                  </h4>
-                </div>
-                <dl className="mt-4 space-y-3">
-                  <div className="rounded-[12px] border border-[#edf2f8] bg-[#f9fbfe] px-3 py-2">
-                    <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                      Summary
-                    </dt>
-                    <dd className="mt-1 line-clamp-4 text-[11px] leading-[16px] text-[#526982]">
-                      {summaryText}
-                    </dd>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-[12px] border border-[#edf2f8] bg-[#f9fbfe] px-3 py-2">
-                      <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                        Anonymity
-                      </dt>
-                      <dd className="mt-1 text-[11px] font-semibold text-[#526982]">
-                        {anonymityMode.charAt(0).toUpperCase() +
-                          anonymityMode.slice(1)}
-                      </dd>
-                    </div>
-                    <div className="rounded-[12px] border border-[#edf2f8] bg-[#f9fbfe] px-3 py-2">
-                      <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                        Consent flags
-                      </dt>
-                      <dd className="mt-1 text-[11px] font-semibold text-[#526982]">
-                        {requiredConsentFlags.length
-                          ? requiredConsentFlags.join(", ")
-                          : "Standard sharing consent"}
-                      </dd>
-                    </div>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="rounded-[12px] border border-[#edf2f8] bg-[#f9fbfe] px-3 py-2">
-                      <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                        Sharing mode
-                      </dt>
-                      <select
-                        value={anonymityMode}
-                        onChange={(event) =>
-                          setAnonymityMode(
-                            event.target.value as
-                              | "identified"
-                              | "anonymous"
-                              | "pseudonymous"
-                          )
-                        }
-                        className="mt-1 h-9 w-full rounded-[8px] border border-[#dce5f1] bg-white px-2.5 text-[12px] font-semibold text-[#1f2a3a] outline-none"
-                      >
-                        <option value="identified">Identified</option>
-                        <option value="anonymous">Anonymous</option>
-                        <option value="pseudonymous">Pseudonymous</option>
-                      </select>
-                    </label>
-                    <label className="rounded-[12px] border border-[#edf2f8] bg-[#f9fbfe] px-3 py-2">
-                      <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                        Sharing notes
-                      </dt>
-                      <input
-                        value={shareNotes}
-                        onChange={(event) => setShareNotes(event.target.value)}
-                        placeholder="Optional routing note"
-                        className="mt-1 h-9 w-full rounded-[8px] border border-[#dce5f1] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none placeholder:text-[#9eb0c7]"
-                      />
-                    </label>
-                  </div>
-                </dl>
-              </article>
+            <section className="space-y-4" />
+          </div>
 
-              <article className="rounded-[16px] border border-[#dbe7f4] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-                <div className="inline-flex items-center gap-2">
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#eef6ff] text-[#0f5d9f]">
-                    <IconShieldCheck size={14} />
-                  </span>
-                  <h4 className="text-[15px] font-bold text-[#1f2a3a]">
-                    Final confirmation
-                  </h4>
-                </div>
+          <div className="mt-4 rounded-[12px] border border-[#e5ebf4] bg-white px-4 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+              Selected recipient
+            </p>
+            <p className="mt-1 text-[12px] font-semibold text-[#1f2a3a]">
+              {selectedRecipientName}
+            </p>
+            <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+              Status: {preparedStatusLabel}
+            </p>
+            <p className="mt-1 text-[10px] leading-[16px] text-[#60728a]">
+              {selectedRecipientMessage}
+            </p>
+            {!latestSubmission && deliveryReadinessCopy ? (
+              <p className="mt-2 rounded-[10px] border border-[#dbe7f4] bg-[#f8fbff] px-3 py-2 text-[10px] leading-[15px] text-[#526982]">
+                {deliveryReadinessCopy}
+              </p>
+            ) : null}
+          </div>
 
-                <div className="mt-4 space-y-2 text-[11px] leading-[16px] text-[#60728a]">
-                  {!reportDraft?.reportId ? (
-                    <p className="rounded-[10px] border border-[#fdeccf] bg-[#fff9ef] px-3 py-2 text-[#9a5b12]">
-                      This draft needs a backend SafeSpeak report before it can
-                      be shared through the platform.
-                    </p>
-                  ) : null}
-                  {selectedMatch && !selectedDestination ? (
-                    <p className="rounded-[10px] border border-[#fdeccf] bg-[#fff9ef] px-3 py-2 text-[#9a5b12]">
-                      This selected contact is not currently available in the
-                      active admin destination list.
-                    </p>
-                  ) : null}
-                  {missingRequiredInfo.length ? (
-                    <p className="rounded-[10px] border border-[#fdeccf] bg-[#fff9ef] px-3 py-2 text-[#9a5b12]">
-                      Review recipients first. This authority still needs:{" "}
-                      {missingRequiredInfo.join(", ")}.
-                    </p>
-                  ) : null}
-                  {latestSubmission ? (
-                    <p className="rounded-[10px] border border-[#d7f3e4] bg-[#f3fbf7] px-3 py-2 text-[#0b8b54]">
-                      {latestSubmission.actuallySent ||
-                      isActualDeliveryStatus(latestSubmission.status)
-                        ? "A sent delivery is already recorded for"
-                        : "A non-sent delivery outcome is already recorded for"}{" "}
-                      {latestSubmission.destinationName}.
-                    </p>
-                  ) : null}
-                  {!latestSubmission && deliveryReadinessCopy ? (
-                    <p className="rounded-[10px] border border-[#dbe7f4] bg-[#f8fbff] px-3 py-2 text-[#526982]">
-                      {deliveryReadinessCopy}
-                    </p>
-                  ) : null}
-                </div>
-
+          <div className="mt-4 overflow-hidden rounded-[12px] border border-[#e5ebf4] bg-white">
+            <div className="grid grid-cols-1 divide-y divide-[#edf2f8] lg:grid-cols-[0.75fr_1.25fr] lg:divide-x lg:divide-y-0">
+              <Link
+                href="/dashboard?view=reportsubmissionhistory"
+                className="inline-flex min-h-[64px] items-center justify-center gap-2 px-4 text-[11px] font-semibold text-[#ff8f00]"
+              >
+                <IconFolderFilled size={13} />
+                Save to History
+              </Link>
+              <div className="flex min-h-[64px] flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-center">
                 <button
                   type="button"
                   onClick={handleShareSelected}
                   disabled={!canSubmit}
-                  className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#ff8f00] px-5 text-[11px] font-bold text-white shadow-[0_10px_22px_rgba(255,143,0,0.28)] transition hover:bg-[#ec8200] disabled:cursor-not-allowed disabled:bg-[#ffd39b] disabled:text-white/80"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#ff8f00] px-5 text-[11px] font-bold text-white shadow-[0_10px_22px_rgba(255,143,0,0.28)] transition hover:bg-[#ec8200] disabled:cursor-not-allowed disabled:bg-[#ffd39b] disabled:text-white/80"
                 >
                   {isSubmitting ? (
                     <IconLoader2 size={14} className="animate-spin" />
                   ) : (
                     <IconShare size={13} />
                   )}
-                  {deliveryActionLabel}
+                  Share report securely
                 </button>
-
                 <Link
-                  href={successHref}
-                  className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-full border border-[#dbe7f4] bg-white px-5 text-[11px] font-bold text-[#526982] transition hover:bg-[#f8fbff]"
+                  href={reviewHref}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#dbe7f4] bg-white px-5 text-[11px] font-bold text-[#526982] transition hover:bg-[#f8fbff]"
                 >
-                  Back to sharing summary
+                  Review recipients
                   <IconArrowRight size={13} />
                 </Link>
-              </article>
-            </section>
+                <span className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold text-[#9a5b12]">
+                  <IconBoltFilled size={12} />
+                  {readinessBadgeLabel}
+                </span>
+              </div>
+            </div>
           </div>
+
         </article>
       </div>
     </div>

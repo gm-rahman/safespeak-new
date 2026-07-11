@@ -6,6 +6,5 @@ export {
   ReportSubmissionRecommendationsPage,
   ReportSubmissionReviewPage,
   ReportSubmissionSharePage,
-  ReportSubmissionSuccessPage,
   ReportSubmissionSupportPage,
 } from "./dashboard-report-submission-pages/index";

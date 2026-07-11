@@ -3,7 +3,12 @@
 import type { Route } from "next";
 import Link from "next/link";
 
-import { IconChevronLeft, IconPhoneFilled, IconShieldFilled } from "@tabler/icons-react";
+import {
+  IconChevronLeft,
+  IconClock,
+  IconPhoneFilled,
+  IconShieldFilled,
+} from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
@@ -11,13 +16,14 @@ import { cn } from "@/lib/utils";
 const reportSubmissionSteps = [
   { key: "support", label: "Support" },
   { key: "details", label: "Details" },
-  { key: "evidence", label: "Evidence" },
   { key: "review", label: "Review" },
+  { key: "share", label: "Share" },
   { key: "done", label: "Done" },
 ] as const;
 
 export type ReportSubmissionStep =
-  (typeof reportSubmissionSteps)[number]["key"];
+  | (typeof reportSubmissionSteps)[number]["key"]
+  | "evidence";
 
 function ReportSubmissionFrame({
   title,
@@ -35,8 +41,9 @@ function ReportSubmissionFrame({
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
+  const resolvedStep = step === "evidence" ? "details" : step;
   const activeStepIndex = reportSubmissionSteps.findIndex(
-    (item) => item.key === step
+    (item) => item.key === resolvedStep
   );
 
   return (
@@ -54,12 +61,21 @@ function ReportSubmissionFrame({
           ) : (
             <div />
           )}
-          <Link
-            href="/dashboard"
-            className="text-xs font-medium text-[#7b8798]"
-          >
-            {t("common.cancel")}
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard?view=reportsubmissionhistory"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#d7e1ee] bg-white px-3 text-[11px] font-semibold text-[#526982] transition hover:bg-[#f8fbff]"
+            >
+              <IconClock size={12} />
+              View history
+            </Link>
+            <Link
+              href="/dashboard"
+              className="text-xs font-medium text-[#7b8798]"
+            >
+              {t("common.cancel")}
+            </Link>
+          </div>
         </div>
 
         <article className="mt-3 rounded-[16px] border border-[#dce4ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5">
