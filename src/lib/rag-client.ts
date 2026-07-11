@@ -3,6 +3,7 @@
 import {
   ApiRequestError,
   apiRequest,
+  getAiAgentApiBaseUrl,
   getApiBaseUrl,
   type ApiEnvelope,
 } from "@/lib/api";
@@ -146,14 +147,15 @@ type RagSearchResponse = {
 
 async function ragApiRequest<TData>(
   path: string,
-  options: Omit<Parameters<typeof apiRequest<TData>>[1], "headers"> = {}
+  options: Omit<Parameters<typeof apiRequest<TData>>[1], "headers"> = {},
+  baseUrl = getApiBaseUrl(),
 ): Promise<ApiEnvelope<TData>> {
   const headers = await getSessionAwareAuthHeaders();
 
   try {
     return await apiRequest<TData>(path, {
       ...options,
-      baseUrl: getApiBaseUrl(),
+      baseUrl,
       headers,
     });
   } catch (error) {
@@ -165,7 +167,7 @@ async function ragApiRequest<TData>(
 
       return apiRequest<TData>(path, {
         ...options,
-        baseUrl: getApiBaseUrl(),
+        baseUrl,
         headers: retryHeaders,
       });
     }
@@ -182,7 +184,7 @@ export async function searchRagSources(
   const response = await ragApiRequest<RagSearchResponse>("/rag/search", {
     method: "POST",
     body: input,
-  });
+  }, getAiAgentApiBaseUrl());
 
   return response.data.results;
 }
@@ -195,7 +197,7 @@ export async function answerRagQuestion(
   const response = await ragApiRequest<RagAnswerResult>("/rag/answer", {
     method: "POST",
     body: input,
-  });
+  }, getAiAgentApiBaseUrl());
 
   return response.data;
 }
