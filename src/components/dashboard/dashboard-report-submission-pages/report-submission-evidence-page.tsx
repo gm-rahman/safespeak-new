@@ -29,6 +29,11 @@ import {
   grantConsent,
 } from "@/lib/consent";
 import {
+  getConversationFlowSession,
+  type ConversationFlowFactExtraction,
+  type ConversationFlowMessage,
+} from "@/lib/conversation-flow";
+import {
   type DashboardCardFlowId,
   getDashboardCardFlow,
 } from "@/lib/dashboard-card-flows";
@@ -97,6 +102,17 @@ type EvidenceAuditEntry = {
   timestamp: string;
 };
 
+type CapturedConversationReportFields = {
+  who?: string;
+  what?: string;
+  when?: string;
+  where?: string;
+  how?: string;
+  witnesses?: string;
+  injuries?: string;
+  repeatedIncidents?: boolean;
+};
+
 const DRAFT_STORAGE_KEY = "safespeak_report_evidence_draft";
 
 function formatFileSize(bytes: number): string {
@@ -149,6 +165,100 @@ function inferIncidentTypeFromNarrative(narrative: string): string | undefined {
   )
     ? "domestic_violence"
     : undefined;
+}
+
+function firstNonEmptyString(...values: Array<unknown>): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function inferRepeatedIncidents(
+  factExtraction?: ConversationFlowFactExtraction | null,
+  fallbackNarrative?: string
+): boolean | undefined {
+  const timelineValue = factExtraction?.timeline?.repeatedIncidents;
+
+  if (typeof timelineValue === "boolean") {
+    return timelineValue;
+  }
+
+  if (typeof timelineValue === "string") {
+    const normalized = timelineValue.trim().toLowerCase();
+
+    if (["yes", "true", "ongoing", "repeated"].includes(normalized)) {
+      return true;
+    }
+
+    if (["no", "false", "once", "single"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  if ((factExtraction?.extractedEvents?.length ?? 0) > 1) {
+    return true;
+  }
+
+  const combinedText = [fallbackNarrative, factExtraction?.whatHappened]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .toLowerCase();
+
+  if (!combinedText) {
+    return undefined;
+  }
+
+  if (/\b(again|ongoing|repeated|multiple times|keeps happening|every day|every night)\b/.test(combinedText)) {
+    return true;
+  }
+
+  return undefined;
+}
+
+function buildNarrativeFromConversationMessages(
+  messages: ConversationFlowMessage[]
+): string | undefined {
+  const userNarrative = messages
+    .filter((message) => message.role === "user")
+    .map((message) => message.content.trim())
+    .filter(Boolean)
+    .join("\n\n");
+
+  return userNarrative || undefined;
+}
+
+function extractConversationReportFields(input: {
+  factExtraction?: ConversationFlowFactExtraction | null;
+  messages: ConversationFlowMessage[];
+}): {
+  fields: CapturedConversationReportFields;
+  narrative?: string;
+} {
+  const factExtraction = input.factExtraction;
+  const timeline = factExtraction?.timeline ?? {};
+  const narrative = firstNonEmptyString(
+    timeline.what,
+    factExtraction?.whatHappened,
+    buildNarrativeFromConversationMessages(input.messages)
+  );
+
+  return {
+    narrative,
+    fields: {
+      who: firstNonEmptyString(timeline.who, factExtraction?.peopleInvolved),
+      what: narrative,
+      when: firstNonEmptyString(timeline.when, factExtraction?.whenHappened),
+      where: firstNonEmptyString(timeline.where, factExtraction?.whereHappened),
+      how: firstNonEmptyString(timeline.how),
+      witnesses: firstNonEmptyString(timeline.witnesses),
+      injuries: firstNonEmptyString(timeline.injuries),
+      repeatedIncidents: inferRepeatedIncidents(factExtraction, narrative),
+    },
+  };
 }
 
 async function computeSha256Hash(file: File): Promise<string> {
@@ -519,6 +629,7 @@ function ReportSubmissionEvidencePage({
   const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const shouldContinueToReviewAfterConsentRef = useRef(false);
+  const hydratedConversationSessionIdRef = useRef<string | null>(null);
   const [reportDraft, setReportDraft] = useState(() => getReportFlowDraft());
   const fromTriage = searchParams.get("fromTriage") === "1";
   const conversationSessionId = searchParams.get("conversationSessionId");
@@ -597,6 +708,110 @@ function ReportSubmissionEvidencePage({
   useEffect(() => {
     setDescription((currentDescription) => currentDescription || defaultNarrative);
   }, [defaultNarrative]);
+
+  useEffect(() => {
+    if (!fromTriage || !conversationSessionId) {
+      return;
+    }
+
+    if (hydratedConversationSessionIdRef.current === conversationSessionId) {
+      return;
+    }
+
+    let isActive = true;
+
+    void (async () => {
+      try {
+        const sessionEnvelope = await getConversationFlowSession(
+          conversationSessionId
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        const captured = extractConversationReportFields({
+          factExtraction: sessionEnvelope.factExtraction,
+          messages: sessionEnvelope.messages,
+        });
+
+        const mergedStructuredFields = {
+          ...(reportDraft?.structuredFields ?? {}),
+          ...(captured.fields.who ? { who: captured.fields.who } : {}),
+          ...(captured.fields.what ? { what: captured.fields.what } : {}),
+          ...(captured.fields.when ? { when: captured.fields.when } : {}),
+          ...(captured.fields.where ? { where: captured.fields.where } : {}),
+          ...(captured.fields.how ? { how: captured.fields.how } : {}),
+          ...(captured.fields.witnesses
+            ? { witnesses: captured.fields.witnesses }
+            : {}),
+          ...(captured.fields.injuries ? { injuries: captured.fields.injuries } : {}),
+          ...(typeof captured.fields.repeatedIncidents === "boolean"
+            ? { repeatedIncidents: captured.fields.repeatedIncidents }
+            : {}),
+        };
+
+        setLocation((currentLocation) => currentLocation || captured.fields.where || "");
+        setDescription(
+          (currentDescription) => currentDescription || captured.narrative || ""
+        );
+        setDate((currentDate) => {
+          if (!captured.fields.when) {
+            return currentDate;
+          }
+
+          const isDefaultToday =
+            currentDate === new Date().toISOString().slice(0, 10) &&
+            !reportDraft?.date;
+
+          return !currentDate || isDefaultToday ? captured.fields.when : currentDate;
+        });
+
+        setReportDraft(
+          mergeReportFlowDraft({
+            reportId: reportDraft?.reportId,
+            title:
+              reportDraft?.title ||
+              (initialCategory && contextFlow
+                ? `${contextFlow.title} incident report`
+                : "Incident report"),
+            date:
+              reportDraft?.date ||
+              captured.fields.when ||
+              new Date().toISOString().slice(0, 10),
+            location: reportDraft?.location || captured.fields.where || "",
+            summary:
+              reportDraft?.summary ||
+              captured.narrative ||
+              initialMessage?.trim() ||
+              "",
+            structuredFields: mergedStructuredFields,
+            incidentCategory: initialCategory ?? reportDraft?.incidentCategory,
+            incidentType: reportDraft?.incidentType ?? initialCategory,
+            topic: initialTopic ?? reportDraft?.topic,
+            starterPrompt: initialMessage?.trim() ?? reportDraft?.starterPrompt,
+            evidenceIds: reportDraft?.evidenceIds ?? [],
+          })
+        );
+
+        hydratedConversationSessionIdRef.current = conversationSessionId;
+      } catch {
+        // Keep the existing assistant snapshot fallback when the live session cannot be loaded.
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    contextFlow,
+    conversationSessionId,
+    fromTriage,
+    initialCategory,
+    initialMessage,
+    initialTopic,
+    reportDraft,
+  ]);
 
   useEffect(() => {
     const latestDraft = getReportFlowDraft();

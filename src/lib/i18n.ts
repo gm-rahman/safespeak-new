@@ -352,7 +352,7 @@ const resources = {
         assistant: {
           timelineBuilder: "Timeline Builder",
           continueToReportSubmission: "Continue to report submission",
-          userName: "Raihan",
+          userName: "Rakib",
           greetingPrefix: "Hi",
           greetingSuffix: ", can you remind me, how can I help you today?",
           sphereAlt: "SafeSpeak assistant sphere",
@@ -1280,7 +1280,7 @@ const resources = {
         assistant: {
           timelineBuilder: "Constructor de linea de tiempo",
           continueToReportSubmission: "Continuar al envio del reporte",
-          userName: "Raihan",
+          userName: "Rakib",
           greetingPrefix: "Hola",
           greetingSuffix: ", puedes recordarme, como puedo ayudarte hoy?",
           sphereAlt: "Esfera asistente de SafeSpeak",
