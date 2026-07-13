@@ -10,8 +10,6 @@ import {
   IconArrowRight,
   IconBoltFilled,
   IconCheck,
-  IconChevronLeft,
-  IconClock,
   IconFolderFilled,
   IconLoader2,
   IconMail,
@@ -47,10 +45,10 @@ import {
 import {
   type ReportDestinationPreview,
   type ReportSubmissionRecord,
-  createReport,
   getReport,
   getReportDestinations,
   getReportStatus,
+  listReports,
   listReportSubmissions,
   submitReportToDestination,
 } from "@/lib/reports-client";
@@ -83,18 +81,6 @@ function toPreparedSubmissionStatus(status?: string): PreparedSubmissionStatus {
   }
 
   return "ready_to_share";
-}
-
-function getDeliveryActionLabel(match: AuthorityMatch | null): string {
-  if (match?.deliveryReadiness?.status === "config_missing") {
-    return "Record attempt - no external send";
-  }
-
-  if (match?.deliveryReadiness?.status === "manual_action") {
-    return "Prepare manual follow-up";
-  }
-
-  return "Confirm and send through SafeSpeak";
 }
 
 function getDeliveryReadinessCopy(match: AuthorityMatch | null): string | null {
@@ -140,61 +126,27 @@ function getPreparedStatusLabel(status?: PreparedSubmissionStatus): string {
 }
 
 function getShareNotice(submission: ReportSubmissionRecord): string {
+  const reference = `SafeSpeak submission reference ${submission._id}.`;
+
   if (submission.actuallySent || isActualDeliveryStatus(submission.status)) {
     return submission.externalReference
-      ? `Report sent and recorded with external reference ${submission.externalReference}.`
-      : "Report sent through the configured SafeSpeak delivery channel.";
+      ? `Report sent and recorded with external reference ${submission.externalReference}. ${reference}`
+      : `Report sent through the configured SafeSpeak delivery channel. ${reference}`;
   }
 
   if (submission.status === "config_missing") {
-    return "Sharing was recorded, but no external report was sent because partner delivery is not fully configured.";
+    return `Sharing was recorded, but no external report was sent because partner delivery is not fully configured. ${reference}`;
   }
 
   if (submission.status === "requires_manual_action") {
-    return "Sharing was recorded for manual follow-up. No external report was sent by SafeSpeak.";
+    return `Sharing was recorded for manual follow-up. No external report was sent by SafeSpeak. ${reference}`;
   }
 
-  return "Sharing outcome has been recorded in SafeSpeak.";
+  return `Sharing outcome has been recorded in SafeSpeak. ${reference}`;
 }
 
 const withTriageParam = (href: Route, fromTriage: boolean): Route =>
   (fromTriage ? `${href}&fromTriage=1` : href) as Route;
-
-const inferIncidentTypeFromDraft = (
-  draft: ReturnType<typeof getResolvedReportFlowDraft>
-): string | undefined => {
-  if (draft?.incidentType || draft?.incidentCategory) {
-    return draft.incidentType ?? draft.incidentCategory;
-  }
-
-  const narrative = [
-    draft?.title,
-    draft?.summary,
-    ...Object.values(draft?.structuredFields ?? {}).filter(
-      (value): value is string => typeof value === "string"
-    ),
-  ]
-    .join(" ")
-    .toLowerCase();
-  const domesticViolenceTerms = [
-    "wife",
-    "husband",
-    "partner",
-    "spouse",
-    "girlfriend",
-    "boyfriend",
-    "domestic",
-    "family violence",
-    "hit me",
-    "slapped me",
-    "pushed me",
-    "unsafe at home",
-  ];
-
-  return domesticViolenceTerms.some((term) => narrative.includes(term))
-    ? "domestic_violence"
-    : undefined;
-};
 
 function ReportSubmissionSharePage() {
   const searchParams = useSearchParams();
@@ -211,8 +163,14 @@ function ReportSubmissionSharePage() {
   const [reportRef, setReportRef] = useState<string | null>(
     reportDraft?.reportId ?? null
   );
+  const [backendReportId, setBackendReportId] = useState<string | null>(
+    reportDraft?.reportId ?? null
+  );
   const [latestSubmission, setLatestSubmission] =
     useState<ReportSubmissionRecord | null>(null);
+  const [reportSubmissions, setReportSubmissions] = useState<
+    ReportSubmissionRecord[]
+  >([]);
   const [destinationOptions, setDestinationOptions] = useState<
     ReportDestinationPreview[]
   >([]);
@@ -275,64 +233,83 @@ function ReportSubmissionSharePage() {
     }
 
     if (!reportDraft?.reportId) {
-      if (!reportDraft?.summary && !reportDraft?.structuredFields) {
-        setIsLoadingDestinations(false);
-        return;
-      }
-
       let isActive = true;
       setIsLoadingDestinations(true);
 
       void (async () => {
         try {
-          const savedReport = await createReport({
-            language: "en",
-            jurisdiction: "NSW",
-            context: reportDraft.title || "SafeSpeak incident report",
-            originalNarrative:
-              reportDraft.summary ||
-              String(reportDraft.structuredFields?.what ?? ""),
-            incidentType: inferIncidentTypeFromDraft(reportDraft),
-            structuredFields: reportDraft.structuredFields ?? {},
-            status: "draft",
-          });
-          const destinations = await getReportDestinations(savedReport._id);
-          const resolvedSelectedDestinationId = resolvePreferredDestinationId(
-            destinations,
-            reportDraft.selectedDestinationId
+          const reports = await listReports();
+          const candidateReport = reports.find(
+            (report) =>
+              !["closed", "deleted", "withdrawn"].includes(
+                report.status ?? ""
+              )
           );
+
+          if (!candidateReport?._id) {
+            throw new Error(
+              "This report needs to be saved from the details or review step before it can be shared securely."
+            );
+          }
+
+          const [report, status, submissions, destinations] =
+            await Promise.all([
+              getReport(candidateReport._id),
+              getReportStatus(candidateReport._id),
+              listReportSubmissions(candidateReport._id),
+              getReportDestinations(candidateReport._id),
+            ]);
 
           if (!isActive) {
             return;
           }
 
-          setReportRef(savedReport.refNo ?? savedReport._id);
-          setReportStatus(savedReport.status ?? "draft");
+          const resolvedSelectedDestinationId = resolvePreferredDestinationId(
+            destinations,
+            reportDraft?.selectedDestinationId
+          );
+          const destinationSubmission =
+            submissions.find(
+              (submission) =>
+                submission.destinationId === resolvedSelectedDestinationId
+            ) ?? null;
+
+          setReportRef(report.refNo ?? report._id);
+          setBackendReportId(report._id);
+          setReportStatus(status.current);
           setDestinationOptions(destinations);
+          setReportSubmissions(submissions);
+          setLatestSubmission(destinationSubmission);
           setSelectedDestinationId(
-            resolvedSelectedDestinationId ??
+            destinationSubmission?.destinationId ??
+              resolvedSelectedDestinationId ??
               destinations[0]?.destinationId ??
               null
           );
           setShareError(null);
           mergeReportFlowDraft({
-            reportId: savedReport._id,
+            reportId: report._id,
             selectedDestinationId:
-              resolvedSelectedDestinationId ?? destinations[0]?.destinationId,
-            structuredFields:
-              savedReport.structuredFields ?? reportDraft.structuredFields,
-            incidentType:
-              savedReport.incidentType ?? inferIncidentTypeFromDraft(reportDraft),
+              destinationSubmission?.destinationId ??
+              resolvedSelectedDestinationId ??
+              destinations[0]?.destinationId,
+            latestSubmissionId: destinationSubmission?._id,
+            structuredFields: report.structuredFields,
+            incidentType: report.incidentType,
           });
         } catch (error) {
           if (!isActive) {
             return;
           }
 
+          setReportSubmissions([]);
+          setLatestSubmission(null);
+          setDestinationOptions([]);
+          setSelectedDestinationId(reportDraft?.selectedDestinationId ?? null);
           setShareError(
             error instanceof Error
               ? error.message
-              : "Admin-managed destinations could not be loaded."
+              : "This report needs to be saved from the details or review step before it can be shared securely."
           );
         } finally {
           if (isActive) {
@@ -360,31 +337,30 @@ function ReportSubmissionSharePage() {
           return;
         }
 
-        const matchedSubmission = reportDraft.latestSubmissionId
-          ? (submissions.find(
-              (submission) => submission._id === reportDraft.latestSubmissionId
-            ) ?? null)
-          : null;
-        const shouldUseFallbackSubmission =
-          !reportDraft.preparedSubmission ||
-          [
-            "submitted",
-            "acknowledged",
-            "requires_manual_action",
-            "config_missing",
-            "failed",
-          ].includes(reportDraft.preparedSubmission.status);
+        setReportSubmissions(submissions);
 
-        setReportRef(report.refNo ?? report._id);
-        setReportStatus(status.current);
-        setDestinationOptions(destinations);
         const resolvedSelectedDestinationId = resolvePreferredDestinationId(
           destinations,
           reportDraft.selectedDestinationId
         );
+        const matchedSubmission = reportDraft.latestSubmissionId
+          ? (submissions.find(
+              (submission) =>
+                submission._id === reportDraft.latestSubmissionId &&
+                submission.destinationId === resolvedSelectedDestinationId
+            ) ?? null)
+          : null;
+        const destinationSubmission =
+          submissions.find(
+            (submission) =>
+              submission.destinationId === resolvedSelectedDestinationId
+          ) ?? null;
+        setReportRef(report.refNo ?? report._id);
+        setBackendReportId(report._id);
+        setReportStatus(status.current);
+        setDestinationOptions(destinations);
         const resolvedLatestSubmission =
-          matchedSubmission ??
-          (shouldUseFallbackSubmission ? (submissions[0] ?? null) : null);
+          matchedSubmission ?? destinationSubmission ?? null;
         setLatestSubmission(resolvedLatestSubmission);
         setSelectedDestinationId(
           resolvedLatestSubmission?.destinationId ??
@@ -431,6 +407,7 @@ function ReportSubmissionSharePage() {
             ? error.message
             : "Admin-managed destinations could not be loaded."
         );
+        setReportSubmissions([]);
       })
       .finally(() => {
         if (isActive) {
@@ -515,6 +492,25 @@ function ReportSubmissionSharePage() {
           destination.destinationId === selectedMatch.destinationId
       ) ?? null)
     : null;
+
+  useEffect(() => {
+    if (!selectedDestinationId || !reportSubmissions.length) {
+      return;
+    }
+
+    const resolvedDestinationId =
+      resolvePreferredDestinationId(
+        destinationOptions,
+        selectedDestinationId
+      ) ?? selectedDestinationId;
+    const existingSubmission =
+      reportSubmissions.find(
+        (submission) => submission.destinationId === resolvedDestinationId
+      ) ?? null;
+
+    setLatestSubmission(existingSubmission);
+  }, [destinationOptions, reportSubmissions, selectedDestinationId]);
+
   const missingRequiredInfo =
     selectedDestination?.missingRequiredInfo ??
     selectedMatch?.missingRequiredInfo ??
@@ -527,8 +523,9 @@ function ReportSubmissionSharePage() {
     .filter((match) => match.destinationId !== selectedMatch?.destinationId)
     .slice(0, 4);
   const canSubmit =
-    Boolean(reportDraft?.reportId || REPORT_SUBMISSION_MOCK_MODE) &&
+    Boolean(backendReportId || REPORT_SUBMISSION_MOCK_MODE) &&
     Boolean(selectedDestination) &&
+    !isLoadingDestinations &&
     !latestSubmission &&
     !missingRequiredInfo.length &&
     !isSubmitting;
@@ -578,7 +575,7 @@ function ReportSubmissionSharePage() {
       return;
     }
 
-    if (!reportDraft?.reportId) {
+    if (!backendReportId) {
       setShareError(
         "This draft needs a backend SafeSpeak report before it can be shared through the platform."
       );
@@ -608,7 +605,7 @@ function ReportSubmissionSharePage() {
     setShareNotice(null);
 
     try {
-      const submission = await submitReportToDestination(reportDraft.reportId, {
+      const submission = await submitReportToDestination(backendReportId, {
         destinationId,
         anonymityMode,
         notes:
@@ -617,6 +614,10 @@ function ReportSubmissionSharePage() {
         confirmConsent: true,
       });
 
+      setReportSubmissions((currentSubmissions) => [
+        submission,
+        ...currentSubmissions.filter((item) => item._id !== submission._id),
+      ]);
       mergeReportFlowDraft({
         selectedDestinationId: destination.destinationId,
         latestSubmissionId: submission._id,
@@ -659,9 +660,11 @@ function ReportSubmissionSharePage() {
       return;
     }
 
-    setShareError(null);
-    setShareNotice(null);
-    setIsSharePreviewVisible(true);
+    if (isSubmitting) {
+      return;
+    }
+
+    void submitToDestination(selectedDestination.destinationId);
   };
 
   const handleAllowSharingConsent = async () => {
@@ -692,7 +695,6 @@ function ReportSubmissionSharePage() {
     setShareError("No report was sent. The report remains ready for secure sharing.");
   };
   const deliveryReadinessCopy = getDeliveryReadinessCopy(selectedMatch);
-  const deliveryActionLabel = getDeliveryActionLabel(selectedMatch);
   const preparedStatusLabel = getPreparedStatusLabel(
     latestSubmission
       ? toPreparedSubmissionStatus(latestSubmission.status)

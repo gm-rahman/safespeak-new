@@ -4,6 +4,7 @@
   flex: none;
   place-items: center;
   isolation: isolate;
+  color: #0f5d9f;
   transform: translateZ(0);
   transition:
     transform 220ms ease,
@@ -20,211 +21,435 @@
   height: 74px;
 }
 
-.sphere {
-  z-index: 3;
-  overflow: visible;
-  transform-origin: center;
-  animation: voiceAvatarCoreIdle 4.8s ease-in-out infinite;
+.aura,
+.ring,
+.ringTwo,
+.ambientGlow,
+.waveform,
+.micShell {
+  position: absolute;
+  inset: 0;
 }
 
-.halo {
-  position: absolute;
+.aura {
   z-index: 1;
   border-radius: 9999px;
-  opacity: 0.46;
   background:
-    radial-gradient(
-      circle at 28% 28%,
-      rgba(111, 184, 255, 0.66),
-      transparent 38%
-    ),
-    radial-gradient(
-      circle at 72% 70%,
-      rgba(245, 143, 211, 0.58),
-      transparent 42%
-    ),
-    rgba(255, 255, 255, 0.6);
-  filter: blur(10px);
-  transform: scale(0.92);
-  transition:
-    opacity 220ms ease,
-    transform 220ms ease;
-}
-
-.large .halo {
-  inset: -7%;
-}
-
-.small .halo {
-  inset: -8%;
-}
-
-.blob {
-  position: absolute;
-  z-index: 2;
-  display: block;
-  border-radius: 9999px;
-  background:
-    radial-gradient(
-      circle at 32% 28%,
-      rgba(255, 255, 255, 0.88),
-      transparent 30%
-    ),
-    radial-gradient(
-      circle at 46% 62%,
-      rgba(111, 184, 255, 0.94),
-      transparent 43%
-    ),
-    radial-gradient(
-      circle at 68% 68%,
-      rgba(245, 143, 211, 0.9),
-      transparent 48%
-    ),
-    #2f4bff;
-  box-shadow:
-    0 12px 26px rgba(63, 125, 224, 0.2),
-    0 0 28px rgba(245, 143, 211, 0.25);
-  opacity: 0.58;
-  transform: translate3d(0, 0, 0) scale(0.78);
-  transition:
-    opacity 220ms ease,
-    transform 220ms ease;
-}
-
-.large .blob {
-  width: 42px;
-  height: 42px;
-}
-
-.small .blob {
-  width: 18px;
-  height: 18px;
-}
-
-.large .blobOne {
-  left: 18%;
-  top: 14%;
-}
-
-.large .blobTwo {
-  right: 12%;
-  top: 44%;
-}
-
-.large .blobThree {
-  bottom: 10%;
-  left: 38%;
-}
-
-.small .blobOne {
-  left: 10px;
-  top: 11px;
-}
-
-.small .blobTwo {
-  right: 8px;
-  top: 29px;
-}
-
-.small .blobThree {
-  bottom: 8px;
-  left: 30px;
-}
-
-.idle .blob {
-  opacity: 0.24;
-}
-
-.idle.small .blob {
-  opacity: 0.34;
-}
-
-.listening .halo,
-.userSpeaking .halo,
-.aiSpeaking .halo {
-  opacity: 0.82;
-  transform: scale(1);
-  animation: voiceAvatarHalo 2.1s ease-in-out infinite;
-}
-
-.listening .sphere,
-.userSpeaking .sphere,
-.aiSpeaking .sphere {
-  animation: voiceAvatarCoreActive 1.8s ease-in-out infinite;
-}
-
-.listening .blob,
-.userSpeaking .blob,
-.aiSpeaking .blob {
+    radial-gradient(circle at 34% 28%, rgba(63, 125, 224, 0.32), transparent 32%),
+    radial-gradient(circle at 68% 70%, rgba(22, 163, 74, 0.18), transparent 38%),
+    radial-gradient(circle, rgba(255, 255, 255, 0.84), rgba(219, 234, 254, 0.18) 62%, transparent 70%);
+  filter: blur(1px);
   opacity: 0.9;
-  animation: voiceAvatarBounce 1.05s ease-in-out infinite;
+  transform: scale(0.9);
+  animation: avatarBreath 4.8s ease-in-out infinite;
 }
 
-.listening .blobTwo,
-.userSpeaking .blobTwo,
-.aiSpeaking .blobTwo {
+.ring,
+.ringTwo {
+  z-index: 2;
+  border: 1px solid rgba(63, 125, 224, 0.18);
+  border-radius: 9999px;
+  box-shadow: inset 0 0 34px rgba(255, 255, 255, 0.7);
+  opacity: 0.74;
+  transform: scale(0.7);
+}
+
+.ringTwo {
+  border-color: rgba(15, 93, 159, 0.12);
+  opacity: 0;
+}
+
+.waveform {
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  opacity: 0.16;
+  transform: translateY(46%);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.small .waveform {
+  gap: 2px;
+}
+
+.waveBar {
+  display: block;
+  width: 4px;
+  height: 18px;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, #71a7ee, #0f5d9f);
+  transform-origin: center;
+  animation: waveformIdle 2.8s ease-in-out infinite;
+}
+
+.small .waveBar {
+  width: 2px;
+  height: 8px;
+}
+
+.waveBar:nth-child(2n) {
   animation-delay: 120ms;
 }
 
-.listening .blobThree,
-.userSpeaking .blobThree,
-.aiSpeaking .blobThree {
+.waveBar:nth-child(3n) {
   animation-delay: 240ms;
 }
 
-.userSpeaking .blob {
-  animation-duration: 820ms;
+.waveBar:nth-child(4n) {
+  animation-delay: 360ms;
 }
 
-.aiSpeaking .blob {
-  animation-duration: 940ms;
+.micShell {
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
 }
 
-.aiSpeaking .halo {
-  animation-duration: 1.65s;
+.micPlate {
+  position: relative;
+  display: grid;
+  width: 46%;
+  height: 46%;
+  place-items: center;
+  border: 1px solid rgba(207, 224, 241, 0.92);
+  border-radius: 9999px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(233, 241, 255, 0.82)),
+    #ffffff;
+  box-shadow:
+    0 20px 42px rgba(15, 93, 159, 0.17),
+    0 6px 18px rgba(148, 163, 184, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  transform-origin: center;
+  animation: micIdle 4.2s ease-in-out infinite;
 }
 
-@keyframes voiceAvatarCoreIdle {
+.small .micPlate {
+  width: 52%;
+  height: 52%;
+  box-shadow:
+    0 10px 20px rgba(15, 93, 159, 0.16),
+    0 3px 10px rgba(148, 163, 184, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.micPlate::before {
+  position: absolute;
+  inset: -11%;
+  content: "";
+  border: 1px solid rgba(63, 125, 224, 0.2);
+  border-radius: inherit;
+  opacity: 0.62;
+}
+
+.micPlate::after {
+  position: absolute;
+  right: 23%;
+  bottom: 20%;
+  left: 23%;
+  height: 2px;
+  content: "";
+  border-radius: 9999px;
+  background: rgba(15, 93, 159, 0.22);
+}
+
+.micIcon {
+  width: 45%;
+  height: 45%;
+  color: #0f5d9f;
+  filter: drop-shadow(0 4px 8px rgba(15, 93, 159, 0.16));
+}
+
+.ambientGlow {
+  z-index: 0;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(15, 93, 159, 0.18), transparent 54%),
+    radial-gradient(circle at 50% 66%, rgba(63, 125, 224, 0.16), transparent 62%);
+  filter: blur(14px);
+  opacity: 0.72;
+}
+
+.listening .aura,
+.userSpeaking .aura {
+  background:
+    radial-gradient(circle at 34% 28%, rgba(63, 125, 224, 0.46), transparent 32%),
+    radial-gradient(circle at 68% 70%, rgba(22, 163, 74, 0.3), transparent 38%),
+    radial-gradient(circle, rgba(255, 255, 255, 0.88), rgba(219, 234, 254, 0.26) 62%, transparent 72%);
+  animation-duration: 2.2s;
+}
+
+.listening .ring,
+.userSpeaking .ring {
+  border-color: rgba(63, 125, 224, 0.36);
+  animation: listeningRing 1.8s ease-out infinite;
+}
+
+.listening .ringTwo,
+.userSpeaking .ringTwo {
+  border-color: rgba(22, 163, 74, 0.2);
+  animation: listeningRing 1.8s ease-out 0.42s infinite;
+}
+
+.listening .micPlate,
+.userSpeaking .micPlate {
+  border-color: rgba(63, 125, 224, 0.42);
+  animation: micActive 1.4s ease-in-out infinite;
+}
+
+.listening .waveform,
+.userSpeaking .waveform {
+  opacity: 0.72;
+  transform: translateY(50%);
+}
+
+.listening .waveBar,
+.userSpeaking .waveBar {
+  animation: waveformListen 980ms ease-in-out infinite;
+}
+
+.userSpeaking .waveform {
+  opacity: 0.92;
+}
+
+.userSpeaking .waveBar {
+  animation-duration: 720ms;
+}
+
+.processing .aura {
+  background:
+    conic-gradient(from 0deg, rgba(63, 125, 224, 0.06), rgba(63, 125, 224, 0.42), rgba(22, 163, 74, 0.18), rgba(63, 125, 224, 0.06)),
+    radial-gradient(circle, rgba(255, 255, 255, 0.84), rgba(219, 234, 254, 0.24) 62%, transparent 70%);
+  animation: processingOrbit 2.4s linear infinite;
+}
+
+.processing .ring {
+  border-color: rgba(63, 125, 224, 0.34);
+  border-style: dashed;
+  animation: processingOrbit 3.2s linear infinite;
+}
+
+.processing .ringTwo {
+  border-color: rgba(15, 93, 159, 0.18);
+  opacity: 0.54;
+  transform: scale(0.88);
+  animation: processingPulse 1.6s ease-in-out infinite;
+}
+
+.processing .micPlate {
+  animation: micProcessing 1.6s ease-in-out infinite;
+}
+
+.processing .waveform {
+  opacity: 0.58;
+}
+
+.processing .waveBar {
+  animation: waveformThinking 1.25s ease-in-out infinite;
+}
+
+.aiSpeaking .aura {
+  background:
+    radial-gradient(circle at 32% 28%, rgba(63, 125, 224, 0.5), transparent 34%),
+    radial-gradient(circle at 70% 72%, rgba(15, 93, 159, 0.28), transparent 42%),
+    radial-gradient(circle, rgba(255, 255, 255, 0.9), rgba(219, 234, 254, 0.3) 62%, transparent 72%);
+  animation-duration: 1.55s;
+}
+
+.aiSpeaking .ring {
+  border-color: rgba(15, 93, 159, 0.36);
+  animation: speakingRing 1.15s ease-out infinite;
+}
+
+.aiSpeaking .ringTwo {
+  border-color: rgba(63, 125, 224, 0.24);
+  animation: speakingRing 1.15s ease-out 0.28s infinite;
+}
+
+.aiSpeaking .micPlate {
+  border-color: rgba(15, 93, 159, 0.45);
+  animation: micSpeaking 920ms ease-in-out infinite;
+}
+
+.aiSpeaking .waveform {
+  opacity: 0.94;
+  transform: translateY(50%);
+}
+
+.aiSpeaking .waveBar {
+  animation: waveformSpeak 760ms ease-in-out infinite;
+}
+
+@keyframes avatarBreath {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.88);
+  }
+
+  50% {
+    opacity: 0.95;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes micIdle {
   0%,
   100% {
     transform: scale(0.985);
   }
 
   50% {
-    transform: scale(1);
+    transform: scale(1.015);
   }
 }
 
-@keyframes voiceAvatarCoreActive {
+@keyframes micActive {
   0%,
   100% {
-    transform: scale(0.96);
+    transform: scale(0.99);
   }
 
   50% {
+    transform: scale(1.055);
+  }
+}
+
+@keyframes micProcessing {
+  0%,
+  100% {
+    box-shadow:
+      0 20px 42px rgba(15, 93, 159, 0.17),
+      0 6px 18px rgba(148, 163, 184, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.94);
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow:
+      0 22px 48px rgba(63, 125, 224, 0.2),
+      0 8px 20px rgba(148, 163, 184, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.94);
     transform: scale(1.035);
   }
 }
 
-@keyframes voiceAvatarHalo {
+@keyframes micSpeaking {
   0%,
   100% {
-    transform: scale(0.9);
+    transform: scale(0.985);
   }
 
-  50% {
-    transform: scale(1.08);
+  35% {
+    transform: scale(1.07);
+  }
+
+  65% {
+    transform: scale(1.015);
   }
 }
 
-@keyframes voiceAvatarBounce {
+@keyframes listeningRing {
+  0% {
+    opacity: 0.72;
+    transform: scale(0.62);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes speakingRing {
+  0% {
+    opacity: 0.66;
+    transform: scale(0.66);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.14);
+  }
+}
+
+@keyframes processingPulse {
   0%,
   100% {
-    transform: translate3d(0, 6px, 0) scale(0.78);
+    opacity: 0.34;
+    transform: scale(0.78);
+  }
+
+  50% {
+    opacity: 0.66;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes processingOrbit {
+  to {
+    transform: rotate(360deg) scale(0.92);
+  }
+}
+
+@keyframes waveformIdle {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+  }
+
+  50% {
+    transform: scaleY(0.72);
+  }
+}
+
+@keyframes waveformListen {
+  0%,
+  100% {
+    transform: scaleY(0.4);
   }
 
   45% {
-    transform: translate3d(0, -7px, 0) scale(1.04);
+    transform: scaleY(1.22);
+  }
+}
+
+@keyframes waveformThinking {
+  0%,
+  100% {
+    transform: scaleY(0.42);
+  }
+
+  33% {
+    transform: scaleY(0.95);
+  }
+
+  66% {
+    transform: scaleY(0.62);
+  }
+}
+
+@keyframes waveformSpeak {
+  0%,
+  100% {
+    transform: scaleY(0.38);
+  }
+
+  25% {
+    transform: scaleY(1.28);
+  }
+
+  55% {
+    transform: scaleY(0.68);
+  }
+
+  78% {
+    transform: scaleY(1.05);
   }
 }
 

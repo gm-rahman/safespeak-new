@@ -2,6 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 const API_ROUTE = "**/api/v1/**";
 const REPORT_ID = "report-admin-destination-e2e";
+const LEGAL_AID_DESTINATION_ID = "6a0e038a0a296b9642533aa8";
+const LEGAL_AID_SUBMISSION_ID = "submission-legal-aid-e2e";
 const INCIDENT_TEXT =
   "My wife hit me at home. She slapped me and pushed me into the wall. I feel unsafe at home and want legal and reporting options in NSW.";
 
@@ -16,6 +18,8 @@ function apiEnvelope(data: unknown, message = "OK") {
 }
 
 async function mockAdminDestinationApi(page: Page) {
+  let submissionPostCount = 0;
+  let submission: Record<string, unknown> | null = null;
   let report = {
     _id: REPORT_ID,
     refNo: "SS-E2E-ADMIN-001",
@@ -78,7 +82,7 @@ async function mockAdminDestinationApi(page: Page) {
       },
     },
     {
-      destinationId: "admin-legal-aid-nsw",
+      destinationId: LEGAL_AID_DESTINATION_ID,
       destinationKey: "legal-aid-nsw",
       destinationType: "legal_aid",
       destinationName: "Legal Aid NSW",
@@ -218,6 +222,14 @@ async function mockAdminDestinationApi(page: Page) {
       return;
     }
 
+    if (pathname.endsWith("/reports") && method === "GET") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(apiEnvelope({ reports: [report] })),
+      });
+      return;
+    }
+
     if (pathname.endsWith(`/reports/${REPORT_ID}`) && method === "GET") {
       await route.fulfill({
         contentType: "application/json",
@@ -298,10 +310,58 @@ async function mockAdminDestinationApi(page: Page) {
       return;
     }
 
-    if (pathname.endsWith(`/reports/${REPORT_ID}/submissions`)) {
+    if (pathname.endsWith(`/reports/${REPORT_ID}/submissions`) && method === "GET") {
       await route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify(apiEnvelope({ submissions: [] })),
+        body: JSON.stringify(apiEnvelope({ submissions: submission ? [submission] : [] })),
+      });
+      return;
+    }
+
+    if (pathname.endsWith(`/reports/${REPORT_ID}/submissions`) && method === "POST") {
+      submissionPostCount += 1;
+      const payload = request.postDataJSON() as {
+        destinationId: string;
+        anonymityMode?: string;
+        notes?: string;
+        confirmConsent?: boolean;
+      };
+
+      submission = {
+        _id: LEGAL_AID_SUBMISSION_ID,
+        reportId: REPORT_ID,
+        destinationId: payload.destinationId,
+        destinationKey: "legal-aid-nsw",
+        destinationType: "legal_aid",
+        destinationName: "Legal Aid NSW",
+        channel: "booking_link",
+        jurisdiction: "NSW",
+        languages: ["en"],
+        status: "requires_manual_action",
+        anonymityMode: payload.anonymityMode ?? "identified",
+        minimumRequiredInfo: ["summary"],
+        missingRequiredInfo: [],
+        requiredConsentFlags: ["share_with_agencies"],
+        expectedNextSteps: [
+          "Use the prepared summary to ask for information about legal options.",
+        ],
+        notes: payload.notes,
+        payloadSnapshot: {},
+        evidenceSnapshot: [],
+        consentSnapshot: { share_with_agencies: true },
+        deliveryArtifacts: [],
+        deliveryMessage: "Booking/link destination prepared for manual follow-through",
+        deliveryMode: "manual",
+        deliveryConfigurationStatus: "manual_action",
+        deliveryConfigurationIssues: [],
+        actuallySent: false,
+        createdAt: new Date("2026-07-12T00:00:00.000Z").toISOString(),
+      };
+
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(apiEnvelope({ submission })),
       });
       return;
     }
@@ -320,12 +380,16 @@ async function mockAdminDestinationApi(page: Page) {
       body: JSON.stringify({ success: false, message: `Unhandled ${pathname}` }),
     });
   });
+
+  return {
+    getSubmissionPostCount: () => submissionPostCount,
+  };
 }
 
-test("evidence review share flow uses admin destinations and resolves mock-police route", async ({
+test("evidence review share flow submits the Legal Aid NSW booking-link handoff once", async ({
   page,
 }) => {
-  await mockAdminDestinationApi(page);
+  const api = await mockAdminDestinationApi(page);
   await page.goto("/dashboard?view=reportsubmissionevidence");
   await page.evaluate(() => {
     sessionStorage.removeItem("safespeak_report_flow_draft");
@@ -355,8 +419,23 @@ test("evidence review share flow uses admin destinations and resolves mock-polic
   await expect(page.getByText("NSW Police")).toBeVisible();
 
   await page.goto(
-    "/dashboard?view=reportsubmissionshare&destinationId=mock-police"
+    `/dashboard?view=reportsubmissionshare&destinationId=${LEGAL_AID_DESTINATION_ID}`
   );
-  await expect(page.getByRole("heading", { name: "NSW Police" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Legal Aid NSW" }).first()).toBeVisible();
   await expect(page.getByText("Awaiting recipient selection")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Share report securely" }).click();
+  await expect(
+    page.getByText(`SafeSpeak submission reference ${LEGAL_AID_SUBMISSION_ID}.`).first()
+  ).toBeVisible();
+  await expect(page.getByText("No external report was sent by SafeSpeak.").first()).toBeVisible();
+  expect(api.getSubmissionPostCount()).toBe(1);
+
+  await expect(page.getByRole("button", { name: "Share report securely" })).toBeDisabled();
+  expect(api.getSubmissionPostCount()).toBe(1);
+
+  await page.reload();
+  await expect(
+    page.getByText(`SafeSpeak submission reference ${LEGAL_AID_SUBMISSION_ID}.`).first()
+  ).toBeVisible();
 });
