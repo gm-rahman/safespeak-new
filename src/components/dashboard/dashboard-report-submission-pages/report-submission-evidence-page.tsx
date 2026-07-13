@@ -1558,6 +1558,7 @@ function ReportSubmissionEvidencePage({
       title="Incident Details"
       subtitle="Write the story once, add any supporting files, and review everything before you choose where to send it."
       step="details"
+      skipSupportStep={!fromTriage}
       backHref={backHref}
       backLabel={fromTriage ? "Support" : "Report Submission"}
     >
@@ -1565,18 +1566,21 @@ function ReportSubmissionEvidencePage({
         <section className="rounded-[20px] border border-[#dbe5f1] bg-[#fbfdff] p-5 space-y-4">
           {evidenceError ? (
             <div className="mb-4 rounded-[14px] border border-[#fde2e2] bg-[#fff5f5] px-4 py-3 text-[12px] text-[#b45353]">
-              <span className="inline-flex items-center gap-1.5">
-                <IconAlertCircle size={13} />
-                {evidenceError}
+              <span className="flex items-center gap-1.5 font-bold">
+                <IconAlertCircle size={14} className="shrink-0" />
+                Error
               </span>
+              <p className="mt-1 font-medium">{evidenceError}</p>
             </div>
           ) : null}
+
           {restoredDraftNotice ? (
-            <div className="mb-4 rounded-[14px] border border-[#fdeccf] bg-[#fff9ef] px-4 py-3 text-[12px] text-[#9a5b12]">
-              <span className="inline-flex items-center gap-1.5">
-                <IconAlertCircle size={13} />
-                {restoredDraftNotice}
+            <div className="mb-4 rounded-[14px] border border-[#fed7aa] bg-[#fffaf5] px-4 py-3 text-[12px] text-[#c2410c]">
+              <span className="flex items-center gap-1.5 font-bold">
+                <IconAlertCircle size={14} className="shrink-0" />
+                Draft Restored
               </span>
+              <p className="mt-1 font-medium">{restoredDraftNotice}</p>
             </div>
           ) : null}
 
@@ -1592,67 +1596,59 @@ function ReportSubmissionEvidencePage({
           ) : null}
 
           <div className="space-y-4">
-            <div>
-              <label
-                htmlFor="incident-title"
-                className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]"
-              >
-                Incident title
-              </label>
+            <label htmlFor="incident-title" className="block space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Incident Title
+              </span>
               <input
                 id="incident-title"
+                type="text"
+                placeholder="e.g. Online scam attempt"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
-                className="mt-1 h-11 w-full rounded-2xl border border-[#d7e1ee] bg-white px-4 text-sm font-semibold text-[#1f2a3a] outline-none"
+                className="h-11 w-full rounded-[12px] border border-[#dbe4ef] bg-white px-3.5 text-sm text-[#1f2a3a] shadow-sm transition outline-none focus:border-[#0f5d9f]"
               />
-            </div>
+            </label>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="incident-date"
-                  className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]"
-                >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label htmlFor="incident-date" className="block space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
                   Date
-                </label>
+                </span>
                 <input
                   id="incident-date"
                   type="date"
                   value={date}
                   onChange={(event) => setDate(event.target.value)}
-                  className="mt-1 h-11 w-full rounded-2xl border border-[#d7e1ee] bg-white px-4 text-sm text-[#1f2a3a] outline-none"
+                  className="h-11 w-full rounded-[12px] border border-[#dbe4ef] bg-white px-3 text-sm text-[#1f2a3a] shadow-sm transition outline-none focus:border-[#0f5d9f]"
                 />
-              </div>
-              <div>
-                <label
-                  htmlFor="incident-location"
-                  className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]"
-                >
+              </label>
+
+              <label htmlFor="incident-location" className="block space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
                   Location
-                </label>
-                <div className="relative mt-1">
-                  <IconMapPin
-                    size={16}
-                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#90a1b6]"
-                  />
+                </span>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-3 grid place-items-center text-[#94a3b8]">
+                    <IconMapPin size={14} />
+                  </span>
                   <input
                     id="incident-location"
+                    type="text"
+                    placeholder="City or post code"
                     value={location}
                     onChange={(event) => setLocation(event.target.value)}
-                    className="h-11 w-full rounded-2xl border border-[#d7e1ee] bg-white pl-10 pr-4 text-sm text-[#1f2a3a] outline-none"
+                    className="h-11 w-full rounded-[12px] border border-[#dbe4ef] bg-white pl-8 pr-3 text-sm text-[#1f2a3a] shadow-sm transition outline-none focus:border-[#0f5d9f]"
                   />
                 </div>
-              </div>
+              </label>
             </div>
 
-            <div>
-              <label
-                htmlFor="incident-summary"
-                className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]"
-              >
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
                 What happened
-              </label>
-              <div className="mt-1 rounded-[22px] border border-[#d7e1ee] bg-white p-3">
+              </span>
+              <div className="rounded-[14px] border border-[#dbe4ef] bg-white px-4 py-3 shadow-sm focus-within:border-[#0f5d9f] focus-within:ring-1 focus-within:ring-[#0f5d9f]">
                 <textarea
                   id="incident-summary"
                   rows={7}
@@ -1680,7 +1676,7 @@ function ReportSubmissionEvidencePage({
                   Add screenshots, documents, audio, video, or photos if you want them included with the report.
                 </p>
               </div>
-              <span className="inline-flex h-8 w-fit items-center rounded-full border border-[#FED7AA] bg-[#FFEDD5] px-3 text-xs font-semibold text-[#C2410C]">
+              <span className="inline-flex h-8 w-fit shrink-0 whitespace-nowrap items-center rounded-full border border-[#FED7AA] bg-[#FFEDD5] px-3 text-xs font-semibold text-[#C2410C]">
                 {readyFileCount} file{readyFileCount === 1 ? "" : "s"} ready
               </span>
             </div>
