@@ -3,7 +3,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   IconAlertCircle,
@@ -33,6 +33,7 @@ import {
 } from "@/lib/report-submission-mock";
 import {
   type ReportDestinationPreview,
+  type ReportRecord,
   type ReportSubmissionPayloadPreview,
   createReport,
   getReport,
@@ -256,6 +257,11 @@ function ReportSubmissionReviewPage() {
   const searchParams = useSearchParams();
   const fromTriage = searchParams.get("fromTriage") === "1";
   const reportDraft = useMemo(() => getResolvedReportFlowDraft(), []);
+  const fallbackCreatePromiseRef = useRef<Promise<{
+    savedReport: ReportRecord;
+    destinationOptions: ReportDestinationPreview[];
+    incidentType?: string;
+  }> | null>(null);
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>([]);
   const [backendStructuredFields, setBackendStructuredFields] = useState<
     Record<string, unknown>
@@ -324,26 +330,95 @@ function ReportSubmissionReviewPage() {
 
         void (async () => {
           try {
-            const incidentType =
-              reportDraft.incidentType ??
-              reportDraft.incidentCategory ??
-              inferIncidentTypeFromStructuredFields(
-                reportDraft.structuredFields ?? {}
+            const latestResolvedDraft = getResolvedReportFlowDraft();
+
+            if (latestResolvedDraft?.reportId) {
+              const [report, timeline, destinationOptions] = await Promise.all(
+                [
+                  getReport(latestResolvedDraft.reportId),
+                  getReportTimeline(latestResolvedDraft.reportId),
+                  getReportDestinations(latestResolvedDraft.reportId),
+                ]
               );
-            const savedReport = await createReport({
-              language: "en",
-              jurisdiction: "NSW",
-              context: reportDraft.title || "SafeSpeak incident report",
-              originalNarrative:
-                reportDraft.summary ||
-                String(reportDraft.structuredFields?.what ?? ""),
-              incidentType,
-              structuredFields: reportDraft.structuredFields,
-              status: "draft",
-            });
-            const destinationOptions = await getReportDestinations(
-              savedReport._id
-            );
+
+              if (!isActive) {
+                return;
+              }
+
+              const resolvedStructuredFields =
+                report.structuredFields ??
+                latestResolvedDraft.structuredFields ??
+                reportDraft.structuredFields ??
+                {};
+              const backendEntries = buildStructuredTimelineEntries(
+                resolvedStructuredFields,
+                resolvedStructuredFields
+              );
+              const resolvedDestinationId = resolvePreferredDestinationId(
+                destinationOptions,
+                latestResolvedDraft.selectedDestinationId ??
+                  reportDraft.selectedDestinationId
+              );
+              const fallbackDestinationId =
+                resolvedDestinationId ?? destinationOptions[0]?.destinationId;
+
+              setBackendStructuredFields(resolvedStructuredFields);
+              setCurrentStructuredFields(resolvedStructuredFields);
+              setTimelineEntries(backendEntries);
+              setExpandedEntryId(backendEntries[0]?.id ?? null);
+              setStatusHistoryEntries(buildStatusHistoryEntries(timeline));
+              setReportLanguage(report.language ?? "en");
+              setReportJurisdiction(report.jurisdiction ?? "NSW");
+              setDestinations(destinationOptions);
+              setSelectedDestinationId(fallbackDestinationId ?? null);
+              setSelectedDestinationIds(
+                fallbackDestinationId ? [fallbackDestinationId] : []
+              );
+              setLoadError(null);
+              mergeReportFlowDraft({
+                reportId: report._id,
+                selectedDestinationId: fallbackDestinationId,
+                structuredFields: resolvedStructuredFields,
+                incidentType:
+                  report.incidentType ??
+                  latestResolvedDraft.incidentType ??
+                  reportDraft.incidentType,
+              });
+              return;
+            }
+
+            if (!fallbackCreatePromiseRef.current) {
+              fallbackCreatePromiseRef.current = (async () => {
+                const incidentType =
+                  reportDraft.incidentType ??
+                  reportDraft.incidentCategory ??
+                  inferIncidentTypeFromStructuredFields(
+                    reportDraft.structuredFields ?? {}
+                  );
+                const savedReport = await createReport({
+                  language: "en",
+                  jurisdiction: "NSW",
+                  context: reportDraft.title || "SafeSpeak incident report",
+                  originalNarrative:
+                    reportDraft.summary ||
+                    String(reportDraft.structuredFields?.what ?? ""),
+                  incidentType,
+                  structuredFields: reportDraft.structuredFields,
+                  status: "draft",
+                });
+                const destinationOptions = await getReportDestinations(
+                  savedReport._id
+                );
+
+                return { savedReport, destinationOptions, incidentType };
+              })().catch((error) => {
+                fallbackCreatePromiseRef.current = null;
+                throw error;
+              });
+            }
+
+            const { savedReport, destinationOptions, incidentType } =
+              await fallbackCreatePromiseRef.current;
 
             if (!isActive) {
               return;

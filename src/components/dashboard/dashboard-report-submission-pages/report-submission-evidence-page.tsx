@@ -518,6 +518,7 @@ function ReportSubmissionEvidencePage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const shouldContinueToReviewAfterConsentRef = useRef(false);
   const [reportDraft, setReportDraft] = useState(() => getReportFlowDraft());
   const fromTriage = searchParams.get("fromTriage") === "1";
   const conversationSessionId = searchParams.get("conversationSessionId");
@@ -867,9 +868,8 @@ function ReportSubmissionEvidencePage({
       originalNarrative: narrative,
       incidentType,
       structuredFields: {
-        ...existingStructuredFields,
-        incidentTitle: title.trim() || undefined,
-        what: narrative,
+      ...existingStructuredFields,
+      what: narrative,
         when: date || (existingStructuredFields.when as string),
         where:
           location || (existingStructuredFields.where as string),
@@ -1415,6 +1415,10 @@ function ReportSubmissionEvidencePage({
   };
 
   const handleContinue = async () => {
+    if (isPersistingReport || isUploadingEvidence) {
+      return;
+    }
+
     mergeCurrentReportDraft();
 
     if (
@@ -1436,14 +1440,19 @@ function ReportSubmissionEvidencePage({
 
     if (!REPORT_SUBMISSION_MOCK_MODE) {
       try {
+        shouldContinueToReviewAfterConsentRef.current = true;
         await persistReportDraftToBackend();
-      } catch {
+      } catch (error) {
+        if (!(error instanceof ConsentRequiredError)) {
+          shouldContinueToReviewAfterConsentRef.current = false;
+        }
         return;
       }
     } else {
       await persistReportDraftToBackend();
     }
 
+    shouldContinueToReviewAfterConsentRef.current = false;
     router.push("/dashboard?view=reportsubmissionreview");
   };
 
@@ -1794,6 +1803,11 @@ function ReportSubmissionEvidencePage({
                     requirement.source
                   );
 
+                  const shouldContinueToReview =
+                    shouldContinueToReviewAfterConsentRef.current &&
+                    !pendingFiles.length &&
+                    !pendingTranscriptionItem;
+
                   if (pendingFiles.length) {
                     await attachFiles(pendingFiles, {
                       forceCloudSync: true,
@@ -1807,6 +1821,11 @@ function ReportSubmissionEvidencePage({
                   setPendingFiles([]);
                   setPendingTranscriptionItem(null);
                   setPendingConsentRequirement(null);
+
+                  if (shouldContinueToReview) {
+                    shouldContinueToReviewAfterConsentRef.current = false;
+                    router.push("/dashboard?view=reportsubmissionreview");
+                  }
                 } catch (error) {
                   setEvidenceError(
                     error instanceof Error

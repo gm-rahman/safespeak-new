@@ -6,6 +6,7 @@ import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
 
 const REPORT_FLOW_DRAFT_KEY = "safespeak_report_flow_draft";
+const REPORT_FLOW_CURRENT_REPORT_ID_KEY = "safespeak_current_report_id";
 const REPORT_FLOW_VIEW_QUERY_KEY = "view";
 const REPORT_FLOW_REPORT_ID_QUERY_KEY = "reportId";
 const REPORT_FLOW_DESTINATION_ID_QUERY_KEY = "destinationId";
@@ -79,6 +80,17 @@ export function getReportFlowDraft(): ReportFlowDraft | null {
   }
 }
 
+function getReportFlowStoredReportId(): string | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return (
+    window.sessionStorage.getItem(REPORT_FLOW_CURRENT_REPORT_ID_KEY) ??
+    undefined
+  );
+}
+
 export function getReportFlowQueryState(): Partial<
   Pick<
     ReportFlowDraft,
@@ -95,24 +107,45 @@ export function getReportFlowQueryState(): Partial<
     params.get(REPORT_FLOW_DESTINATION_ID_QUERY_KEY) ?? undefined;
   const latestSubmissionId =
     params.get(REPORT_FLOW_SUBMISSION_ID_QUERY_KEY) ?? undefined;
+  const queryState: Partial<
+    Pick<
+      ReportFlowDraft,
+      "reportId" | "selectedDestinationId" | "latestSubmissionId"
+    >
+  > = {};
 
-  return {
-    reportId,
-    selectedDestinationId,
-    latestSubmissionId,
-  };
+  if (reportId) {
+    queryState.reportId = reportId;
+  }
+
+  if (selectedDestinationId) {
+    queryState.selectedDestinationId = selectedDestinationId;
+  }
+
+  if (latestSubmissionId) {
+    queryState.latestSubmissionId = latestSubmissionId;
+  }
+
+  return queryState;
 }
 
 export function getResolvedReportFlowDraft(): ReportFlowDraft | null {
   const draft = getReportFlowDraft();
   const queryState = getReportFlowQueryState();
+  const storedReportId = getReportFlowStoredReportId();
 
-  if (!draft && !queryState.reportId && !queryState.selectedDestinationId) {
+  if (
+    !draft &&
+    !queryState.reportId &&
+    !storedReportId &&
+    !queryState.selectedDestinationId
+  ) {
     return null;
   }
 
   return {
     ...defaultReportFlowDraft,
+    ...(storedReportId ? { reportId: storedReportId } : {}),
     ...draft,
     ...queryState,
     evidenceIds: draft?.evidenceIds ?? [],
@@ -164,6 +197,13 @@ export function saveReportFlowDraft(
       REPORT_FLOW_DRAFT_KEY,
       JSON.stringify(nextDraft)
     );
+
+    if (nextDraft.reportId) {
+      window.sessionStorage.setItem(
+        REPORT_FLOW_CURRENT_REPORT_ID_KEY,
+        nextDraft.reportId
+      );
+    }
   }
 
   return nextDraft;
@@ -188,4 +228,5 @@ export function clearReportFlowDraft(): void {
   }
 
   window.sessionStorage.removeItem(REPORT_FLOW_DRAFT_KEY);
+  window.sessionStorage.removeItem(REPORT_FLOW_CURRENT_REPORT_ID_KEY);
 }
