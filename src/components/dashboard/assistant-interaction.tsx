@@ -788,7 +788,7 @@ export function AssistantInteraction({
           : t("dashboard.assistant.metadataDeviceOnly")
         : t("dashboard.assistant.metadataDescription");
   const resolvedVoiceAvatarState: VoiceAvatarState = isTranscribing
-    ? "listening"
+    ? "processing"
     : liveTranscript
       ? "userSpeaking"
       : isRecordingActive

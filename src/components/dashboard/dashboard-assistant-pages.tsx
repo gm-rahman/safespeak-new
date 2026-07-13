@@ -2974,16 +2974,16 @@ function SafeSpeakAssistantConversationPage({
   };
 
   const conversationVoiceAvatarState: VoiceAvatarState =
-    isGeneratingSpeech || isSpeaking || isSending
+    isSpeaking
       ? "aiSpeaking"
+      : isGeneratingSpeech || isSending || isTranscribing
+        ? "processing"
       : liveTranscript
         ? "userSpeaking"
         : isRecordingActive
           ? voiceAvatarState === "userSpeaking"
             ? "userSpeaking"
             : "listening"
-          : isTranscribing
-          ? "listening"
           : "idle";
   const isTranscriptionCaptureActive =
     activeVoiceCaptureTarget === "transcription" && isRecordingActive;
