@@ -127,6 +127,30 @@ function inferEvidenceKind(file: File): EvidenceKind {
   return "document";
 }
 
+function inferIncidentTypeFromNarrative(narrative: string): string | undefined {
+  const normalizedNarrative = narrative.toLowerCase();
+  const domesticViolenceTerms = [
+    "wife",
+    "husband",
+    "partner",
+    "spouse",
+    "girlfriend",
+    "boyfriend",
+    "domestic",
+    "family violence",
+    "hit me",
+    "slapped me",
+    "pushed me",
+    "unsafe at home",
+  ];
+
+  return domesticViolenceTerms.some((term) =>
+    normalizedNarrative.includes(term)
+  )
+    ? "domestic_violence"
+    : undefined;
+}
+
 async function computeSha256Hash(file: File): Promise<string> {
   if (typeof crypto === "undefined" || !crypto.subtle) {
     return "hash-unavailable";
@@ -828,17 +852,20 @@ function ReportSubmissionEvidencePage({
       description.trim() ||
       reportDraft?.summary ||
       "Incident report draft";
+    const incidentType =
+      reportDraft?.incidentType ??
+      initialCategory ??
+      reportDraft?.incidentCategory ??
+      inferIncidentTypeFromNarrative(
+        [title, narrative, location, supportMessage].join(" ")
+      );
 
     return {
       language: "en",
       jurisdiction: "NSW",
       context: title.trim() || reportDraft?.title || "SafeSpeak incident report",
       originalNarrative: narrative,
-      incidentType:
-        reportDraft?.incidentType ??
-        initialCategory ??
-        reportDraft?.incidentCategory ??
-        undefined,
+      incidentType,
       structuredFields: {
         ...existingStructuredFields,
         incidentTitle: title.trim() || undefined,

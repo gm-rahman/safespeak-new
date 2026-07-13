@@ -46,13 +46,17 @@ export type SupportServiceRecord = {
 
 export type AdvocateRecord = {
   id: string;
+  key?: string;
   advocateType: string;
   languages: string[];
   issueTypes?: string[];
   regions?: string[];
+  culturalProfiles?: string[];
+  faithProfiles?: string[];
   availability?: string;
   informationOnly?: boolean;
   displayName?: string;
+  publicBio?: string;
   description?: string;
 };
 
@@ -65,13 +69,35 @@ export type SafeContactPreference =
 export type AdvocateRequestRecord = {
   _id?: string;
   id?: string;
+  reference?: string;
   advocateType: string;
+  advocateProfileId?: string;
+  advocateKey?: string;
+  advocateSnapshot?: {
+    key: string;
+    displayName: string;
+    publicBio?: string;
+    languages: string[];
+    issueTypes: string[];
+    regions: string[];
+    culturalProfiles: string[];
+    faithProfiles: string[];
+    availability: string;
+  };
   language: string;
   issueType?: string;
   region?: string;
   safeContactPreference?: SafeContactPreference;
-  notes?: string;
   confirmationCopy?: string;
+  consentSnapshot?: {
+    advocate_request: boolean;
+    capturedAt: string;
+  };
+  statusHistory?: Array<{
+    status: string;
+    reasonCode?: string;
+    createdAt?: string;
+  }>;
   status?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -138,10 +164,22 @@ type WarmReferralResponse = {
 
 type AdvocateListResponse = {
   advocates: AdvocateRecord[];
+  facets?: {
+    languages?: string[];
+    regions?: string[];
+    issueTypes?: string[];
+    culturalProfiles?: string[];
+    faithProfiles?: string[];
+    availability?: string[];
+  };
 };
 
 type AdvocateRequestResponse = {
   request: AdvocateRequestRecord;
+};
+
+type AdvocateRequestsResponse = {
+  requests: AdvocateRequestRecord[];
 };
 
 type HelpSupportRequestResponse = {
@@ -276,14 +314,33 @@ export async function createWarmReferral(input: {
   return response.data.referral;
 }
 
-export async function listAdvocates(): Promise<AdvocateRecord[]> {
-  const response = await supportApiRequest<AdvocateListResponse>("/support/advocates");
+export async function listAdvocates(query?: {
+  language?: string;
+  region?: string;
+  issueType?: string;
+  culturalProfile?: string;
+  faithProfile?: string;
+  availability?: string;
+}): Promise<AdvocateListResponse> {
+  const params = new URLSearchParams();
 
-  return response.data.advocates;
+  Object.entries(query ?? {}).forEach(([key, value]) => {
+    if (value) {
+      params.set(key, value);
+    }
+  });
+
+  const response = await supportApiRequest<AdvocateListResponse>(
+    `/support/advocates${params.size ? `?${params.toString()}` : ""}`
+  );
+
+  return response.data;
 }
 
 export async function requestAdvocate(input: {
   advocateType: string;
+  advocateKey?: string;
+  advocateProfileId?: string;
   language?: string;
   issueType?: string;
   region?: string;
@@ -297,6 +354,38 @@ export async function requestAdvocate(input: {
     method: "POST",
     body: input,
   });
+
+  return response.data.request;
+}
+
+export async function listMyAdvocateRequests(query?: {
+  status?: string;
+  activeOnly?: boolean;
+  limit?: number;
+}): Promise<AdvocateRequestRecord[]> {
+  const params = new URLSearchParams();
+
+  Object.entries(query ?? {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  });
+
+  const response = await supportApiRequest<AdvocateRequestsResponse>(
+    `/support/advocate-requests/me${params.size ? `?${params.toString()}` : ""}`
+  );
+
+  return response.data.requests;
+}
+
+export async function cancelMyAdvocateRequest(id: string): Promise<AdvocateRequestRecord> {
+  const response = await supportApiRequest<AdvocateRequestResponse>(
+    `/support/advocate-requests/${id}/cancel`,
+    {
+      method: "PATCH",
+      body: { reasonCode: "user_cancelled" },
+    }
+  );
 
   return response.data.request;
 }

@@ -57,6 +57,66 @@ const uniqueValues = (values: Array<string | undefined>): string[] =>
     )
   );
 
+const legacyDestinationAliases: Record<
+  string,
+  { destinationKeys?: string[]; destinationTypes?: string[]; namePatterns?: RegExp[] }
+> = {
+  "mock-police": {
+    destinationKeys: ["nsw-police"],
+    destinationTypes: ["police"],
+    namePatterns: [/\bpolice\b/i],
+  },
+  "mock-esafety": {
+    destinationKeys: ["esafety-commissioner"],
+    destinationTypes: ["esafety"],
+    namePatterns: [/\besafety\b/i],
+  },
+  "mock-anti-discrimination": {
+    destinationKeys: ["anti-discrimination-nsw"],
+    destinationTypes: ["anti_discrimination_agency"],
+    namePatterns: [/\banti-discrimination\b/i, /\bdiscrimination\b/i],
+  },
+};
+
+export const resolvePreferredDestinationId = (
+  destinations: ReportDestinationPreview[],
+  preferredDestinationId?: string
+): string | undefined => {
+  if (!preferredDestinationId) {
+    return undefined;
+  }
+
+  const exactMatch = destinations.find(
+    (destination) =>
+      destination.destinationId === preferredDestinationId ||
+      destination.destinationKey === preferredDestinationId
+  );
+
+  if (exactMatch) {
+    return exactMatch.destinationId;
+  }
+
+  const alias = legacyDestinationAliases[preferredDestinationId];
+
+  if (!alias) {
+    return preferredDestinationId;
+  }
+
+  return (
+    destinations.find((destination) =>
+      alias.destinationKeys?.includes(destination.destinationKey)
+    ) ??
+    destinations.find((destination) =>
+      alias.destinationTypes?.includes(destination.destinationType)
+    ) ??
+    destinations.find((destination) =>
+      alias.namePatterns?.some((pattern) =>
+        pattern.test(destination.destinationName)
+      )
+    )
+  )?.destinationId;
+};
+
 const stringifyStructuredFields = (fields?: Record<string, unknown>): string =>
   Object.values(fields ?? {})
     .map((value) => {
@@ -261,9 +321,14 @@ export function rankAuthorityMatches(input: {
   draft: ReportFlowDraft | null;
   preferredDestinationId?: string;
 }): AuthorityMatch[] {
+  const preferredDestinationId = resolvePreferredDestinationId(
+    input.destinations,
+    input.preferredDestinationId
+  );
+
   return input.destinations
     .map((destination) =>
-      toAuthorityMatch(destination, input.draft, input.preferredDestinationId)
+      toAuthorityMatch(destination, input.draft, preferredDestinationId)
     )
     .sort((a, b) => b.confidence - a.confidence);
 }

@@ -187,6 +187,46 @@ type ReportSubmissionPreviewResponse = {
   previews: ReportSubmissionPayloadPreview[];
 };
 
+const allowedStructuredFieldKeys = new Set([
+  "who",
+  "what",
+  "when",
+  "where",
+  "how",
+  "witnesses",
+  "repeatedIncidents",
+  "injuries",
+  "supportMessage",
+  "evidenceItems",
+]);
+
+function sanitizeStructuredFields(
+  structuredFields?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!structuredFields) {
+    return structuredFields;
+  }
+
+  return Object.fromEntries(
+    Object.entries(structuredFields).filter(([key]) =>
+      allowedStructuredFieldKeys.has(key)
+    )
+  );
+}
+
+function sanitizeReportInput<TInput extends Partial<ReportCreateInput>>(
+  input: TInput
+): TInput {
+  if (!input.structuredFields) {
+    return input;
+  }
+
+  return {
+    ...input,
+    structuredFields: sanitizeStructuredFields(input.structuredFields),
+  };
+}
+
 async function reportApiRequest<TData>(
   path: string,
   options: Omit<Parameters<typeof apiRequest<TData>>[1], "headers"> = {}
@@ -222,7 +262,7 @@ export async function createReport(
   await ensureConsent(consentRequirements.reportStorage, headers);
   const response = await reportApiRequest<ReportResponse>("/reports", {
     method: "POST",
-    body: input,
+    body: sanitizeReportInput(input),
   });
 
   return response.data.report;
@@ -238,7 +278,7 @@ export async function updateReport(
     `/reports/${reportId}`,
     {
       method: "PATCH",
-      body: input,
+      body: sanitizeReportInput(input),
     }
   );
 

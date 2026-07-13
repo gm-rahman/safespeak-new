@@ -21,6 +21,7 @@ import {
 } from "@tabler/icons-react";
 
 import { ReportSubmissionFrame } from "./report-submission-frame";
+import { resolvePreferredDestinationId } from "@/lib/report-authority-routing";
 import {
   buildReportFlowHref,
   getResolvedReportFlowDraft,
@@ -33,6 +34,7 @@ import {
 import {
   type ReportDestinationPreview,
   type ReportSubmissionPayloadPreview,
+  createReport,
   getReport,
   getReportDestinations,
   getReportStatus,
@@ -220,6 +222,33 @@ const toMailHref = (email: string, destinationName: string): string => {
   return `mailto:${email}?subject=${subject}`;
 };
 
+const inferIncidentTypeFromStructuredFields = (
+  structuredFields: Record<string, unknown>
+): string | undefined => {
+  const narrative = Object.values(structuredFields)
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+  const domesticViolenceTerms = [
+    "wife",
+    "husband",
+    "partner",
+    "spouse",
+    "girlfriend",
+    "boyfriend",
+    "domestic",
+    "family violence",
+    "hit me",
+    "slapped me",
+    "pushed me",
+    "unsafe at home",
+  ];
+
+  return domesticViolenceTerms.some((term) => narrative.includes(term))
+    ? "domestic_violence"
+    : undefined;
+};
+
 const withTriageParam = (href: Route, fromTriage: boolean): Route =>
   (fromTriage ? `${href}&fromTriage=1` : href) as Route;
 
@@ -290,6 +319,81 @@ function ReportSubmissionReviewPage() {
         setTimelineEntries(localEntries);
         setExpandedEntryId(localEntries[0]?.id ?? null);
         setIsLoading(false);
+
+        let isActive = true;
+
+        void (async () => {
+          try {
+            const incidentType =
+              reportDraft.incidentType ??
+              reportDraft.incidentCategory ??
+              inferIncidentTypeFromStructuredFields(
+                reportDraft.structuredFields ?? {}
+              );
+            const savedReport = await createReport({
+              language: "en",
+              jurisdiction: "NSW",
+              context: reportDraft.title || "SafeSpeak incident report",
+              originalNarrative:
+                reportDraft.summary ||
+                String(reportDraft.structuredFields?.what ?? ""),
+              incidentType,
+              structuredFields: reportDraft.structuredFields,
+              status: "draft",
+            });
+            const destinationOptions = await getReportDestinations(
+              savedReport._id
+            );
+
+            if (!isActive) {
+              return;
+            }
+
+            const resolvedStructuredFields =
+              savedReport.structuredFields ?? reportDraft.structuredFields ?? {};
+            const backendEntries = buildStructuredTimelineEntries(
+              resolvedStructuredFields,
+              resolvedStructuredFields
+            );
+            const resolvedDestinationId = resolvePreferredDestinationId(
+              destinationOptions,
+              reportDraft.selectedDestinationId
+            );
+            const fallbackDestinationId =
+              resolvedDestinationId ?? destinationOptions[0]?.destinationId;
+
+            setBackendStructuredFields(resolvedStructuredFields);
+            setCurrentStructuredFields(resolvedStructuredFields);
+            setTimelineEntries(backendEntries);
+            setExpandedEntryId(backendEntries[0]?.id ?? null);
+            setDestinations(destinationOptions);
+            setSelectedDestinationId(fallbackDestinationId ?? null);
+            setSelectedDestinationIds(
+              fallbackDestinationId ? [fallbackDestinationId] : []
+            );
+            setLoadError(null);
+            mergeReportFlowDraft({
+              reportId: savedReport._id,
+              selectedDestinationId: fallbackDestinationId,
+              structuredFields: resolvedStructuredFields,
+              incidentType: savedReport.incidentType ?? incidentType,
+            });
+          } catch (error) {
+            if (!isActive) {
+              return;
+            }
+
+            setLoadError(
+              error instanceof Error
+                ? error.message
+                : "SafeSpeak could not create a backend report for contact options."
+            );
+          }
+        })();
+
+        return () => {
+          isActive = false;
+        };
       }
 
       return;
@@ -299,13 +403,11 @@ function ReportSubmissionReviewPage() {
 
     void (async () => {
       try {
-        const [report, status, timeline, destinationOptions] =
-          await Promise.all([
-            getReport(reportId),
-            getReportStatus(reportId),
-            getReportTimeline(reportId),
-            getReportDestinations(reportId),
-          ]);
+        const [report, status, timeline] = await Promise.all([
+          getReport(reportId),
+          getReportStatus(reportId),
+          getReportTimeline(reportId),
+        ]);
 
         if (!isActive) {
           return;
@@ -317,17 +419,25 @@ function ReportSubmissionReviewPage() {
         };
 
         const backendStructuredFields = report.structuredFields ?? {};
+        const resolvedIncidentType =
+          reportDraft?.incidentType ??
+          reportDraft?.incidentCategory ??
+          inferIncidentTypeFromStructuredFields(mergedStructuredFields) ??
+          report.incidentType;
         const requiresBackendSync =
           report._id &&
-          Object.keys(mergedStructuredFields).length > 0 &&
-          !areStructuredFieldsEqual(
-            backendStructuredFields,
-            mergedStructuredFields
-          );
+          ((Object.keys(mergedStructuredFields).length > 0 &&
+            !areStructuredFieldsEqual(
+              backendStructuredFields,
+              mergedStructuredFields
+            )) ||
+            (resolvedIncidentType &&
+              resolvedIncidentType !== report.incidentType));
 
         const syncedReport = requiresBackendSync
           ? await updateReport(report._id, {
               structuredFields: mergedStructuredFields,
+              incidentType: resolvedIncidentType,
               ...(typeof mergedStructuredFields.what === "string"
                 ? {
                     originalNarrative: String(mergedStructuredFields.what),
@@ -335,8 +445,13 @@ function ReportSubmissionReviewPage() {
                 : {}),
             })
           : report;
+        const destinationOptions = await getReportDestinations(syncedReport._id);
         const resolvedStructuredFields =
           syncedReport.structuredFields ?? mergedStructuredFields;
+        const resolvedDestinationId = resolvePreferredDestinationId(
+          destinationOptions,
+          reportDraft?.selectedDestinationId
+        );
 
         setBackendStructuredFields(resolvedStructuredFields);
         setCurrentStructuredFields(resolvedStructuredFields);
@@ -352,46 +467,52 @@ function ReportSubmissionReviewPage() {
         setReportJurisdiction(syncedReport.jurisdiction ?? "NSW");
         setDestinations(destinationOptions);
         setSelectedDestinationId((currentDestinationId) => {
+          const resolvedCurrentDestinationId = resolvePreferredDestinationId(
+            destinationOptions,
+            currentDestinationId ?? undefined
+          );
+
           if (
-            currentDestinationId &&
+            resolvedCurrentDestinationId &&
             destinationOptions.some(
               (destination) =>
-                destination.destinationId === currentDestinationId
+                destination.destinationId === resolvedCurrentDestinationId
             )
           ) {
-            return currentDestinationId;
+            return resolvedCurrentDestinationId;
           }
 
           const preferredDestinationId =
-            reportDraft?.selectedDestinationId &&
+            resolvedDestinationId &&
             destinationOptions.some(
-              (destination) =>
-                destination.destinationId === reportDraft.selectedDestinationId
+              (destination) => destination.destinationId === resolvedDestinationId
             )
-              ? reportDraft.selectedDestinationId
+              ? resolvedDestinationId
               : (destinationOptions[0]?.destinationId ?? null);
 
           return preferredDestinationId;
         });
         setSelectedDestinationIds((currentDestinationIds) => {
-          const validDestinationIds = currentDestinationIds.filter(
-            (destinationId) =>
+          const validDestinationIds = currentDestinationIds
+            .map((destinationId) =>
+              resolvePreferredDestinationId(destinationOptions, destinationId)
+            )
+            .filter((destinationId): destinationId is string =>
               destinationOptions.some(
                 (destination) => destination.destinationId === destinationId
               )
-          );
+            );
 
           if (validDestinationIds.length) {
             return validDestinationIds;
           }
 
           const fallbackDestinationId =
-            reportDraft?.selectedDestinationId &&
+            resolvedDestinationId &&
             destinationOptions.some(
-              (destination) =>
-                destination.destinationId === reportDraft.selectedDestinationId
+              (destination) => destination.destinationId === resolvedDestinationId
             )
-              ? reportDraft.selectedDestinationId
+              ? resolvedDestinationId
               : destinationOptions[0]?.destinationId;
 
           return fallbackDestinationId ? [fallbackDestinationId] : [];
@@ -399,7 +520,10 @@ function ReportSubmissionReviewPage() {
         setLoadError(null);
         mergeReportFlowDraft({
           reportId: syncedReport._id,
+          selectedDestinationId:
+            resolvedDestinationId ?? destinationOptions[0]?.destinationId,
           structuredFields: resolvedStructuredFields,
+          incidentType: syncedReport.incidentType ?? resolvedIncidentType,
         });
       } catch (error) {
         if (!isActive) {

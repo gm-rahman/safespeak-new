@@ -223,9 +223,9 @@ export function ExplorerServiceDetailsPage({
       });
 
     void listAdvocates()
-      .then((advocates) => {
+      .then((catalog) => {
         if (isActive) {
-          setAdvocateCount(advocates.length);
+          setAdvocateCount(catalog.advocates.length);
         }
       })
       .catch(() => {

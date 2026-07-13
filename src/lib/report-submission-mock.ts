@@ -7,7 +7,7 @@ import type {
   ReportSubmissionRecord,
 } from "@/lib/reports-client";
 
-export const REPORT_SUBMISSION_MOCK_MODE = true;
+export const REPORT_SUBMISSION_MOCK_MODE = false;
 
 const MOCK_REPORT_ID = "mock-report-local";
 const MOCK_REPORT_REF = "SS-MOCK-0001";

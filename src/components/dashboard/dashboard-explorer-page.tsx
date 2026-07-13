@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   IconAlertCircle,
@@ -27,9 +27,12 @@ import { useConsentGate } from "@/hooks/use-consent-gate";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
 import {
   getSupportRecommendations,
+  cancelMyAdvocateRequest,
   listAdvocates,
+  listMyAdvocateRequests,
   listSupportServices,
   requestAdvocate,
+  type AdvocateRequestRecord,
   type AdvocateRecord,
   type SafeContactPreference,
   type SupportServiceRecord,
@@ -267,25 +270,24 @@ function getExplorerContextCopy(
   return null;
 }
 
-const advocateIssueOptions = [
-  "general_support",
-  "domestic_violence",
-  "racial_abuse",
-  "migrant_challenges",
-  "cyber_scam",
-];
-
-const advocateLanguageOptions = ["en", "ar", "es"];
-const advocateRegionOptions = ["AU", "national", "NSW", "VIC", "QLD"];
-
 type AdvocateRequestInput = {
   advocateType: string;
+  advocateKey?: string;
   language: string;
   issueType?: string;
   region?: string;
   safeContactPreference: SafeContactPreference;
   notes?: string;
   confirmationCopy: string;
+};
+
+type AdvocateSubmissionResult = {
+  id?: string;
+  reference?: string;
+  status?: string;
+  advocateName: string;
+  safeContactPreference?: SafeContactPreference;
+  createdAt?: string;
 };
 
 function formatSupportLabel(value: string): string {
@@ -301,6 +303,76 @@ function getAdvocateDisplayName(advocate: AdvocateRecord): string {
   );
 }
 
+function getAdvocateRequestDisplayName(request: AdvocateRequestRecord): string {
+  return (
+    request.advocateSnapshot?.displayName ??
+    request.advocateKey ??
+    formatSupportLabel(request.advocateType)
+  );
+}
+
+function getAdvocateRequestReference(request: AdvocateRequestRecord): string {
+  return request.reference ?? request.id ?? request._id ?? "pending reference";
+}
+
+function getAdvocateRequestStatusCopy(status?: string) {
+  switch (status) {
+    case "matched":
+    case "assigned":
+    case "accepted":
+      return {
+        label: "Assigned",
+        body: "An eligible advocate has been assigned for limited referral coordination.",
+      };
+    case "contact_initiated":
+      return {
+        label: "Contact initiated",
+        body: "Authorised referral coordination has started using your selected safe contact preference.",
+      };
+    case "closed":
+    case "completed":
+      return {
+        label: "Closed",
+        body: "This referral request has been closed. SafeSpeak does not provide ongoing case management.",
+      };
+    case "declined":
+      return {
+        label: "Declined",
+        body: "This request could not proceed. No private advocate information is shown here.",
+      };
+    case "cancelled":
+      return {
+        label: "Cancelled",
+        body: "You cancelled this request before referral coordination was completed.",
+      };
+    default:
+      return {
+        label: "Pending",
+        body: "Your request has been received and is awaiting referral review.",
+      };
+  }
+}
+
+function isAdvocateRequestCancellable(status?: string): boolean {
+  return status === "pending" || status === "matched" || status === "accepted";
+}
+
+function getConflictAdvocateRequest(error: unknown): AdvocateRequestRecord | null {
+  const errors = (error as { errors?: unknown[] })?.errors;
+
+  if (!Array.isArray(errors)) {
+    return null;
+  }
+
+  const conflict = errors.find((item) => {
+    const record = item as { code?: unknown; request?: unknown };
+
+    return record.code === "active_advocate_request_exists" && Boolean(record.request);
+  }) as { request?: AdvocateRequestRecord } | undefined;
+
+  return conflict?.request ?? null;
+}
+
 function AdvocateMatchingSection({
   initialIssueType,
   initialRegion,
@@ -309,7 +381,13 @@ function AdvocateMatchingSection({
   initialRegion?: string;
 }) {
   const [advocates, setAdvocates] = useState<AdvocateRecord[]>([]);
-  const [languageFilter, setLanguageFilter] = useState("en");
+  const [advocateFacets, setAdvocateFacets] = useState<{
+    languages?: string[];
+    regions?: string[];
+    issueTypes?: string[];
+    availability?: string[];
+  }>({});
+  const [languageFilter, setLanguageFilter] = useState("");
   const [issueTypeFilter, setIssueTypeFilter] = useState(initialIssueType ?? "");
   const [regionFilter, setRegionFilter] = useState(initialRegion ?? "");
   const [availabilityFilter, setAvailabilityFilter] = useState("");
@@ -321,10 +399,29 @@ function AdvocateMatchingSection({
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionResult, setSubmissionResult] =
+    useState<AdvocateSubmissionResult | null>(null);
+  const [submissionResultType, setSubmissionResultType] = useState<
+    "created" | "existing"
+  >("created");
+  const [submittedRequest, setSubmittedRequest] =
+    useState<AdvocateRequestInput | null>(null);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [myAdvocateRequests, setMyAdvocateRequests] = useState<
+    AdvocateRequestRecord[]
+  >([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+  const [requestListError, setRequestListError] = useState<string | null>(null);
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(
+    null
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [pendingRequest, setPendingRequest] =
     useState<AdvocateRequestInput | null>(null);
+  const submitInFlightRef = useRef(false);
+  const resultMessageRef = useRef<HTMLDivElement | null>(null);
+  const errorMessageRef = useRef<HTMLDivElement | null>(null);
   const {
     pendingConsentRequirement,
     isGrantingConsent,
@@ -333,18 +430,46 @@ function AdvocateMatchingSection({
     grantPendingConsent,
   } = useConsentGate();
 
+  const refreshMyAdvocateRequests = async () => {
+    setIsLoadingRequests(true);
+    setRequestListError(null);
+
+    try {
+      const requests = await listMyAdvocateRequests({ limit: 10 });
+
+      setMyAdvocateRequests(requests);
+    } catch (error) {
+      setRequestListError(
+        error instanceof Error
+          ? error.message
+          : "Advocate request status could not be loaded."
+      );
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  };
+
   useEffect(() => {
     let isActive = true;
+    setIsLoading(true);
 
-    void listAdvocates()
-      .then((nextAdvocates) => {
+    void listAdvocates({
+      language: languageFilter || undefined,
+      issueType: issueTypeFilter || undefined,
+      region: regionFilter || undefined,
+      availability: availabilityFilter || undefined,
+    })
+      .then((catalog) => {
         if (!isActive) {
           return;
         }
 
-        setAdvocates(nextAdvocates);
+        setAdvocates(catalog.advocates);
+        setAdvocateFacets(catalog.facets ?? {});
         setSelectedAdvocateType((currentType) =>
-          currentType || nextAdvocates[0]?.advocateType || ""
+          catalog.advocates.some((advocate) => advocate.advocateType === currentType)
+            ? currentType
+            : catalog.advocates[0]?.advocateType || ""
         );
         setLoadError(null);
       })
@@ -368,6 +493,10 @@ function AdvocateMatchingSection({
     return () => {
       isActive = false;
     };
+  }, [availabilityFilter, issueTypeFilter, languageFilter, regionFilter]);
+
+  useEffect(() => {
+    void refreshMyAdvocateRequests();
   }, []);
 
   useEffect(() => {
@@ -376,45 +505,36 @@ function AdvocateMatchingSection({
     }
   }, [initialRegion]);
 
+  useEffect(() => {
+    if (submissionResult) {
+      resultMessageRef.current?.focus();
+    }
+  }, [submissionResult]);
+
+  useEffect(() => {
+    if (submissionError) {
+      errorMessageRef.current?.focus();
+    }
+  }, [submissionError]);
+
+  const languageOptions = useMemo(
+    () => Array.from(new Set([languageFilter, ...(advocateFacets.languages ?? [])])).filter(Boolean),
+    [advocateFacets.languages, languageFilter]
+  );
+  const issueOptions = useMemo(
+    () => Array.from(new Set([...(advocateFacets.issueTypes ?? []), issueTypeFilter])).filter(Boolean),
+    [advocateFacets.issueTypes, issueTypeFilter]
+  );
+  const regionOptions = useMemo(
+    () => Array.from(new Set([...(advocateFacets.regions ?? []), regionFilter])).filter(Boolean),
+    [advocateFacets.regions, regionFilter]
+  );
   const availabilityOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          advocates
-            .map((advocate) => advocate.availability)
-            .filter((value): value is string => Boolean(value))
-        )
-      ),
-    [advocates]
+    () => Array.from(new Set([...(advocateFacets.availability ?? []), availabilityFilter])).filter(Boolean),
+    [advocateFacets.availability, availabilityFilter]
   );
 
-  const filteredAdvocates = useMemo(
-    () =>
-      advocates.filter((advocate) => {
-        const matchesLanguage =
-          !languageFilter || advocate.languages.includes(languageFilter);
-        const matchesIssue =
-          !issueTypeFilter ||
-          !advocate.issueTypes?.length ||
-          advocate.issueTypes.includes(issueTypeFilter);
-        const matchesRegion =
-          !regionFilter ||
-          !advocate.regions?.length ||
-          advocate.regions.includes(regionFilter) ||
-          advocate.regions.includes("AU") ||
-          advocate.regions.includes("national");
-        const matchesAvailability =
-          !availabilityFilter || advocate.availability === availabilityFilter;
-
-        return (
-          matchesLanguage &&
-          matchesIssue &&
-          matchesRegion &&
-          matchesAvailability
-        );
-      }),
-    [advocates, availabilityFilter, issueTypeFilter, languageFilter, regionFilter]
-  );
+  const filteredAdvocates = advocates;
 
   useEffect(() => {
     if (
@@ -455,6 +575,7 @@ function AdvocateMatchingSection({
 
     return {
       advocateType,
+      advocateKey: selectedAdvocate?.key ?? selectedAdvocate?.advocateType,
       language: languageFilter || "en",
       issueType: issueTypeFilter || undefined,
       region: regionFilter || undefined,
@@ -465,30 +586,78 @@ function AdvocateMatchingSection({
   };
 
   const submitAdvocateRequest = async (input: AdvocateRequestInput) => {
+    if (submitInFlightRef.current || submissionResult) {
+      return;
+    }
+
+    submitInFlightRef.current = true;
     setIsSubmitting(true);
     setLoadError(null);
+    setSubmissionError(null);
     setRequestStatus(null);
 
     try {
       const request = await requestAdvocate(input);
 
-      setIsPreviewOpen(false);
+      setSubmittedRequest(input);
       setPendingRequest(null);
-      setRequestStatus(
-        `Advocate request created. Status: ${request.status ?? "pending"}.`
-      );
+      setSubmissionResult({
+        id: request.id ?? request._id,
+        reference: getAdvocateRequestReference(request),
+        status: request.status ?? "pending",
+        advocateName:
+          request.advocateSnapshot?.displayName ??
+          selectedAdvocate?.displayName ??
+          formatSupportLabel(request.advocateKey ?? input.advocateType),
+        safeContactPreference: request.safeContactPreference,
+        createdAt: request.createdAt,
+      });
+      setSubmissionResultType("created");
+      setMyAdvocateRequests((current) => [
+        request,
+        ...current.filter((item) => (item.id ?? item._id) !== (request.id ?? request._id)),
+      ]);
+      setNotes("");
     } catch (error) {
       if (captureConsentError(error)) {
         setPendingRequest(input);
+        setSubmissionError(
+          "Advocate request consent is required before SafeSpeak can create this request. Use Allow advocate request, then SafeSpeak will continue with the same selected advocate and notes."
+        );
         return;
       }
 
-      setLoadError(
+      const conflictRequest = getConflictAdvocateRequest(error);
+
+      if (conflictRequest) {
+        setMyAdvocateRequests((current) => [
+          conflictRequest,
+          ...current.filter(
+            (item) => (item.id ?? item._id) !== (conflictRequest.id ?? conflictRequest._id)
+          ),
+        ]);
+        setSubmissionResult({
+          id: conflictRequest.id ?? conflictRequest._id,
+          reference: getAdvocateRequestReference(conflictRequest),
+          status: conflictRequest.status ?? "pending",
+          advocateName: getAdvocateRequestDisplayName(conflictRequest),
+          safeContactPreference: conflictRequest.safeContactPreference,
+          createdAt: conflictRequest.createdAt,
+        });
+        setSubmissionResultType("existing");
+        setSubmissionError(
+          "You already have an active advocate request for this advocate."
+        );
+        return;
+      }
+
+      setSubmissionError(
         error instanceof Error
           ? error.message
           : "Advocate request could not be created."
       );
     } finally {
+      submitInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -497,16 +666,17 @@ function AdvocateMatchingSection({
     const input = buildAdvocateRequest();
 
     if (!input) {
-      setLoadError("Choose an advocate option before requesting support.");
+      setSubmissionError("Choose an advocate option before requesting support.");
       return;
     }
 
     if (!confirmationAccepted) {
-      setLoadError("Confirm the request copy before continuing.");
+      setSubmissionError("Confirm the request copy before continuing.");
       return;
     }
 
     setLoadError(null);
+    setSubmissionError(null);
 
     if (!isPreviewOpen) {
       setPendingRequest(input);
@@ -519,6 +689,8 @@ function AdvocateMatchingSection({
 
   const handleAllowConsent = async () => {
     try {
+      setSubmissionError(null);
+      setLoadError(null);
       await grantPendingConsent();
 
       if (pendingRequest) {
@@ -531,7 +703,41 @@ function AdvocateMatchingSection({
     }
   };
 
-  const previewRequest = pendingRequest ?? buildAdvocateRequest();
+  const previewRequest = submittedRequest ?? pendingRequest ?? buildAdvocateRequest();
+
+  const handleCancelAdvocateRequest = async (request: AdvocateRequestRecord) => {
+    const requestId = request.id ?? request._id;
+
+    if (!requestId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Cancel this advocate request? SafeSpeak will keep the request record for your history."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCancellingRequestId(requestId);
+    setRequestListError(null);
+
+    try {
+      const cancelled = await cancelMyAdvocateRequest(requestId);
+      setMyAdvocateRequests((current) =>
+        current.map((item) => ((item.id ?? item._id) === requestId ? cancelled : item))
+      );
+    } catch (error) {
+      setRequestListError(
+        error instanceof Error
+          ? error.message
+          : "Advocate request could not be cancelled."
+      );
+    } finally {
+      setCancellingRequestId(null);
+    }
+  };
 
   return (
     <section className="mt-5 rounded-[22px] border border-[#dce5f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
@@ -597,7 +803,8 @@ function AdvocateMatchingSection({
             onChange={(event) => setLanguageFilter(event.target.value)}
             className="h-10 rounded-[10px] border border-[#d7e1ee] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none"
           >
-            {advocateLanguageOptions.map((language) => (
+            <option value="">Any language</option>
+            {languageOptions.map((language) => (
               <option key={language} value={language}>
                 {language.toUpperCase()}
               </option>
@@ -614,7 +821,7 @@ function AdvocateMatchingSection({
             className="h-10 rounded-[10px] border border-[#d7e1ee] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none"
           >
             <option value="">Any issue</option>
-            {advocateIssueOptions.map((issueType) => (
+            {issueOptions.map((issueType) => (
               <option key={issueType} value={issueType}>
                 {formatSupportLabel(issueType)}
               </option>
@@ -631,7 +838,7 @@ function AdvocateMatchingSection({
             className="h-10 rounded-[10px] border border-[#d7e1ee] bg-white px-3 text-[12px] text-[#1f2a3a] outline-none"
           >
             <option value="">Any region</option>
-            {advocateRegionOptions.map((region) => (
+            {regionOptions.map((region) => (
               <option key={region} value={region}>
                 {region}
               </option>
@@ -804,25 +1011,238 @@ function AdvocateMatchingSection({
               </div>
               <button
                 type="button"
-                onClick={() => setIsPreviewOpen(false)}
+                onClick={() => {
+                  if (!submissionResult) {
+                    setIsPreviewOpen(false);
+                  }
+                }}
                 className="mt-3 text-[11px] font-bold text-[#60728a]"
+                disabled={Boolean(submissionResult)}
               >
                 Edit before creating request
               </button>
             </div>
           ) : null}
 
+          {submissionError ? (
+            <div
+              ref={errorMessageRef}
+              role="alert"
+              tabIndex={-1}
+              className="mt-4 rounded-[14px] border border-[#fde2e2] bg-[#fff5f5] px-4 py-3 text-[11px] leading-[1.55] text-[#b45353] outline-none"
+            >
+              <span className="inline-flex items-start gap-1.5">
+                <IconAlertCircle size={13} className="mt-0.5 shrink-0" />
+                <span>
+                  {submissionError}
+                  <span className="mt-1 block text-[#7c3f3f]">
+                    Your selected advocate and notes are still here. You can retry
+                    after checking consent, network connection, or advocate
+                    availability.
+                  </span>
+                  {pendingConsentRequirement ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleAllowConsent()}
+                      disabled={isGrantingConsent || isSubmitting}
+                      className="mt-3 inline-flex h-9 items-center justify-center rounded-full bg-[#0f5d9f] px-4 text-[11px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isGrantingConsent || isSubmitting ? (
+                        <IconLoader2 size={13} className="mr-1 animate-spin" />
+                      ) : null}
+                      Allow advocate request
+                    </button>
+                  ) : null}
+                </span>
+              </span>
+            </div>
+          ) : null}
+
+          {submissionResult ? (
+            <div
+              ref={resultMessageRef}
+              role="status"
+              aria-live="polite"
+              tabIndex={-1}
+              className="mt-4 rounded-[14px] border border-[#cfe8da] bg-[#f3fbf6] px-4 py-3 text-[11px] leading-[1.6] text-[#17633f] outline-none"
+            >
+              <p className="font-bold text-[#0f5132]">
+                {submissionResultType === "existing"
+                  ? "Active request found"
+                  : "Advocate request created"}
+              </p>
+              <p className="mt-1">
+                {submissionResultType === "existing"
+                  ? "You already have an active advocate request for this advocate. SafeSpeak has not created another request."
+                  : "Your advocate request has been created."}{" "}
+                SafeSpeak has not called, emailed, or contacted anyone
+                automatically. The request is awaiting limited referral
+                coordination.
+              </p>
+              <div className="mt-2 space-y-1 text-[#245f43]">
+                {submissionResult.id ? (
+                  <p>
+                    <span className="font-bold">Reference:</span>{" "}
+                    {submissionResult.reference ?? submissionResult.id}
+                  </p>
+                ) : null}
+                {submissionResult.createdAt ? (
+                  <p>
+                    <span className="font-bold">Created:</span>{" "}
+                    {new Date(submissionResult.createdAt).toLocaleString()}
+                  </p>
+                ) : null}
+                <p>
+                  <span className="font-bold">Status:</span>{" "}
+                  {formatSupportLabel(submissionResult.status ?? "pending")}
+                </p>
+                <p>
+                  <span className="font-bold">Advocate:</span>{" "}
+                  {submissionResult.advocateName}
+                </p>
+                <p>
+                  <span className="font-bold">Safe contact preference:</span>{" "}
+                  {formatSupportLabel(
+                    submissionResult.safeContactPreference ?? safeContactPreference
+                  )}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           <button
             type="button"
-            onClick={handleRequestAdvocate}
-            disabled={isSubmitting || !selectedAdvocateType}
+            onClick={
+              pendingConsentRequirement && pendingRequest
+                ? () => void handleAllowConsent()
+                : handleRequestAdvocate
+            }
+            disabled={
+              isGrantingConsent ||
+              isSubmitting ||
+              !selectedAdvocateType ||
+              !confirmationAccepted ||
+              Boolean(submissionResult)
+            }
             className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-full bg-[#0f5d9f] px-5 text-xs font-bold text-white shadow-[0_10px_24px_rgba(15,93,159,0.24)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting ? (
               <IconLoader2 size={14} className="mr-1 animate-spin" />
             ) : null}
-            {isPreviewOpen ? "Create advocate request" : "Preview request"}
+            {submissionResult
+              ? submissionResultType === "existing"
+                ? "Active request found"
+                : "Request created"
+              : pendingConsentRequirement && pendingRequest
+                ? isGrantingConsent
+                  ? "Allowing request..."
+                  : "Allow advocate request"
+              : isSubmitting
+                ? "Creating request..."
+                : isPreviewOpen
+                  ? "Create advocate request"
+                  : "Preview request"}
           </button>
+          {isSubmitting ? (
+            <p role="status" aria-live="polite" className="mt-2 text-[11px] font-semibold text-[#0f5d9f]">
+              Creating request...
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-[16px] border border-[#e3ebf5] bg-[#fbfdff] p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+              My advocate requests
+            </p>
+            <p className="mt-1 text-[11px] leading-[1.55] text-[#60728a]">
+              View your current and recent request status. No private advocate
+              contact details or internal notes are shown here.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refreshMyAdvocateRequests()}
+            disabled={isLoadingRequests}
+            className="inline-flex h-9 items-center justify-center rounded-full border border-[#d7e1ee] bg-white px-4 text-[11px] font-bold text-[#0f5d9f] disabled:opacity-60"
+          >
+            {isLoadingRequests ? (
+              <IconLoader2 size={13} className="mr-1 animate-spin" />
+            ) : null}
+            Refresh status
+          </button>
+        </div>
+
+        {requestListError ? (
+          <div className="mt-3 rounded-[12px] border border-[#fde2e2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#b45353]">
+            {requestListError}
+          </div>
+        ) : null}
+
+        <div className="mt-3 space-y-2">
+          {myAdvocateRequests.map((request) => {
+            const requestId = request.id ?? request._id ?? "";
+            const requestReference = getAdvocateRequestReference(request);
+            const statusCopy = getAdvocateRequestStatusCopy(request.status);
+            const lastStatus = request.statusHistory?.[request.statusHistory.length - 1];
+
+            return (
+              <article
+                key={requestId || request.createdAt}
+                className="rounded-[14px] border border-[#d8e4f2] bg-white px-4 py-3"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-bold text-[#1f2a3a]">
+                        {getAdvocateRequestDisplayName(request)}
+                      </p>
+                      <span className="rounded-full bg-[#eef4ff] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+                        {statusCopy.label}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[10px] text-[#60728a]">
+                      Reference: {requestReference} | Requested:{" "}
+                      {request.createdAt
+                        ? new Date(request.createdAt).toLocaleString()
+                        : "not available"}{" "}
+                      | Safe contact:{" "}
+                      {formatSupportLabel(request.safeContactPreference ?? "in_app")}
+                    </p>
+                    <p className="mt-2 text-[11px] leading-[1.55] text-[#60728a]">
+                      {statusCopy.body}
+                    </p>
+                    {lastStatus?.createdAt ? (
+                      <p className="mt-1 text-[10px] text-[#7c8da3]">
+                        Last status update:{" "}
+                        {new Date(lastStatus.createdAt).toLocaleString()}
+                      </p>
+                    ) : null}
+                  </div>
+                  {isAdvocateRequestCancellable(request.status) ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleCancelAdvocateRequest(request)}
+                      disabled={cancellingRequestId === requestId}
+                      className="inline-flex h-9 items-center justify-center rounded-full border border-[#f4caca] bg-white px-4 text-[11px] font-bold text-[#b45353] disabled:opacity-60"
+                    >
+                      {cancellingRequestId === requestId ? (
+                        <IconLoader2 size={13} className="mr-1 animate-spin" />
+                      ) : null}
+                      Cancel request
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+          {!isLoadingRequests && myAdvocateRequests.length === 0 ? (
+            <div className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-white px-4 py-3 text-[11px] text-[#60728a]">
+              No advocate requests are linked to this session yet.
+            </div>
+          ) : null}
         </div>
       </div>
     </section>

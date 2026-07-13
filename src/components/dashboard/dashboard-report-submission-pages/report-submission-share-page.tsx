@@ -28,6 +28,7 @@ import {
   formatChannel,
   formatDestinationType,
   rankAuthorityMatches,
+  resolvePreferredDestinationId,
 } from "@/lib/report-authority-routing";
 import {
   buildReportFlowHref,
@@ -46,6 +47,7 @@ import {
 import {
   type ReportDestinationPreview,
   type ReportSubmissionRecord,
+  createReport,
   getReport,
   getReportDestinations,
   getReportStatus,
@@ -158,6 +160,42 @@ function getShareNotice(submission: ReportSubmissionRecord): string {
 const withTriageParam = (href: Route, fromTriage: boolean): Route =>
   (fromTriage ? `${href}&fromTriage=1` : href) as Route;
 
+const inferIncidentTypeFromDraft = (
+  draft: ReturnType<typeof getResolvedReportFlowDraft>
+): string | undefined => {
+  if (draft?.incidentType || draft?.incidentCategory) {
+    return draft.incidentType ?? draft.incidentCategory;
+  }
+
+  const narrative = [
+    draft?.title,
+    draft?.summary,
+    ...Object.values(draft?.structuredFields ?? {}).filter(
+      (value): value is string => typeof value === "string"
+    ),
+  ]
+    .join(" ")
+    .toLowerCase();
+  const domesticViolenceTerms = [
+    "wife",
+    "husband",
+    "partner",
+    "spouse",
+    "girlfriend",
+    "boyfriend",
+    "domestic",
+    "family violence",
+    "hit me",
+    "slapped me",
+    "pushed me",
+    "unsafe at home",
+  ];
+
+  return domesticViolenceTerms.some((term) => narrative.includes(term))
+    ? "domestic_violence"
+    : undefined;
+};
+
 function ReportSubmissionSharePage() {
   const searchParams = useSearchParams();
   const fromTriage = searchParams.get("fromTriage") === "1";
@@ -237,8 +275,75 @@ function ReportSubmissionSharePage() {
     }
 
     if (!reportDraft?.reportId) {
-      setIsLoadingDestinations(false);
-      return;
+      if (!reportDraft?.summary && !reportDraft?.structuredFields) {
+        setIsLoadingDestinations(false);
+        return;
+      }
+
+      let isActive = true;
+      setIsLoadingDestinations(true);
+
+      void (async () => {
+        try {
+          const savedReport = await createReport({
+            language: "en",
+            jurisdiction: "NSW",
+            context: reportDraft.title || "SafeSpeak incident report",
+            originalNarrative:
+              reportDraft.summary ||
+              String(reportDraft.structuredFields?.what ?? ""),
+            incidentType: inferIncidentTypeFromDraft(reportDraft),
+            structuredFields: reportDraft.structuredFields ?? {},
+            status: "draft",
+          });
+          const destinations = await getReportDestinations(savedReport._id);
+          const resolvedSelectedDestinationId = resolvePreferredDestinationId(
+            destinations,
+            reportDraft.selectedDestinationId
+          );
+
+          if (!isActive) {
+            return;
+          }
+
+          setReportRef(savedReport.refNo ?? savedReport._id);
+          setReportStatus(savedReport.status ?? "draft");
+          setDestinationOptions(destinations);
+          setSelectedDestinationId(
+            resolvedSelectedDestinationId ??
+              destinations[0]?.destinationId ??
+              null
+          );
+          setShareError(null);
+          mergeReportFlowDraft({
+            reportId: savedReport._id,
+            selectedDestinationId:
+              resolvedSelectedDestinationId ?? destinations[0]?.destinationId,
+            structuredFields:
+              savedReport.structuredFields ?? reportDraft.structuredFields,
+            incidentType:
+              savedReport.incidentType ?? inferIncidentTypeFromDraft(reportDraft),
+          });
+        } catch (error) {
+          if (!isActive) {
+            return;
+          }
+
+          setShareError(
+            error instanceof Error
+              ? error.message
+              : "Admin-managed destinations could not be loaded."
+          );
+        } finally {
+          if (isActive) {
+            setIsLoadingDestinations(false);
+          }
+        }
+      })();
+
+      return () => {
+        isActive = false;
+      };
     }
 
     let isActive = true;
@@ -273,15 +378,26 @@ function ReportSubmissionSharePage() {
         setReportRef(report.refNo ?? report._id);
         setReportStatus(status.current);
         setDestinationOptions(destinations);
+        const resolvedSelectedDestinationId = resolvePreferredDestinationId(
+          destinations,
+          reportDraft.selectedDestinationId
+        );
         const resolvedLatestSubmission =
           matchedSubmission ??
           (shouldUseFallbackSubmission ? (submissions[0] ?? null) : null);
         setLatestSubmission(resolvedLatestSubmission);
+        setSelectedDestinationId(
+          resolvedLatestSubmission?.destinationId ??
+            resolvedSelectedDestinationId ??
+            destinations[0]?.destinationId ??
+            null
+        );
         mergeReportFlowDraft({
           reportId: report._id,
           selectedDestinationId:
             resolvedLatestSubmission?.destinationId ??
-            reportDraft.selectedDestinationId,
+            resolvedSelectedDestinationId ??
+            destinations[0]?.destinationId,
           latestSubmissionId: resolvedLatestSubmission?._id,
           preparedSubmission: resolvedLatestSubmission
             ? {
@@ -341,6 +457,12 @@ function ReportSubmissionSharePage() {
   }, [anonymityMode, selectedDestinationId, shareNotes]);
 
   const preferredDestinationId =
+    resolvePreferredDestinationId(
+      destinationOptions,
+      selectedDestinationId ??
+        latestSubmission?.destinationId ??
+        reportDraft?.selectedDestinationId
+    ) ??
     selectedDestinationId ??
     latestSubmission?.destinationId ??
     reportDraft?.selectedDestinationId;
@@ -363,17 +485,27 @@ function ReportSubmissionSharePage() {
     }
 
     const hasSelectedMatch = authorityMatches.some(
-      (match) => match.destinationId === selectedDestinationId
+      (match) =>
+        match.destinationId ===
+        resolvePreferredDestinationId(
+          destinationOptions,
+          selectedDestinationId ?? undefined
+        )
     );
 
     if (!selectedDestinationId || !hasSelectedMatch) {
       setSelectedDestinationId(authorityMatches[0].destinationId);
     }
-  }, [authorityMatches, selectedDestinationId]);
+  }, [authorityMatches, destinationOptions, selectedDestinationId]);
 
   const selectedMatch =
     authorityMatches.find(
-      (match) => match.destinationId === selectedDestinationId
+      (match) =>
+        match.destinationId ===
+        resolvePreferredDestinationId(
+          destinationOptions,
+          selectedDestinationId ?? undefined
+        )
     ) ??
     primaryMatch ??
     null;

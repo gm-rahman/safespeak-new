@@ -12,7 +12,8 @@ export type ConsentFlag =
   | "transcribe_audio"
   | "translate_content"
   | "retain_evidence"
-  | "warm_referral";
+  | "warm_referral"
+  | "advocate_request";
 
 export type ConsentFlags = Partial<Record<ConsentFlag, boolean>>;
 
@@ -315,8 +316,8 @@ export const consentRequirements = {
     title: "Advocate request consent required",
     description:
       "SafeSpeak needs your permission before creating an advocate contact request or sharing request details.",
-    flags: ["warm_referral"],
-    grantFlags: { warm_referral: true },
+    flags: ["advocate_request"],
+    grantFlags: { advocate_request: true },
     source: consentSources.advocateRequest,
     allowLabel: "Allow advocate request",
     declineLabel: "Not now",
