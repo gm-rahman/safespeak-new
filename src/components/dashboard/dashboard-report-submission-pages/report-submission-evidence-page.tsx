@@ -1569,54 +1569,52 @@ function ReportSubmissionEvidencePage({
           ) : null}
 
           <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-[1.2fr_0.8fr]">
-              <label htmlFor="incident-title" className="block space-y-1">
+            <label htmlFor="incident-title" className="block space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                Incident Title
+              </span>
+              <input
+                id="incident-title"
+                type="text"
+                placeholder="e.g. Online scam attempt"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className="h-11 w-full rounded-[12px] border border-[#dbe4ef] bg-white px-3.5 text-sm text-[#1f2a3a] shadow-sm transition outline-none focus:border-[#0f5d9f]"
+              />
+            </label>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label htmlFor="incident-date" className="block space-y-1">
                 <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                  Incident Title
+                  Date
                 </span>
                 <input
-                  id="incident-title"
-                  type="text"
-                  placeholder="e.g. Online scam attempt"
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  className="h-11 w-full rounded-[12px] border border-[#dbe4ef] bg-white px-3.5 text-sm text-[#1f2a3a] shadow-sm transition outline-none focus:border-[#0f5d9f]"
+                  id="incident-date"
+                  type="date"
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                  className="h-11 w-full rounded-[12px] border border-[#dbe4ef] bg-white px-3 text-sm text-[#1f2a3a] shadow-sm transition outline-none focus:border-[#0f5d9f]"
                 />
               </label>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label htmlFor="incident-date" className="block space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                    Date
+              <label htmlFor="incident-location" className="block space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
+                  Location
+                </span>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-3 grid place-items-center text-[#94a3b8]">
+                    <IconMapPin size={14} />
                   </span>
                   <input
-                    id="incident-date"
-                    type="date"
-                    value={date}
-                    onChange={(event) => setDate(event.target.value)}
-                    className="h-11 w-full rounded-[12px] border border-[#dbe4ef] bg-white px-3 text-sm text-[#1f2a3a] shadow-sm transition outline-none focus:border-[#0f5d9f]"
+                    id="incident-location"
+                    type="text"
+                    placeholder="City or post code"
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    className="h-11 w-full rounded-[12px] border border-[#dbe4ef] bg-white pl-8 pr-3 text-sm text-[#1f2a3a] shadow-sm transition outline-none focus:border-[#0f5d9f]"
                   />
-                </label>
-
-                <label htmlFor="incident-location" className="block space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#7c8da3]">
-                    Location
-                  </span>
-                  <div className="relative">
-                    <span className="absolute inset-y-0 left-3 grid place-items-center text-[#94a3b8]">
-                      <IconMapPin size={14} />
-                    </span>
-                    <input
-                      id="incident-location"
-                      type="text"
-                      placeholder="City or post code"
-                      value={location}
-                      onChange={(event) => setLocation(event.target.value)}
-                      className="h-11 w-full rounded-[12px] border border-[#dbe4ef] bg-white pl-8 pr-3 text-sm text-[#1f2a3a] shadow-sm transition outline-none focus:border-[#0f5d9f]"
-                    />
-                  </div>
-                </label>
-              </div>
+                </div>
+              </label>
             </div>
 
             <div className="space-y-1">
