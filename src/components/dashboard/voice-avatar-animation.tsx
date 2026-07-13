@@ -13,7 +13,7 @@ export type VoiceAvatarState =
 
 type VoiceAvatarAnimationProps = {
   state: VoiceAvatarState;
-  size?: "large" | "small";
+  size?: "large" | "small" | "dashboard";
   alt?: string;
   className?: string;
   showAmbientEffects?: boolean;

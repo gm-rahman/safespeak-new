@@ -3,13 +3,14 @@ import Link from "next/link";
 
 import bottomLeft from "@/assets/bottomLeftSM.svg?url";
 import bottomRight from "@/assets/bottomRightSM.svg?url";
-import sphereAdv from "@/assets/sphere-adv.svg?url";
 import topLeftSM from "@/assets/topLeftSM.svg?url";
 import topRightSM from "@/assets/topRightSM.svg?url";
 import {
   getDashboardAssistantEntryHref,
   getDashboardCardEntryHref,
 } from "@/lib/dashboard-card-flows";
+
+import { VoiceAvatarAnimation } from "./voice-avatar-animation";
 
 function SMDasboardHome() {
   const domesticViolenceHref =
@@ -77,18 +78,14 @@ function SMDasboardHome() {
 
         <Link
           href={generalAssistantHref}
-          className="absolute left-1/2 top-[30%] z-20 h-[40%] w-[55%] -translate-x-1/2 overflow-hidden rounded-full [clip-path:circle(50%_at_50%_50%)]"
+          className="absolute left-1/2 top-[30%] z-20 flex h-[40%] w-[55%] -translate-x-1/2 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0f5d9f]"
           aria-label="Talk with SafeSpeak"
         >
-          <span className="absolute inset-0" />
-          <span className="absolute inset-[14px] overflow-hidden rounded-full">
-            <Image
-              src={sphereAdv}
-              alt="Report an incident"
-              fill
-              className="object-cover"
-            />
-          </span>
+          <VoiceAvatarAnimation
+            state="idle"
+            size="dashboard"
+            alt="Talk with SafeSpeak voice assistant"
+          />
         </Link>
       </div>
     </div>
