@@ -21,6 +21,17 @@
   height: 74px;
 }
 
+.composer {
+  width: 46px;
+  height: 46px;
+}
+
+.session {
+  width: clamp(154px, 38vw, 214px);
+  height: auto;
+  aspect-ratio: 1;
+}
+
 .dashboard {
   width: clamp(148px, 82%, 192px);
   height: auto;
@@ -82,6 +93,11 @@
   gap: 2px;
 }
 
+.composer .waveform {
+  gap: 2px;
+  transform: translateY(48%);
+}
+
 .dashboard .waveform {
   display: none;
 }
@@ -99,6 +115,11 @@
 .small .waveBar {
   width: 2px;
   height: 8px;
+}
+
+.composer .waveBar {
+  width: 2px;
+  height: 7px;
 }
 
 .waveBar:nth-child(2n) {
@@ -148,6 +169,15 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.94);
 }
 
+.composer .micPlate {
+  width: 58%;
+  height: 58%;
+  box-shadow:
+    0 8px 18px rgba(15, 93, 159, 0.16),
+    0 3px 10px rgba(148, 163, 184, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
 .dashboard .micPlate {
   width: 58%;
   height: 58%;
@@ -185,6 +215,11 @@
 }
 
 .dashboard .micIcon {
+  width: 50%;
+  height: 50%;
+}
+
+.composer .micIcon {
   width: 50%;
   height: 50%;
 }
@@ -485,6 +520,10 @@
 
   .dashboard {
     width: clamp(164px, 82%, 208px);
+  }
+
+  .session {
+    width: clamp(176px, 30vw, 232px);
   }
 }
 

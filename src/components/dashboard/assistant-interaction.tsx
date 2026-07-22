@@ -1,9 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
-  ChangeEvent,
   FormEvent,
   useCallback,
   useEffect,
@@ -17,12 +15,10 @@ import {
   IconCheck,
   IconLoader2,
   IconMapPin,
-  IconMicrophone,
-  IconX,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 
-import sendIcon from "@/assets/sendIcon.svg?url";
+import { AssistantVoiceFirstInput } from "@/components/dashboard/assistant-voice-first-input";
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import {
   VoiceAvatarAnimation,
@@ -96,18 +92,6 @@ type SpeechWindow = Window & {
 const VOICE_RECORDING_TIMEOUT_MS = 8000;
 
 type VoiceCaptureTarget = "recording";
-
-function AvatarVoiceControlGlyph() {
-  return (
-    <span className="inline-flex items-center gap-[2px]" aria-hidden="true">
-      <span className="h-[4px] w-[4px] rounded-full bg-current opacity-95" />
-      <span className="h-[10px] w-[2.5px] rounded-full bg-current" />
-      <span className="h-[14px] w-[2.5px] rounded-full bg-current" />
-      <span className="h-[10px] w-[2.5px] rounded-full bg-current" />
-      <span className="h-[4px] w-[4px] rounded-full bg-current opacity-95" />
-    </span>
-  );
-}
 
 function getRecordingErrorMessage(
   errorCode: RecordingErrorCode,
@@ -698,10 +682,6 @@ export function AssistantInteraction({
     void startVoiceRecording("recording");
   }, [isRecording, startVoiceRecording]);
 
-  const handleMessageChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setMessage(event.target.value);
-  };
-
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     if (isRecordingActive || isTranscribing || !message.trim()) {
       event.preventDefault();
@@ -853,115 +833,49 @@ export function AssistantInteraction({
           {reportMetadata ? (
             <input type="hidden" name="metadataCapture" value="1" />
           ) : null}
-          {isTranscriptionCaptureActive || pendingVoiceReviewBlob ? (
-            <div className="flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-4 py-2">
-              <div className="flex flex-1 items-center gap-3 overflow-hidden">
-                <span className="text-[11px] font-medium text-[#64748b]">
-                  {isTranscriptionCaptureActive ? "Listening..." : "Use transcribed text"}
-                </span>
-                <div className="flex h-8 flex-1 items-center gap-1 overflow-hidden">
-                  {Array.from({ length: 32 }).map((_, index) => (
-                    <span
-                      key={index}
-                      className={`w-1 rounded-full bg-[#7aa4d8] ${
-                        isTranscriptionCaptureActive ? "animate-pulse" : ""
-                      }`}
-                      style={{
-                        height: `${10 + ((index * 7) % 18)}px`,
-                        animationDelay: `${index * 45}ms`,
-                        opacity: 0.38 + ((index % 6) * 0.1),
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={isTranscriptionCaptureActive ? cancelVoiceCapture : cancelVoiceReview}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#dbe6f2] bg-white text-[#64748b] transition hover:bg-[#f4f7fb]"
-                aria-label={t("common.cancel")}
-              >
-                <IconX size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (isTranscriptionCaptureActive) {
-                    recordingDecisionRef.current = "confirm";
-                    stopVoiceRecording();
-                    return;
-                  }
+          <AssistantVoiceFirstInput
+            value={message}
+            name="message"
+            onChange={setMessage}
+            placeholder={t("dashboard.assistant.typeYourResponse")}
+            onDictationClick={toggleTranscriptionRecording}
+            dictationDisabled={isTranscribing}
+            dictationLabel={t("dashboard.assistant.toggleMicrophone")}
+            onVoiceFirstClick={startAvatarVoiceMode}
+            voiceFirstDisabled={isTranscribing}
+            voiceFirstLabel="Start avatar voice mode"
+            sendLabel={t("common.send")}
+            showSendButton={shouldShowSendButton}
+            captureState={
+              isTranscriptionCaptureActive
+                ? "listening"
+                : pendingVoiceReviewBlob
+                  ? "review"
+                  : "idle"
+            }
+            captureLabel={
+              isTranscriptionCaptureActive
+                ? "Listening..."
+                : "Use transcribed text"
+            }
+            cancelLabel={t("common.cancel")}
+            confirmLabel="Use voice text"
+            onCancelCapture={
+              isTranscriptionCaptureActive
+                ? cancelVoiceCapture
+                : cancelVoiceReview
+            }
+            onConfirmCapture={() => {
+              if (isTranscriptionCaptureActive) {
+                recordingDecisionRef.current = "confirm";
+                stopVoiceRecording();
+                return;
+              }
 
-                  void confirmVoiceReview();
-                }}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white transition hover:bg-[#0c518a]"
-                aria-label="Use voice text"
-              >
-                <IconCheck size={16} />
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-white px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
-              <input
-                type="text"
-                name="message"
-                value={message}
-                onChange={handleMessageChange}
-                placeholder={t("dashboard.assistant.typeYourResponse")}
-                className="h-11 min-w-[180px] flex-1 rounded-full border border-transparent bg-transparent px-3 text-sm text-[#1f2937] outline-none transition-[background-color,box-shadow,border-color] duration-150 placeholder:text-[#95a3b8] focus-visible:outline-none"
-              />
-              <button
-                type="button"
-                onClick={toggleTranscriptionRecording}
-                disabled={isTranscribing}
-                aria-label={t("dashboard.assistant.toggleMicrophone")}
-                className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] ${
-                  isTranscribing ? "cursor-not-allowed opacity-40" : ""
-                }`}
-              >
-                <IconMicrophone size={18} />
-              </button>
-              {shouldShowSendButton ? (
-                <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
-                  <button
-                    type="submit"
-                    aria-label={t("common.send")}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white"
-                  >
-                    <Image
-                      src={sendIcon}
-                      alt={t("common.send")}
-                      width={10}
-                      height={14}
-                      className="h-[14px] w-[10px]"
-                    />
-                  </button>
-                </span>
-              ) : (
-                <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white p-1 shadow-[0_6px_18px_rgba(148,163,184,0.14)]">
-                  <button
-                    type="button"
-                    onClick={startAvatarVoiceMode}
-                    disabled={isTranscribing}
-                    aria-label="Start avatar voice mode"
-                    className={`inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#196bb1] text-white transition hover:bg-[#196bb1] ${
-                      isTranscribing ? "cursor-not-allowed opacity-40" : ""
-                    }`}
-                  >
-                    <AvatarVoiceControlGlyph />
-                  </button>
-                </span>
-              )}
-            </div>
-          )}
-          {speechError ? (
-            <p
-              className="px-4 pt-2 text-[11px] leading-[1.45] text-[#c24141]"
-              aria-live="polite"
-            >
-              {speechError}
-            </p>
-          ) : null}
+              void confirmVoiceReview();
+            }}
+            error={speechError}
+          />
         </form>
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">

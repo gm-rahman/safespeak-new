@@ -311,7 +311,7 @@ function MobileDashboardNav({
   );
 }
 
-function EmergencyToolbar() {
+function EmergencyToolbar({ skipUserLookup = false }: { skipUserLookup?: boolean }) {
   const { t, i18n } = useTranslation();
   const [userName, setUserName] = useState<string | null>(null);
   const resolvedLanguage =
@@ -333,6 +333,11 @@ function EmergencyToolbar() {
   };
 
   useEffect(() => {
+    if (skipUserLookup) {
+      setUserName(null);
+      return;
+    }
+
     let isActive = true;
     const sessionUser = getAuthSession()?.user;
 
@@ -355,7 +360,7 @@ function EmergencyToolbar() {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [skipUserLookup]);
 
   return (
     <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
@@ -464,7 +469,7 @@ export function DashboardShell({
               : "xl:flex xl:h-full xl:min-h-0 xl:flex-col"
           )}
         >
-          <EmergencyToolbar />
+          <EmergencyToolbar skipUserLookup={homeView === "assistantconversation"} />
           {children}
         </div>
       </section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
@@ -15,14 +15,28 @@ import { SafetyRail } from "./safety-rail";
 
 export function SafetyExperience() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [platformSettings, setPlatformSettings] =
     useState<PlatformSettingsPayload>(DEFAULT_PLATFORM_SETTINGS);
+  const isFrontendOnlyReportFlow =
+    pathname === "/dashboard" &&
+    searchParams.get("view") === "reportsubmissiondetails";
+  const isFrontendOnlyAssistantConversation =
+    pathname === "/dashboard" &&
+    searchParams.get("view") === "assistantconversation";
+  const shouldUseDefaultSettings =
+    isFrontendOnlyReportFlow || isFrontendOnlyAssistantConversation;
 
   useEffect(() => {
     syncSafetyPresentation(pathname);
   }, [pathname]);
 
   useEffect(() => {
+    if (shouldUseDefaultSettings) {
+      setPlatformSettings(DEFAULT_PLATFORM_SETTINGS);
+      return;
+    }
+
     let isMounted = true;
 
     getPublicPlatformSettings()
@@ -40,7 +54,7 @@ export function SafetyExperience() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [shouldUseDefaultSettings]);
 
   return (
     <>

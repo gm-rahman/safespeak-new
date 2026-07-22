@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import {
   ChangeEvent,
   FormEvent,
+  type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useMemo,
@@ -18,10 +20,13 @@ import {
   IconAlertCircle,
   IconArrowRight,
   IconCheck,
-  IconChevronLeft,
+  IconFileText,
   IconLoader2,
   IconMicrophone,
   IconMicrophoneOff,
+  IconPaperclip,
+  IconPhoto,
+  IconRefresh,
   IconX,
 } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
@@ -30,6 +35,7 @@ import sendIcon from "@/assets/sendIcon.svg?url";
 import { AssistantMessageRenderer } from "@/components/chat/assistant-message-renderer";
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { AssistantInteraction } from "@/components/dashboard/assistant-interaction";
+import { AssistantVoiceFirstInput } from "@/components/dashboard/assistant-voice-first-input";
 import {
   VoiceAvatarAnimation,
   type VoiceAvatarState,
@@ -41,26 +47,20 @@ import {
   type AssistantConversationMessage,
   type AssistantTimeline,
   type LegalAwareness,
-  shouldCallTimelineAssistant,
   sendTimelineAssistantMessage,
+  shouldCallTimelineAssistant,
 } from "@/lib/assistant-conversation";
 import {
   clearAssistantConversationDraft,
   getAssistantConversationDraft,
   saveAssistantConversationDraft,
 } from "@/lib/assistant-draft";
-import { consumeAssistantVoiceHandoff } from "@/lib/assistant-voice-handoff";
 import {
   clearAssistantTriageSource,
   saveAssistantTriageSource,
 } from "@/lib/assistant-triage";
-import {
-  ConsentRequiredError,
-  consentRequirements,
-  ensureConsent,
-  getConsentGrantFlags,
-  grantConsent,
-} from "@/lib/consent";
+import { consumeAssistantVoiceHandoff } from "@/lib/assistant-voice-handoff";
+import { consentRequirements, ensureConsent } from "@/lib/consent";
 import {
   type ConversationFlowTriage,
   appendConversationFlowMessage,
@@ -73,6 +73,19 @@ import {
   getDashboardCardFlow,
 } from "@/lib/dashboard-card-flows";
 import { LAST_NON_CONVERSATION_DASHBOARD_URL_STORAGE_KEY } from "@/lib/dashboard-navigation";
+import {
+  DEMO_ASSISTANT_STORAGE_KEY,
+  type DemoAttachment,
+  type DemoConversationMessage,
+  type DemoConversationState,
+  type DemoSuggestion,
+  createDemoMessage,
+  getDemoAssistantResponse,
+  resetDemoConversation,
+  simulateDemoAttachmentProcessing,
+  simulateDemoDictation,
+  simulateDemoTranscription,
+} from "@/lib/demo-assistant-conversation";
 import { triggerQuickExit } from "@/lib/safety";
 import {
   buildConversationRequestBody,
@@ -88,7 +101,9 @@ import { interFont } from "./dashboard-shared";
 
 const emptyTimeline: AssistantTimeline = {};
 
-function normalizeAssistantSpeechLanguage(language?: string): string | undefined {
+function normalizeAssistantSpeechLanguage(
+  language?: string
+): string | undefined {
   const normalized = language?.trim().toLowerCase();
 
   if (!normalized) {
@@ -129,7 +144,11 @@ function detectAssistantSpeechLanguage(text: string): string {
   if (/[\u0a00-\u0a7f]/u.test(text)) return "pa";
   if (/[\u0900-\u097f]/u.test(text)) return "hi";
   if (/\p{Script=Han}/u.test(text)) return "zh-Hans";
-  if (/[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu.test(text)) {
+  if (
+    /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu.test(
+      text
+    )
+  ) {
     return "vi";
   }
   if (/[¿¡ñáéíóúü]/iu.test(text)) return "es";
@@ -271,7 +290,10 @@ function getAssistantDisplayContent(message: AssistantConversationMessage) {
     .replace(/\r\n/g, "\n")
     .split(/\n{2,}/)
     .map((paragraph) =>
-      paragraph.replace(/\s+([?.!,])/g, "$1").replace(/[ \t]{2,}/g, " ").trim(),
+      paragraph
+        .replace(/\s+([?.!,])/g, "$1")
+        .replace(/[ \t]{2,}/g, " ")
+        .trim()
     )
     .filter(Boolean)
     .join("\n\n");
@@ -298,7 +320,9 @@ function buildConversationCitationSummary(citation: ConversationCitation) {
     : citation.lastUpdated
       ? `updated ${formatConversationCitationDate(citation.lastUpdated)}`
       : "";
-  const sectionTitle = citation.sectionTitle ? `- ${citation.sectionTitle}` : "";
+  const sectionTitle = citation.sectionTitle
+    ? `- ${citation.sectionTitle}`
+    : "";
   const amendmentLabel =
     citation.amendmentStatus && citation.amendmentStatus !== "in_force"
       ? citation.amendmentStatus.replace("_", " ")
@@ -370,20 +394,20 @@ function buildLegalCitationSummary(citation: ConversationCitation) {
     { label: "Section / number", value: sectionValue || "Not specified" },
     {
       label: "Section title",
-      value: citation.sectionTitle || "Not specified"
+      value: citation.sectionTitle || "Not specified",
     },
     { label: "Page", value: pageValue ? `p. ${pageValue}` : "Not specified" },
     {
       label: "Version",
-      value: versionValue || "Not specified"
+      value: versionValue || "Not specified",
     },
     {
       label: "Status",
       value:
         citation.amendmentStatus && citation.amendmentStatus !== "in_force"
           ? citation.amendmentStatus.replace("_", " ")
-          : "in force"
-    }
+          : "in force",
+    },
   ];
 }
 
@@ -426,24 +450,33 @@ function AssistantLegalCitationDetails({
           Law details
         </p>
         <div className="mt-2 rounded-[12px] border border-[#e3edf7] bg-white px-3 py-2">
-          <p className="text-[11px] font-semibold text-[#1f2a3a]">{fallbackLaw}</p>
+          <p className="text-[11px] font-semibold text-[#1f2a3a]">
+            {fallbackLaw}
+          </p>
           <div className="mt-1 space-y-0.5 text-[11px] leading-[1.45] text-[#4b5d73]">
             <p>
-              <span className="font-semibold text-[#334255]">Law:</span> {fallbackLaw}
+              <span className="font-semibold text-[#334255]">Law:</span>{" "}
+              {fallbackLaw}
             </p>
             <p>
-              <span className="font-semibold text-[#334255]">Section / number:</span>{" "}
+              <span className="font-semibold text-[#334255]">
+                Section / number:
+              </span>{" "}
               Not specified in RAG
             </p>
             <p>
-              <span className="font-semibold text-[#334255]">Section title:</span>{" "}
+              <span className="font-semibold text-[#334255]">
+                Section title:
+              </span>{" "}
               Not specified in RAG
             </p>
             <p>
-              <span className="font-semibold text-[#334255]">Page:</span> Not specified in RAG
+              <span className="font-semibold text-[#334255]">Page:</span> Not
+              specified in RAG
             </p>
             <p>
-              <span className="font-semibold text-[#334255]">Version:</span> Not specified in RAG
+              <span className="font-semibold text-[#334255]">Version:</span> Not
+              specified in RAG
             </p>
             <p>
               <span className="font-semibold text-[#334255]">Law URL:</span>{" "}
@@ -485,13 +518,17 @@ function AssistantLegalCitationDetails({
               <div className="mt-1 space-y-0.5 text-[11px] leading-[1.45] text-[#4b5d73]">
                 {summaryRows.map((row) => (
                   <p key={row.label}>
-                    <span className="font-semibold text-[#334255]">{row.label}:</span>{" "}
+                    <span className="font-semibold text-[#334255]">
+                      {row.label}:
+                    </span>{" "}
                     {row.value}
                   </p>
                 ))}
                 {citation.url ? (
                   <p>
-                    <span className="font-semibold text-[#334255]">Law URL:</span>{" "}
+                    <span className="font-semibold text-[#334255]">
+                      Law URL:
+                    </span>{" "}
                     <a
                       href={citation.url}
                       target="_blank"
@@ -1103,7 +1140,1593 @@ function SafeSpeakAssistantPage({
   );
 }
 
-function SafeSpeakAssistantConversationPage({
+type DemoVoiceStatus =
+  | "idle"
+  | "starting"
+  | "listening"
+  | "processing-user"
+  | "assistant-speaking"
+  | "finishing"
+  | "paused"
+  | "error";
+
+type DemoDictationStatus = "ready" | "listening" | "transcribing" | "error";
+
+type DemoVoiceTurn = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+};
+
+function formatLocalFileSize(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDemoTimer(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+
+  return `${minutes}:${seconds}`;
+}
+
+function getVoiceStatusLabel(status: DemoVoiceStatus): string {
+  switch (status) {
+    case "starting":
+      return "Starting voice conversation";
+    case "listening":
+      return "Listening";
+    case "processing-user":
+      return "SafeSpeak is processing";
+    case "assistant-speaking":
+      return "SafeSpeak is speaking";
+    case "finishing":
+      return "Finishing voice conversation";
+    case "paused":
+      return "Voice conversation paused";
+    case "error":
+      return "Voice demo unavailable";
+    default:
+      return "Voice conversation ready";
+  }
+}
+
+function getVoiceStatusDescription(
+  status: DemoVoiceStatus,
+  recordingSeconds: number
+): string {
+  switch (status) {
+    case "idle":
+      return "Tap the circular mic to begin a demo voice turn.";
+    case "starting":
+      return "Preparing a local microphone session.";
+    case "listening":
+      return `Session duration ${formatDemoTimer(recordingSeconds)}`;
+    case "processing-user":
+      return "Creating a local demo transcript and response.";
+    case "assistant-speaking":
+      return "Playing a browser-only demo response.";
+    case "finishing":
+      return "Adding the voice turns to the conversation.";
+    case "paused":
+      return "Voice conversation is paused.";
+    case "error":
+      return "Voice demo could not continue. Try the circular mic again.";
+  }
+}
+
+function getPrimaryVoiceActionLabel(status: DemoVoiceStatus): string {
+  if (status === "error") {
+    return "Restart voice conversation";
+  }
+
+  if (status !== "idle") {
+    return "Voice conversation active";
+  }
+
+  return "Start voice conversation";
+}
+
+function getDictationActionLabel(status: DemoDictationStatus): string {
+  if (status === "listening") {
+    return "Stop message dictation";
+  }
+
+  if (status === "transcribing") {
+    return "Message is being transcribed";
+  }
+
+  if (status === "error") {
+    return "Restart message dictation";
+  }
+
+  return "Start message dictation";
+}
+
+function getDictationStatusText(status: DemoDictationStatus): string {
+  switch (status) {
+    case "listening":
+      return "Listening for message dictation";
+    case "transcribing":
+      return "Transcribing message dictation";
+    case "error":
+      return "Dictation could not continue. Try again.";
+    default:
+      return "";
+  }
+}
+
+function getDemoPhaseLabel(stage: DemoConversationState["stage"]): string {
+  switch (stage) {
+    case "safety":
+      return "Safety check";
+    case "what_happened":
+      return "Understanding";
+    case "timing":
+      return "Timing";
+    case "people":
+      return "People involved";
+    case "evidence":
+      return "Evidence";
+    case "next_step":
+      return "Next step";
+    case "summary":
+      return "Summary ready";
+  }
+}
+
+function loadDemoConversation(initialMessage?: string): DemoConversationState {
+  if (typeof window === "undefined") {
+    return resetDemoConversation(initialMessage);
+  }
+
+  const raw = window.sessionStorage.getItem(DEMO_ASSISTANT_STORAGE_KEY);
+
+  if (!raw) {
+    return resetDemoConversation(initialMessage);
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as DemoConversationState;
+
+    if (!Array.isArray(parsed.messages) || !parsed.stage) {
+      return resetDemoConversation(initialMessage);
+    }
+
+    return {
+      ...parsed,
+      attachments: Array.isArray(parsed.attachments)
+        ? parsed.attachments.map((attachment) => ({
+            ...attachment,
+            previewUrl: undefined,
+          }))
+        : [],
+    };
+  } catch {
+    window.sessionStorage.removeItem(DEMO_ASSISTANT_STORAGE_KEY);
+    return resetDemoConversation(initialMessage);
+  }
+}
+
+function persistDemoConversation(state: DemoConversationState): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(
+    DEMO_ASSISTANT_STORAGE_KEY,
+    JSON.stringify({
+      ...state,
+      attachments: state.attachments.map((attachment) => ({
+        ...attachment,
+        previewUrl: undefined,
+      })),
+    })
+  );
+}
+
+function DemoVoiceSessionWaveform({
+  isActive,
+  level,
+}: {
+  isActive: boolean;
+  level: number;
+}) {
+  const normalizedLevel = Math.max(0.16, Math.min(1, level));
+
+  return (
+    <div
+      className="flex h-12 w-full max-w-[240px] items-center justify-center gap-1 overflow-hidden rounded-full bg-[#eef6ff] px-4"
+      aria-hidden="true"
+      data-testid="ai-conversation-voice-waveform"
+    >
+      {Array.from({ length: 24 }).map((_, index) => {
+        const baseHeight = 8 + ((index * 7) % 22);
+        const height = Math.round(baseHeight * (0.78 + normalizedLevel));
+
+        return (
+          <span
+            key={index}
+            className={`w-1 rounded-full bg-[#7aa4d8] ${
+              isActive ? "motion-safe:animate-pulse" : ""
+            }`}
+            style={{
+              height: `${height}px`,
+              animationDelay: `${index * 42}ms`,
+              opacity: 0.38 + (index % 6) * 0.08,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function getVoiceSessionAvatarState(status: DemoVoiceStatus): VoiceAvatarState {
+  if (status === "listening") return "userSpeaking";
+  if (status === "assistant-speaking") return "aiSpeaking";
+  if (
+    status === "starting" ||
+    status === "processing-user" ||
+    status === "finishing"
+  ) {
+    return "processing";
+  }
+
+  return "idle";
+}
+
+function DemoVoiceSessionStage({
+  status,
+  durationSeconds,
+  turns,
+  audioLevel,
+  onFinishTurn,
+  onFinishSession,
+  onCancelSession,
+  stageRef,
+}: {
+  status: DemoVoiceStatus;
+  durationSeconds: number;
+  turns: DemoVoiceTurn[];
+  audioLevel: number;
+  onFinishTurn: () => void;
+  onFinishSession: () => void;
+  onCancelSession: () => void;
+  stageRef: RefObject<HTMLDivElement | null>;
+}) {
+  const isListening = status === "listening";
+  const isMoving =
+    status === "starting" ||
+    status === "listening" ||
+    status === "processing-user" ||
+    status === "assistant-speaking";
+  const latestTurns = turns.slice(-2);
+
+  return (
+    <div
+      ref={stageRef}
+      tabIndex={-1}
+      className="flex min-h-[340px] flex-1 flex-col items-center justify-center rounded-[16px] bg-[#f8fbff] px-4 py-6 text-center outline-none focus-visible:ring-2 focus-visible:ring-[#0f5d9f] sm:min-h-[420px] sm:px-6"
+      role="status"
+      aria-live="polite"
+      data-testid="ai-conversation-voice-session-stage"
+    >
+      <div className="flex flex-col items-center">
+        <div data-testid="ai-conversation-voice-session-mic">
+          <VoiceAvatarAnimation
+            state={getVoiceSessionAvatarState(status)}
+            size="session"
+            alt="SafeSpeak voice conversation"
+            showAmbientEffects
+          />
+        </div>
+        <div className="mt-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+            Voice conversation
+          </p>
+          <h2 className="mt-1 text-2xl font-extrabold tracking-[0] text-[#1f2a3a] sm:text-[30px]">
+            {getVoiceStatusLabel(status)}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[#60718a]">
+            {getVoiceStatusDescription(status, durationSeconds)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 flex w-full justify-center">
+        <DemoVoiceSessionWaveform
+          isActive={isMoving}
+          level={status === "assistant-speaking" ? 0.78 : audioLevel}
+        />
+      </div>
+
+      <p className="mt-4 max-w-[520px] text-xs leading-6 text-[#51657f]">
+        {isListening
+          ? "Speak naturally. Finish the current turn when you are ready for SafeSpeak to respond."
+          : "This demo keeps audio local and uses deterministic mock responses."}
+      </p>
+
+      {latestTurns.length ? (
+        <div
+          className="mt-5 grid w-full max-w-[620px] gap-2 text-left"
+          data-testid="ai-conversation-voice-session-preview"
+        >
+          {latestTurns.map((turn) => (
+            <div
+              key={turn.id}
+              className={`rounded-[14px] border px-3 py-2 text-xs leading-5 ${
+                turn.role === "user"
+                  ? "ml-auto max-w-[86%] border-[#bfd8f1] bg-[#eef6ff] text-[#1f2a3a]"
+                  : "mr-auto max-w-[86%] border-[#dbe6f2] bg-white text-[#41566f]"
+              }`}
+            >
+              <span className="font-bold">
+                {turn.role === "user" ? "You" : "SafeSpeak"}:
+              </span>{" "}
+              {turn.content}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+        {isListening ? (
+          <button
+            type="button"
+            onClick={onFinishTurn}
+            className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#0f5d9f] px-4 text-sm font-bold text-white transition hover:bg-[#0c518a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f5d9f] focus-visible:ring-offset-2"
+            data-testid="ai-conversation-voice-finish-turn"
+          >
+            Finish turn
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={onFinishSession}
+          disabled={status === "processing-user" || status === "finishing"}
+          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#bfd8f1] bg-white px-4 text-sm font-bold text-[#0f5d9f] transition hover:bg-[#eef6ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f5d9f] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid="ai-conversation-voice-finish-session"
+        >
+          Finish
+        </button>
+        <button
+          type="button"
+          onClick={onCancelSession}
+          disabled={status === "processing-user" || status === "finishing"}
+          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#dbe6f2] bg-white px-4 text-sm font-bold text-[#60718a] transition hover:bg-[#f4f7fb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f5d9f] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid="ai-conversation-voice-cancel-session"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LocalAssistantConversationPage({
+  initialMessage,
+}: {
+  initialMessage?: string;
+}) {
+  const initialMessageRef = useRef(initialMessage?.trim() ?? "");
+  const [demoState, setDemoState] = useState<DemoConversationState>(() =>
+    loadDemoConversation(initialMessageRef.current)
+  );
+  const [composerValue, setComposerValue] = useState("");
+  const [isAssistantTyping, setIsAssistantTyping] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<DemoVoiceStatus>("idle");
+  const [voiceSessionTurns, setVoiceSessionTurns] = useState<DemoVoiceTurn[]>(
+    []
+  );
+  const [voiceAudioLevel, setVoiceAudioLevel] = useState(0.28);
+  const [dictationStatus, setDictationStatus] =
+    useState<DemoDictationStatus>("ready");
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
+  const voiceStageRef = useRef<HTMLDivElement | null>(null);
+  const requestSequenceRef = useRef(0);
+  const voiceTurnSequenceRef = useRef(0);
+  const dictationSequenceRef = useRef(0);
+  const timerRefs = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const intervalRefs = useRef<Array<ReturnType<typeof setInterval>>>([]);
+  const voiceLevelIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const voiceDraftRef = useRef({
+    stage: demoState.stage,
+    progress: demoState.progress,
+    readiness: demoState.readiness,
+  });
+  const previewUrlRefs = useRef<string[]>([]);
+  const shouldRestoreComposerFocusRef = useRef(false);
+  const shouldRestoreInputFocusRef = useRef(false);
+
+  useEffect(() => {
+    document.body.classList.add("assistant-conversation-lock");
+    document.documentElement.classList.add("assistant-conversation-lock");
+
+    return () => {
+      document.body.classList.remove("assistant-conversation-lock");
+      document.documentElement.classList.remove("assistant-conversation-lock");
+    };
+  }, []);
+
+  const isComposerBusy =
+    isAssistantTyping ||
+    voiceStatus !== "idle";
+  const isDictationBusy =
+    dictationStatus === "listening" || dictationStatus === "transcribing";
+  const hasProcessingAttachment = demoState.attachments.some(
+    (attachment) => attachment.status === "processing"
+  );
+  const hasTypedMessage = Boolean(composerValue.trim());
+  const canSend = hasTypedMessage && !isComposerBusy;
+  const isPrimaryVoiceDisabled =
+    isAssistantTyping ||
+    voiceStatus !== "idle" ||
+    isDictationBusy;
+  const isDictationDisabled =
+    isAssistantTyping ||
+    voiceStatus !== "idle";
+  const isVoiceSessionActive = voiceStatus !== "idle";
+  const scheduleDemoTimeout = useCallback(
+    (callback: () => void, delay: number) => {
+      const timer = setTimeout(() => {
+        timerRefs.current = timerRefs.current.filter((item) => item !== timer);
+        callback();
+      }, delay);
+
+      timerRefs.current.push(timer);
+      return timer;
+    },
+    []
+  );
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      block: "end",
+      behavior: "smooth",
+    });
+  }, [
+    demoState.messages,
+    demoState.attachments,
+    isAssistantTyping,
+    voiceStatus,
+  ]);
+
+  useEffect(() => {
+    if (shouldRestoreComposerFocusRef.current && voiceStatus === "idle") {
+      shouldRestoreComposerFocusRef.current = false;
+      composerInputRef.current?.focus();
+    }
+  }, [voiceStatus]);
+
+  useEffect(() => {
+    voiceDraftRef.current = {
+      stage: demoState.stage,
+      progress: demoState.progress,
+      readiness: demoState.readiness,
+    };
+  }, [demoState.stage, demoState.progress, demoState.readiness]);
+
+  useEffect(() => {
+    if (voiceStatus !== "idle") {
+      voiceStageRef.current?.focus();
+    }
+  }, [voiceStatus]);
+
+  useEffect(() => {
+    if (
+      shouldRestoreInputFocusRef.current &&
+      dictationStatus === "ready"
+    ) {
+      shouldRestoreInputFocusRef.current = false;
+      composerInputRef.current?.focus();
+    }
+  }, [dictationStatus]);
+
+  useEffect(() => {
+    persistDemoConversation(demoState);
+  }, [demoState]);
+
+  useEffect(() => {
+    return () => {
+      timerRefs.current.forEach(clearTimeout);
+      intervalRefs.current.forEach(clearInterval);
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (voiceLevelIntervalRef.current) {
+        clearInterval(voiceLevelIntervalRef.current);
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      void audioContextRef.current?.close();
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      previewUrlRefs.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
+  const clearDemoTimers = useCallback(() => {
+    timerRefs.current.forEach(clearTimeout);
+    intervalRefs.current.forEach(clearInterval);
+    timerRefs.current = [];
+    intervalRefs.current = [];
+  }, []);
+
+  const stopLocalVoiceActivity = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
+    if (voiceLevelIntervalRef.current) {
+      clearInterval(voiceLevelIntervalRef.current);
+      voiceLevelIntervalRef.current = null;
+    }
+
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+
+    if (audioContextRef.current) {
+      void audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+
+    setVoiceAudioLevel(0.28);
+  }, []);
+
+  const stopDemoSpeech = useCallback(() => {
+    speechUtteranceRef.current = null;
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, []);
+
+  const startSimulatedVoiceLevel = useCallback(() => {
+    if (voiceLevelIntervalRef.current) {
+      clearInterval(voiceLevelIntervalRef.current);
+    }
+
+    const interval = setInterval(() => {
+      setVoiceAudioLevel(0.24 + Math.random() * 0.58);
+    }, 180);
+
+    voiceLevelIntervalRef.current = interval;
+  }, []);
+
+  const startLocalVoiceActivity = useCallback(async () => {
+    stopLocalVoiceActivity();
+
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof window === "undefined" ||
+      !window.AudioContext
+    ) {
+      startSimulatedVoiceLevel();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      const audioContext = new window.AudioContext();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 128;
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      mediaStreamRef.current = stream;
+      audioContextRef.current = audioContext;
+
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const updateLevel = () => {
+        analyser.getByteFrequencyData(data);
+        const average =
+          data.reduce((total, value) => total + value, 0) / data.length;
+        setVoiceAudioLevel(Math.max(0.18, Math.min(1, average / 96)));
+        animationFrameRef.current = requestAnimationFrame(updateLevel);
+      };
+
+      updateLevel();
+    } catch {
+      startSimulatedVoiceLevel();
+    }
+  }, [startSimulatedVoiceLevel, stopLocalVoiceActivity]);
+
+  const playDemoAssistantSpeech = useCallback(
+    (content: string) =>
+      new Promise<void>((resolve) => {
+        const fallbackDelay = Math.min(2800, Math.max(900, content.length * 22));
+        let settled = false;
+
+        const finish = () => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          speechUtteranceRef.current = null;
+          resolve();
+        };
+
+        const fallbackTimer = scheduleDemoTimeout(finish, fallbackDelay);
+
+        if (
+          typeof window === "undefined" ||
+          !("speechSynthesis" in window) ||
+          typeof window.SpeechSynthesisUtterance === "undefined"
+        ) {
+          return;
+        }
+
+        try {
+          window.speechSynthesis.cancel();
+          const utterance = new window.SpeechSynthesisUtterance(content);
+          speechUtteranceRef.current = utterance;
+          utterance.rate = 0.95;
+          utterance.pitch = 1;
+          utterance.onend = () => {
+            clearTimeout(fallbackTimer);
+            finish();
+          };
+          utterance.onerror = () => {
+            clearTimeout(fallbackTimer);
+            finish();
+          };
+          window.speechSynthesis.speak(utterance);
+        } catch {
+          clearTimeout(fallbackTimer);
+          scheduleDemoTimeout(finish, fallbackDelay);
+        }
+      }),
+    [scheduleDemoTimeout]
+  );
+
+  const submitDemoMessage = useCallback(
+    async (
+      content: string,
+      options: {
+        suggestionMessageId?: string;
+        allowWhileBusy?: boolean;
+      } = {}
+    ) => {
+      const trimmed = content.trim();
+
+      if (!trimmed || (isComposerBusy && !options.allowWhileBusy)) {
+        return;
+      }
+
+      const requestId = requestSequenceRef.current + 1;
+      requestSequenceRef.current = requestId;
+      const userMessage = createDemoMessage("user", trimmed);
+      const stageAtSend = demoState.stage;
+
+      setDemoError(null);
+      setComposerValue("");
+      setIsAssistantTyping(true);
+      setDemoState((current) => ({
+        ...current,
+        messages: [
+          ...current.messages.map((message) =>
+            message.id === options.suggestionMessageId
+              ? { ...message, suggestions: undefined }
+              : message
+          ),
+          userMessage,
+        ],
+      }));
+
+      try {
+        const turn = await getDemoAssistantResponse({
+          content: trimmed,
+          stage: stageAtSend,
+        });
+
+        if (requestId !== requestSequenceRef.current) {
+          return;
+        }
+
+        setDemoState((current) => ({
+          ...current,
+          messages: [...current.messages, turn.message],
+          stage: turn.stage,
+          progress: turn.progress,
+          readiness: turn.readiness,
+        }));
+
+      } catch {
+        setDemoError("SafeSpeak could not create a demo response. Try again.");
+      } finally {
+        if (requestId === requestSequenceRef.current) {
+          setIsAssistantTyping(false);
+        }
+      }
+    },
+    [demoState.stage, isComposerBusy]
+  );
+
+  const handleSuggestionClick = (
+    suggestion: DemoSuggestion,
+    messageId: string
+  ) => {
+    void submitDemoMessage(suggestion.value, {
+      suggestionMessageId: messageId,
+    });
+  };
+
+  const handleSendTypedResponse = () => {
+    void submitDemoMessage(composerValue);
+  };
+
+  const startVoiceDemo = () => {
+    if (isAssistantTyping || voiceStatus !== "idle" || isDictationBusy) {
+      return;
+    }
+
+    voiceTurnSequenceRef.current += 1;
+    voiceDraftRef.current = {
+      stage: demoState.stage,
+      progress: demoState.progress,
+      readiness: demoState.readiness,
+    };
+    setDemoError(null);
+    setVoiceSessionTurns([]);
+    setVoiceAudioLevel(0.28);
+    setRecordingSeconds(0);
+    setVoiceStatus("starting");
+
+    intervalRefs.current.forEach(clearInterval);
+    intervalRefs.current = [];
+    const interval = setInterval(() => {
+      setRecordingSeconds((current) => current + 1);
+    }, 1000);
+
+    intervalRefs.current.push(interval);
+    void startLocalVoiceActivity();
+    scheduleDemoTimeout(() => {
+      setVoiceStatus((current) =>
+        current === "starting" ? "listening" : current
+      );
+    }, 360);
+  };
+
+  const handlePrimaryVoiceAction = () => {
+    startVoiceDemo();
+  };
+
+  const finishVoiceTurn = async () => {
+    if (voiceStatus !== "listening") {
+      return;
+    }
+
+    const voiceRequestId = voiceTurnSequenceRef.current;
+    stopLocalVoiceActivity();
+    setVoiceStatus("processing-user");
+
+    try {
+      const transcript = await simulateDemoTranscription();
+      if (voiceRequestId !== voiceTurnSequenceRef.current) {
+        return;
+      }
+
+      const userTurn: DemoVoiceTurn = {
+        id: `demo-voice-turn-user-${Date.now()}`,
+        role: "user",
+        content: transcript,
+        createdAt: new Date().toISOString(),
+      };
+      setVoiceSessionTurns((current) => [...current, userTurn]);
+
+      const response = await getDemoAssistantResponse({
+        content: transcript,
+        stage: voiceDraftRef.current.stage,
+      });
+
+      if (voiceRequestId !== voiceTurnSequenceRef.current) {
+        return;
+      }
+
+      const assistantTurn: DemoVoiceTurn = {
+        id: `demo-voice-turn-assistant-${Date.now()}`,
+        role: "assistant",
+        content: response.message.content,
+        createdAt: response.message.createdAt,
+      };
+
+      voiceDraftRef.current = {
+        stage: response.stage,
+        progress: response.progress,
+        readiness: response.readiness,
+      };
+      setVoiceSessionTurns((current) => [...current, assistantTurn]);
+      setVoiceStatus("assistant-speaking");
+      await playDemoAssistantSpeech(response.message.content);
+
+      if (voiceRequestId !== voiceTurnSequenceRef.current) {
+        return;
+      }
+
+      setVoiceStatus("listening");
+      void startLocalVoiceActivity();
+    } catch {
+      stopLocalVoiceActivity();
+      stopDemoSpeech();
+      setDemoError("Demo voice conversation could not continue.");
+      setVoiceStatus("error");
+    }
+  };
+
+  const finishVoiceSession = () => {
+    if (voiceStatus === "processing-user" || voiceStatus === "finishing") {
+      return;
+    }
+
+    voiceTurnSequenceRef.current += 1;
+    stopLocalVoiceActivity();
+    stopDemoSpeech();
+    intervalRefs.current.forEach(clearInterval);
+    intervalRefs.current = [];
+    setVoiceStatus("finishing");
+
+    const completedTurns = voiceSessionTurns;
+
+    if (completedTurns.length) {
+      setDemoState((current) => ({
+        ...current,
+        messages: [
+          ...current.messages,
+          ...completedTurns.map((turn) =>
+            createDemoMessage(turn.role, turn.content)
+          ),
+        ],
+        stage: voiceDraftRef.current.stage,
+        progress: voiceDraftRef.current.progress,
+        readiness: voiceDraftRef.current.readiness,
+      }));
+    }
+
+    scheduleDemoTimeout(() => {
+      setVoiceSessionTurns([]);
+      setRecordingSeconds(0);
+      setVoiceStatus("idle");
+      shouldRestoreComposerFocusRef.current = true;
+    }, 260);
+  };
+
+  const cancelVoiceSession = () => {
+    voiceTurnSequenceRef.current += 1;
+    stopLocalVoiceActivity();
+    stopDemoSpeech();
+    intervalRefs.current.forEach(clearInterval);
+    intervalRefs.current = [];
+    setVoiceSessionTurns([]);
+    setRecordingSeconds(0);
+    setVoiceStatus("idle");
+    shouldRestoreComposerFocusRef.current = true;
+  };
+
+  const startMessageDictation = () => {
+    if (isDictationDisabled || dictationStatus === "transcribing") {
+      return;
+    }
+
+    dictationSequenceRef.current += 1;
+    setDemoError(null);
+    setDictationStatus("listening");
+  };
+
+  const stopMessageDictation = async () => {
+    if (dictationStatus !== "listening") {
+      return;
+    }
+
+    const dictationRequestId = dictationSequenceRef.current;
+    setDictationStatus("transcribing");
+
+    try {
+      const transcript = await simulateDemoDictation();
+
+      if (dictationRequestId !== dictationSequenceRef.current) {
+        return;
+      }
+
+      setComposerValue((current) => {
+        const trimmed = current.trim();
+        return trimmed ? `${current.trimEnd()} ${transcript}` : transcript;
+      });
+      shouldRestoreInputFocusRef.current = true;
+      setDictationStatus("ready");
+    } catch {
+      setDictationStatus("error");
+    }
+  };
+
+  const cancelMessageDictation = () => {
+    dictationSequenceRef.current += 1;
+    setDictationStatus("ready");
+  };
+
+  const handleMessageDictationAction = () => {
+    if (dictationStatus === "listening") {
+      void stopMessageDictation();
+      return;
+    }
+
+    startMessageDictation();
+  };
+
+  const handleAttachmentSelected = async (file?: File) => {
+    if (!file || isVoiceSessionActive) {
+      return;
+    }
+
+    const attachmentId = `demo-attachment-${Date.now()}`;
+    const canPreview = file.type.startsWith("image/");
+    const previewUrl = canPreview ? URL.createObjectURL(file) : undefined;
+
+    if (previewUrl) {
+      previewUrlRefs.current.push(previewUrl);
+    }
+
+    const attachment: DemoAttachment = {
+      id: attachmentId,
+      name: file.name,
+      type: file.type || "Unknown type",
+      size: file.size,
+      status: "processing",
+      progress: 4,
+      previewUrl,
+      message: "Processing preview",
+    };
+    const attachmentMessage = createDemoMessage(
+      "user",
+      `Attached locally: ${file.name}`,
+      { attachmentId }
+    );
+
+    setDemoError(null);
+    setDemoState((current) => ({
+      ...current,
+      attachments: [...current.attachments, attachment],
+      messages: [...current.messages, attachmentMessage],
+    }));
+
+    const result = await simulateDemoAttachmentProcessing(file, (progress) => {
+      setDemoState((current) => ({
+        ...current,
+        attachments: current.attachments.map((item) =>
+          item.id === attachmentId ? { ...item, progress } : item
+        ),
+      }));
+    });
+
+    setDemoState((current) => ({
+      ...current,
+      attachments: current.attachments.map((item) =>
+        item.id === attachmentId ? { ...item, ...result } : item
+      ),
+    }));
+
+    if (result.status === "ready") {
+      void submitDemoMessage(
+        `I attached ${file.name} for the demo conversation.`,
+        {
+          allowWhileBusy: true,
+        }
+      );
+    } else {
+      setDemoError(
+        result.message ?? "This file could not be used in the demo."
+      );
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const removeAttachment = (attachmentId: string) => {
+    const attachment = demoState.attachments.find(
+      (item) => item.id === attachmentId
+    );
+
+    if (attachment?.previewUrl) {
+      URL.revokeObjectURL(attachment.previewUrl);
+      previewUrlRefs.current = previewUrlRefs.current.filter(
+        (url) => url !== attachment.previewUrl
+      );
+    }
+
+    setDemoState((current) => ({
+      ...current,
+      attachments: current.attachments.filter(
+        (item) => item.id !== attachmentId
+      ),
+      messages: [
+        ...current.messages,
+        createDemoMessage(
+          "system",
+          "Attachment removed from this demo session."
+        ),
+      ],
+    }));
+  };
+
+  const handleResetConversation = () => {
+    clearDemoTimers();
+    stopLocalVoiceActivity();
+    stopDemoSpeech();
+    previewUrlRefs.current.forEach((url) => URL.revokeObjectURL(url));
+    previewUrlRefs.current = [];
+    requestSequenceRef.current += 1;
+    voiceTurnSequenceRef.current += 1;
+    dictationSequenceRef.current += 1;
+    setDemoState(resetDemoConversation(initialMessageRef.current));
+    setComposerValue("");
+    setIsAssistantTyping(false);
+    setVoiceStatus("idle");
+    setVoiceSessionTurns([]);
+    setVoiceAudioLevel(0.28);
+    setDictationStatus("ready");
+    setRecordingSeconds(0);
+    setDemoError(null);
+    setIsResetDialogOpen(false);
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(DEMO_ASSISTANT_STORAGE_KEY);
+    }
+  };
+
+  return (
+    <main
+      data-testid="ai-conversation-page"
+      className="assistant-demo-conversation-page flex min-h-0 flex-1 flex-col px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4"
+    >
+      <div className="mx-auto flex min-h-0 w-full max-w-[1320px] flex-1 flex-col">
+        <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+            Demo conversation
+          </p>
+          <button
+            type="button"
+            onClick={() => setIsResetDialogOpen(true)}
+            className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#d7e1ee] bg-white px-3 text-xs font-semibold text-[#334155] transition hover:bg-[#f8fbff]"
+          >
+            <IconRefresh size={13} />
+            Reset Conversation
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-4 py-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <section
+            aria-labelledby="local-conversation-title"
+            className="flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#dbe5f1] bg-[#f8fbff] shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+          >
+            <header className="bg-white/82 border-b border-[#dbe6f2] px-4 py-4 sm:px-5">
+              <div className="max-w-4xl">
+                <h1
+                  id="local-conversation-title"
+                  className="text-2xl font-extrabold leading-tight text-[#1f2a3a] sm:text-[28px]"
+                >
+                  Tell your story
+                </h1>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60718a]">
+                  Speak, type, or attach something locally. SafeSpeak will
+                  simulate a calm multi-turn conversation for this frontend
+                  demo.
+                </p>
+              </div>
+            </header>
+
+            <div className="conversation-scrollbar min-h-[260px] flex-1 overflow-y-auto px-4 py-5 sm:px-5">
+              {isVoiceSessionActive ? (
+                <DemoVoiceSessionStage
+                  status={voiceStatus}
+                  durationSeconds={recordingSeconds}
+                  turns={voiceSessionTurns}
+                  audioLevel={voiceAudioLevel}
+                  onFinishTurn={() => {
+                    void finishVoiceTurn();
+                  }}
+                  onFinishSession={finishVoiceSession}
+                  onCancelSession={cancelVoiceSession}
+                  stageRef={voiceStageRef}
+                />
+              ) : (
+                <div className="mx-auto flex w-full max-w-[920px] flex-col gap-4">
+                  {demoState.messages.map((message) => (
+                    <DemoMessageItem
+                      key={message.id}
+                      message={message}
+                      attachment={demoState.attachments.find(
+                        (item) => item.id === message.attachmentId
+                      )}
+                      onRemoveAttachment={removeAttachment}
+                      onSuggestionClick={handleSuggestionClick}
+                    />
+                  ))}
+
+                  {isAssistantTyping ? <DemoTypingIndicator /> : null}
+
+                  {hasProcessingAttachment ? (
+                    <DemoStatusBubble
+                      icon={<IconLoader2 size={13} className="animate-spin" />}
+                      label="Processing local attachment preview..."
+                    />
+                  ) : null}
+
+                  {demoError ? (
+                    <div
+                      className="inline-flex w-fit max-w-[540px] items-center gap-2 rounded-[14px] border border-[#fde2e2] bg-[#fff5f5] px-4 py-2.5 text-xs font-semibold text-[#b45353]"
+                      role="status"
+                    >
+                      <IconAlertCircle size={14} />
+                      {demoError}
+                    </div>
+                  ) : null}
+
+                  <div ref={messagesEndRef} aria-hidden="true" />
+                </div>
+              )}
+            </div>
+
+            <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleSendTypedResponse();
+                }}
+                className="border-t border-[#dbe6f2] bg-white/90 px-3 py-3 sm:px-5"
+              >
+                {demoState.attachments.length ? (
+                  <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+                    {demoState.attachments.map((attachment) => (
+                      <DemoAttachmentChip
+                        key={attachment.id}
+                        attachment={attachment}
+                        onRemove={() => removeAttachment(attachment.id)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                <AssistantVoiceFirstInput
+                  value={composerValue}
+                  onChange={setComposerValue}
+                  inputRef={composerInputRef}
+                  inputTestId="ai-conversation-input"
+                  placeholder="Type your response..."
+                  inputLabel="Message SafeSpeak"
+                  disabled={isComposerBusy}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      handleSendTypedResponse();
+                    }
+                  }}
+                  onDictationClick={handleMessageDictationAction}
+                  dictationDisabled={
+                    isDictationDisabled || dictationStatus === "transcribing"
+                  }
+                  dictationLabel={getDictationActionLabel(dictationStatus)}
+                  dictationTestId="ai-conversation-dictation"
+                  onVoiceFirstClick={handlePrimaryVoiceAction}
+                  voiceFirstDisabled={isPrimaryVoiceDisabled}
+                  voiceFirstLabel={getPrimaryVoiceActionLabel(voiceStatus)}
+                  voiceTestId="ai-conversation-composer-voice"
+                  sendLabel="Send demo message"
+                  sendTestId="ai-conversation-send"
+                  showSendButton={hasTypedMessage}
+                  sendDisabled={!canSend}
+                  isProcessing={isAssistantTyping}
+                  captureState={
+                    dictationStatus === "listening"
+                      ? "listening"
+                      : dictationStatus === "transcribing"
+                        ? "review"
+                        : "idle"
+                  }
+                  captureLabel={
+                    dictationStatus === "listening"
+                      ? "Listening..."
+                      : "Transcribing..."
+                  }
+                  captureConfirmDisabled={dictationStatus !== "listening"}
+                  cancelLabel="Cancel dictation"
+                  confirmLabel="Stop message dictation"
+                  onCancelCapture={cancelMessageDictation}
+                  onConfirmCapture={() => {
+                    void stopMessageDictation();
+                  }}
+                  leadingAction={
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isVoiceSessionActive}
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#64748b] transition hover:bg-[#f4f7fb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f5d9f] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Attach a local file for this demo"
+                    >
+                      <IconPaperclip size={18} />
+                    </button>
+                  }
+                  error={
+                    dictationStatus === "error"
+                      ? getDictationStatusText(dictationStatus)
+                      : null
+                  }
+                />
+                <p className="mt-2 text-center text-[11px] leading-5 text-[#60718a]">
+                  Demo only. Nothing is uploaded, transcribed, spoken,
+                  submitted, or shared with a production service.
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
+                  onChange={(event) => {
+                    void handleAttachmentSelected(event.target.files?.[0]);
+                  }}
+                />
+              </form>
+          </section>
+
+          <aside className="min-w-0">
+            <section className="rounded-[18px] border border-[#dce4ef] bg-white/90 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-extrabold text-[#1f2a3a]">
+                    What SafeSpeak has understood
+                  </h2>
+                  <p className="mt-1 text-xs leading-5 text-[#60718a]">
+                    Local demo summary. Nothing has been sent.
+                  </p>
+                </div>
+                <span className="rounded-full bg-[#e7f1fb] px-3 py-1.5 text-xs font-bold text-[#0f5d9f]">
+                  {getDemoPhaseLabel(demoState.stage)}
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <DemoProgressMetric
+                  label="Conversation"
+                  value={demoState.progress}
+                />
+                <DemoProgressMetric
+                  label="Report readiness"
+                  value={demoState.readiness}
+                />
+                <div className="rounded-[14px] border border-[#dbe5f0] bg-[#f8fbff] p-3 text-xs leading-5 text-[#60718a]">
+                  Messages: {demoState.messages.length}
+                  <span className="block">
+                    Attachments: {demoState.attachments.length} local item
+                    {demoState.attachments.length === 1 ? "" : "s"}
+                  </span>
+                  <span className="block">
+                    Status: {isAssistantTyping ? "SafeSpeak typing" : "Ready"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-[14px] border border-[#f2d8b0] bg-[#fffaf2] px-3 py-3 text-xs leading-5 text-[#9a5b12]">
+                This panel is informational for the demo. It does not classify,
+                report, or contact a service.
+              </div>
+            </section>
+          </aside>
+        </div>
+      </div>
+
+      {isResetDialogOpen ? (
+        <div
+          className="fixed inset-0 z-[140] grid place-items-center bg-[#0b1725]/50 p-4"
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-conversation-title"
+            className="w-full max-w-md rounded-[20px] border border-[#dbe6f2] bg-white p-5 text-[#1f2a3a] shadow-[0_20px_48px_rgba(15,23,42,0.24)]"
+          >
+            <h2
+              id="reset-conversation-title"
+              className="text-lg font-extrabold"
+            >
+              Reset Conversation?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#60718a]">
+              This clears the demo messages, local attachments, voice state,
+              progress, and session storage for this conversation only.
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setIsResetDialogOpen(false)}
+                className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#dbe5f0] bg-white px-4 text-sm font-bold text-[#334155]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleResetConversation}
+                className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#0f5d9f] px-4 text-sm font-bold text-white"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </main>
+  );
+}
+
+function DemoProgressMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="font-semibold text-[#60718a]">{label}</span>
+        <span className="font-bold text-[#0f5d9f]">{value}%</span>
+      </div>
+      <div
+        className="mt-1 h-2 rounded-full bg-[#dbe6f2]"
+        role="progressbar"
+        aria-label={`${label} progress`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={value}
+      >
+        <div
+          className="h-full rounded-full bg-[#0f5d9f] transition-all duration-200"
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DemoMessageItem({
+  message,
+  attachment,
+  onRemoveAttachment,
+  onSuggestionClick,
+}: {
+  message: DemoConversationMessage;
+  attachment?: DemoAttachment;
+  onRemoveAttachment: (attachmentId: string) => void;
+  onSuggestionClick: (suggestion: DemoSuggestion, messageId: string) => void;
+}) {
+  if (message.role === "system") {
+    return (
+      <div
+        data-testid="ai-conversation-message-system"
+        className="mx-auto inline-flex max-w-[680px] items-center rounded-full border border-[#dbe5f0] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#60718a]"
+      >
+        {message.content}
+      </div>
+    );
+  }
+
+  const isUser = message.role === "user";
+
+  return (
+    <div
+      data-testid={`ai-conversation-message-${message.role}`}
+      className={`motion-safe:duration-200 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 ${
+        isUser ? "flex justify-end" : "flex justify-start"
+      }`}
+    >
+      <div
+        className={`flex max-w-[min(92%,680px)] gap-3 ${isUser ? "flex-row-reverse" : ""}`}
+      >
+        {!isUser ? (
+          <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-full bg-[#e7f1fb] text-xs font-extrabold text-[#0f5d9f]">
+            SS
+          </span>
+        ) : null}
+        <div className={isUser ? "items-end" : "items-start"}>
+          <div
+            className={`rounded-[18px] px-4 py-3 text-sm leading-6 shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
+              isUser
+                ? "rounded-tr-[8px] bg-[#0f5d9f] text-white"
+                : "rounded-tl-[8px] bg-white text-[#41566f]"
+            }`}
+          >
+            {isUser ? (
+              message.content
+            ) : (
+              <AssistantMessageRenderer content={message.content} />
+            )}
+          </div>
+          {attachment ? (
+            <div className="mt-2">
+              <DemoAttachmentCard
+                attachment={attachment}
+                onRemove={() => onRemoveAttachment(attachment.id)}
+              />
+            </div>
+          ) : null}
+          {!isUser && message.suggestions?.length ? (
+            <div
+              className="mt-2 flex flex-wrap gap-2"
+              aria-label="Suggested responses"
+            >
+              {message.suggestions.map((suggestion) => (
+                <button
+                  key={suggestion.id}
+                  type="button"
+                  onClick={() => onSuggestionClick(suggestion, message.id)}
+                  className="inline-flex min-h-9 items-center rounded-full border border-[#d7e1ee] bg-white px-3 text-xs font-bold text-[#334155] transition hover:border-[#bfd1e6] hover:bg-[#f8fbff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f5d9f]"
+                >
+                  {suggestion.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DemoAttachmentCard({
+  attachment,
+  onRemove,
+}: {
+  attachment: DemoAttachment;
+  onRemove: () => void;
+}) {
+  return (
+    <article className="w-full max-w-[360px] rounded-[14px] border border-[#dbe5f0] bg-white p-3 text-[#1f2a3a] shadow-[0_6px_18px_rgba(148,163,184,0.12)]">
+      <div className="flex gap-3">
+        <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-[10px] bg-[#f8fbff] text-[#0f5d9f] ring-1 ring-[#dbe5f0]">
+          {attachment.previewUrl ? (
+            <Image
+              src={attachment.previewUrl}
+              alt=""
+              width={56}
+              height={56}
+              unoptimized
+              className="h-full w-full object-cover"
+            />
+          ) : attachment.type.startsWith("image/") ? (
+            <IconPhoto size={20} />
+          ) : (
+            <IconFileText size={20} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-extrabold text-[#1f2a3a]">
+            {attachment.name}
+          </p>
+          <p className="mt-0.5 text-[11px] text-[#60718a]">
+            {attachment.type || "Unknown type"} -{" "}
+            {formatLocalFileSize(attachment.size)}
+          </p>
+          <div className="mt-2 h-1.5 rounded-full bg-[#e5edf6]">
+            <div
+              className={`h-full rounded-full ${
+                attachment.status === "error" ? "bg-[#de3838]" : "bg-[#0f5d9f]"
+              } transition-all duration-200`}
+              style={{ width: `${attachment.progress}%` }}
+            />
+          </div>
+          <p className="mt-1 text-[11px] font-semibold text-[#60718a]">
+            {attachment.message ??
+              (attachment.status === "processing"
+                ? "Processing preview"
+                : "Available in this demo session")}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="grid size-7 shrink-0 place-items-center rounded-full text-[#94a3b8] transition hover:bg-[#f1f5f9] hover:text-[#475569]"
+          aria-label={`Remove ${attachment.name}`}
+        >
+          <IconX size={14} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function DemoAttachmentChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: DemoAttachment;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="flex min-w-[220px] max-w-[300px] items-center gap-2 rounded-[12px] border border-[#dbe5f0] bg-[#f8fbff] px-3 py-2 text-xs">
+      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white text-[#0f5d9f]">
+        {attachment.previewUrl ? (
+          <IconPhoto size={15} />
+        ) : (
+          <IconFileText size={15} />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-bold text-[#1f2a3a]">
+          {attachment.name}
+        </span>
+        <span className="block text-[10px] text-[#60718a]">
+          {attachment.status === "processing"
+            ? `${attachment.progress}% processing`
+            : attachment.status === "ready"
+              ? "Ready for this demo"
+              : "Needs attention"}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="grid size-7 shrink-0 place-items-center rounded-full bg-white text-[#60718a] hover:text-[#1f2a3a]"
+        aria-label={`Remove ${attachment.name}`}
+      >
+        <IconX size={13} />
+      </button>
+    </div>
+  );
+}
+
+function DemoTypingIndicator() {
+  return (
+    <div
+      className="inline-flex w-fit items-center gap-2 rounded-[18px] rounded-tl-[8px] bg-white px-3 py-2 text-xs font-semibold text-[#60718a] shadow-[0_8px_22px_rgba(148,163,184,0.12)]"
+      role="status"
+      aria-live="polite"
+    >
+      SafeSpeak is typing
+      <span className="flex items-center gap-1" aria-hidden="true">
+        <span className="size-1.5 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:0ms]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:150ms]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:300ms]" />
+      </span>
+    </div>
+  );
+}
+
+function DemoStatusBubble({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <div
+      className="inline-flex w-fit max-w-[540px] items-center gap-2 rounded-[16px] bg-white px-4 py-2.5 text-xs font-semibold text-[#5f6f86] shadow-[0_8px_22px_rgba(148,163,184,0.12)]"
+      role="status"
+      aria-live="polite"
+    >
+      {icon}
+      {label}
+    </div>
+  );
+}
+
+// Retained for reference while Step 3 uses the frontend-only conversation.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function LegacySafeSpeakAssistantConversationPage({
   initialMessage,
   initialPrefillMessage,
   initialCategory,
@@ -1175,15 +2798,16 @@ function SafeSpeakAssistantConversationPage({
   );
   const shouldAutoStartVoiceMode =
     shouldRestoreVoiceMode || (!existingDraft && startVoiceMode);
-  const initialDraftMessages = existingDraft?.messages.filter(
-    (message, index) =>
-      !(
-        index === 0 &&
-        message.role === "assistant" &&
-        starterAssistantPrompts.includes(message.content.trim())
-      )
-  );
-  const initialConversationMessages =
+  const initialDraftMessages =
+    existingDraft?.messages.filter(
+      (message, index) =>
+        !(
+          index === 0 &&
+          message.role === "assistant" &&
+          starterAssistantPrompts.includes(message.content.trim())
+        )
+    ) ?? [];
+  const initialConversationMessages: ConversationUiMessage[] =
     initialDraftMessages && initialDraftMessages.length > 0
       ? initialDraftMessages
       : ([
@@ -1269,7 +2893,9 @@ function SafeSpeakAssistantConversationPage({
   const restartListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
-  const speechErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speechErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const speechPlaybackWatchdogRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
@@ -1359,7 +2985,8 @@ function SafeSpeakAssistantConversationPage({
           usedDraft: !shouldIgnoreStoredDraft,
           conversationSessionId: storedDraft.conversationSessionId ?? null,
           messageCount: storedDraft.messages.length,
-          lastMessagePreview: storedDraft.messages.at(-1)?.content?.slice(0, 120) ?? "",
+          lastMessagePreview:
+            storedDraft.messages.at(-1)?.content?.slice(0, 120) ?? "",
         })
       );
     }
@@ -1551,7 +3178,9 @@ function SafeSpeakAssistantConversationPage({
           setIsSpeaking(false);
           setIsGeneratingSpeech(false);
           if (failed) {
-            setSpeechPlaybackError(t("dashboard.assistant.voicePlaybackFailed"));
+            setSpeechPlaybackError(
+              t("dashboard.assistant.voicePlaybackFailed")
+            );
           }
           revealPendingSpeechResponse();
           setVoiceAvatarState(shouldContinue ? "listening" : "idle");
@@ -1873,11 +3502,16 @@ function SafeSpeakAssistantConversationPage({
               (response.assistantMessage.metadata?.selectedResponseSource as
                 | string
                 | undefined) ??
-              (response.responseMeta as { selectedResponseSource?: string } | undefined)
-                ?.selectedResponseSource ??
+              (
+                response.responseMeta as
+                  | { selectedResponseSource?: string }
+                  | undefined
+              )?.selectedResponseSource ??
               "unknown",
             intent:
-              (response.assistantMessage.metadata?.intent as string | undefined) ??
+              (response.assistantMessage.metadata?.intent as
+                | string
+                | undefined) ??
               response.responseMeta?.intent ??
               "unknown",
             assistantPreview: response.assistantMessage.content.slice(0, 120),
@@ -1896,7 +3530,9 @@ function SafeSpeakAssistantConversationPage({
           return false;
         }
 
-        if (response.assistantMessage.turnNumber <= latestAssistantTurnRef.current) {
+        if (
+          response.assistantMessage.turnNumber <= latestAssistantTurnRef.current
+        ) {
           console.info(
             "[SafeSpeak][frontend-stale-assistant-ignored]",
             JSON.stringify({
@@ -1950,7 +3586,8 @@ function SafeSpeakAssistantConversationPage({
             triageReady: response.responseMeta?.triageReady,
             nextAction: response.responseMeta?.nextAction,
             conversationSessionId: responseSessionId,
-            selectedResponseSource: response.responseMeta?.selectedResponseSource,
+            selectedResponseSource:
+              response.responseMeta?.selectedResponseSource,
             responseSource: response.responseMeta?.responseSource,
             model: response.responseMeta?.model,
             ragStatus: response.responseMeta?.ragStatus,
@@ -1959,19 +3596,27 @@ function SafeSpeakAssistantConversationPage({
             reviewStatus: response.responseMeta?.reviewStatus,
             ragUnavailable: response.responseMeta?.rag?.unavailable,
             assistantLanguage: response.responseMeta?.assistantLanguage,
-            pendingHumanReview: Boolean(response.triage?.humanReviewRecommended),
+            pendingHumanReview: Boolean(
+              response.triage?.humanReviewRecommended
+            ),
           },
         };
         latestAssistantTurnRef.current = response.assistantMessage.turnNumber;
 
         if (options.speakResponse) {
-          setMessages((currentMessages) => [...currentMessages, assistantMessage]);
+          setMessages((currentMessages) => [
+            ...currentMessages,
+            assistantMessage,
+          ]);
           void playAssistantSpeech(response.assistantMessage.content, {
             continueVoiceSession: options.continueVoiceSession,
             language: response.responseMeta?.assistantLanguage,
           });
         } else {
-          setMessages((currentMessages) => [...currentMessages, assistantMessage]);
+          setMessages((currentMessages) => [
+            ...currentMessages,
+            assistantMessage,
+          ]);
         }
 
         if (isActionableConversationTriage(response)) {
@@ -2087,7 +3732,9 @@ function SafeSpeakAssistantConversationPage({
                     ? conversationFlowError.status
                     : undefined,
                 retryStatus:
-                  retryError instanceof ApiRequestError ? retryError.status : undefined,
+                  retryError instanceof ApiRequestError
+                    ? retryError.status
+                    : undefined,
               })
             );
           }
@@ -2209,10 +3856,7 @@ function SafeSpeakAssistantConversationPage({
               ? requestError.message
               : "Assistant response failed"
           );
-          if (
-            voiceSessionActiveRef.current &&
-            options.continueVoiceSession
-          ) {
+          if (voiceSessionActiveRef.current && options.continueVoiceSession) {
             scheduleNextVoiceTurn();
           }
         }
@@ -2451,155 +4095,161 @@ function SafeSpeakAssistantConversationPage({
     [cleanupRecording, processVoiceAudioBlob, t, transcribeVoiceBlobToInput]
   );
 
-  const startVoiceRecording = useCallback(async (
-    target: VoiceCaptureTarget = "conversation"
-  ): Promise<boolean> => {
-    if (
-      (target === "conversation" && isSending) ||
-      isTranscribing ||
-      ((isGeneratingSpeech || isSpeaking) && speechPlaybackActiveRef.current)
-    ) {
-      return false;
-    }
+  const startVoiceRecording = useCallback(
+    async (target: VoiceCaptureTarget = "conversation"): Promise<boolean> => {
+      if (
+        (target === "conversation" && isSending) ||
+        isTranscribing ||
+        ((isGeneratingSpeech || isSpeaking) && speechPlaybackActiveRef.current)
+      ) {
+        return false;
+      }
 
-    if (
-      !navigator.mediaDevices?.getUserMedia ||
-      typeof MediaRecorder === "undefined"
-    ) {
-      setVoiceAvatarState("idle");
-      showTransientSpeechError(
-        t("dashboard.assistant.speechErrors.unsupported"),
-        4500
-      );
-      return false;
-    }
+      if (
+        !navigator.mediaDevices?.getUserMedia ||
+        typeof MediaRecorder === "undefined"
+      ) {
+        setVoiceAvatarState("idle");
+        showTransientSpeechError(
+          t("dashboard.assistant.speechErrors.unsupported"),
+          4500
+        );
+        return false;
+      }
 
-    try {
-      await ensureConsent(consentRequirements.audioTranscription);
-    } catch (consentCheckError) {
-      if (captureConsentError(consentCheckError)) {
+      try {
+        await ensureConsent(consentRequirements.audioTranscription);
+      } catch (consentCheckError) {
+        if (captureConsentError(consentCheckError)) {
+          setVoiceAvatarState("idle");
+          return false;
+        }
+
+        showTransientSpeechError(
+          consentCheckError instanceof Error
+            ? consentCheckError.message
+            : "Consent status could not be checked.",
+          4500
+        );
         setVoiceAvatarState("idle");
         return false;
       }
 
-      showTransientSpeechError(
-        consentCheckError instanceof Error
-          ? consentCheckError.message
-          : "Consent status could not be checked.",
-        4500
-      );
-      setVoiceAvatarState("idle");
-      return false;
-    }
+      setSpeechError(null);
+      setLiveTranscript("");
+      setIsTranscribing(false);
+      setPendingVoiceReviewBlob(null);
+      setActiveVoiceCaptureTarget(target);
+      audioChunksRef.current = [];
+      shouldProcessRecordingRef.current = true;
 
-    setSpeechError(null);
-    setLiveTranscript("");
-    setIsTranscribing(false);
-    setPendingVoiceReviewBlob(null);
-    setActiveVoiceCaptureTarget(target);
-    audioChunksRef.current = [];
-    shouldProcessRecordingRef.current = true;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = getPreferredRecordingMimeType();
-      const mediaRecorder = new MediaRecorder(
-        stream,
-        mimeType ? { mimeType } : undefined
-      );
-
-      recordingStreamRef.current = stream;
-      mediaRecorderRef.current = mediaRecorder;
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-          // Voice state: audio data arrived even if live recognition is unavailable.
-          setVoiceAvatarState("userSpeaking");
-        }
-      };
-
-      mediaRecorder.onerror = () => {
-        shouldProcessRecordingRef.current = false;
-        setIsRecordingActive(false);
-        setIsTranscribing(false);
-        setActiveVoiceCaptureTarget(null);
-        setVoiceAvatarState("idle");
-        cleanupRecording();
-        showTransientSpeechError(
-          getRecordingErrorMessage("audio-capture", t),
-          4500
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        const mimeType = getPreferredRecordingMimeType();
+        const mediaRecorder = new MediaRecorder(
+          stream,
+          mimeType ? { mimeType } : undefined
         );
-      };
 
-      mediaRecorder.onstop = () => {
-        setIsRecordingActive(false);
+        recordingStreamRef.current = stream;
+        mediaRecorderRef.current = mediaRecorder;
 
-        if (!shouldProcessRecordingRef.current) {
-          audioChunksRef.current = [];
-          cleanupRecording();
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+            // Voice state: audio data arrived even if live recognition is unavailable.
+            setVoiceAvatarState("userSpeaking");
+          }
+        };
+
+        mediaRecorder.onerror = () => {
+          shouldProcessRecordingRef.current = false;
+          setIsRecordingActive(false);
+          setIsTranscribing(false);
           setActiveVoiceCaptureTarget(null);
           setVoiceAvatarState("idle");
-          return;
-        }
+          cleanupRecording();
+          showTransientSpeechError(
+            getRecordingErrorMessage("audio-capture", t),
+            4500
+          );
+        };
 
-        // Voice state: user speech ended, keep the avatar active while transcribing.
-        setVoiceAvatarState("listening");
-        if (target === "conversation" || recordingDecisionRef.current === "confirm") {
-          setIsTranscribing(true);
-        }
-        void handleRecordedAudio(
-          mediaRecorder.mimeType || mimeType || "audio/webm",
-          target
-        );
-      };
+        mediaRecorder.onstop = () => {
+          setIsRecordingActive(false);
 
-      mediaRecorder.start();
-      // Voice state: microphone is open and waiting for the user to speak.
-      setVoiceAvatarState("listening");
-      const hasLiveEndpointing = startLiveTranscriptPreview();
-
-      clearAutoStopRecordingTimer();
-      autoStopRecordingTimerRef.current = setTimeout(() => {
-        const activeRecorder = mediaRecorderRef.current;
-
-        if (activeRecorder?.state === "recording") {
-          if (hasLiveEndpointing) {
-            stopLiveTranscriptPreview();
+          if (!shouldProcessRecordingRef.current) {
+            audioChunksRef.current = [];
+            cleanupRecording();
+            setActiveVoiceCaptureTarget(null);
+            setVoiceAvatarState("idle");
+            return;
           }
 
-          activeRecorder.stop();
-        }
-      }, VOICE_RECORDING_TIMEOUT_MS);
+          // Voice state: user speech ended, keep the avatar active while transcribing.
+          setVoiceAvatarState("listening");
+          if (
+            target === "conversation" ||
+            recordingDecisionRef.current === "confirm"
+          ) {
+            setIsTranscribing(true);
+          }
+          void handleRecordedAudio(
+            mediaRecorder.mimeType || mimeType || "audio/webm",
+            target
+          );
+        };
 
-      setIsRecordingActive(true);
-      return true;
-    } catch (recordingError) {
-      stopLiveTranscriptPreview();
-      cleanupRecording();
-      setActiveVoiceCaptureTarget(null);
-      setVoiceAvatarState("idle");
-      const errorCode =
-        recordingError instanceof DOMException &&
-        recordingError.name === "NotAllowedError"
-          ? "not-allowed"
-          : "audio-capture";
-      showTransientSpeechError(getRecordingErrorMessage(errorCode, t), 4500);
-      return false;
-    }
-  }, [
-    cleanupRecording,
-    clearAutoStopRecordingTimer,
-    handleRecordedAudio,
-    isGeneratingSpeech,
-    isSending,
-    isSpeaking,
-    isTranscribing,
-    startLiveTranscriptPreview,
-    stopLiveTranscriptPreview,
-    showTransientSpeechError,
-    t,
-  ]);
+        mediaRecorder.start();
+        // Voice state: microphone is open and waiting for the user to speak.
+        setVoiceAvatarState("listening");
+        const hasLiveEndpointing = startLiveTranscriptPreview();
+
+        clearAutoStopRecordingTimer();
+        autoStopRecordingTimerRef.current = setTimeout(() => {
+          const activeRecorder = mediaRecorderRef.current;
+
+          if (activeRecorder?.state === "recording") {
+            if (hasLiveEndpointing) {
+              stopLiveTranscriptPreview();
+            }
+
+            activeRecorder.stop();
+          }
+        }, VOICE_RECORDING_TIMEOUT_MS);
+
+        setIsRecordingActive(true);
+        return true;
+      } catch (recordingError) {
+        stopLiveTranscriptPreview();
+        cleanupRecording();
+        setActiveVoiceCaptureTarget(null);
+        setVoiceAvatarState("idle");
+        const errorCode =
+          recordingError instanceof DOMException &&
+          recordingError.name === "NotAllowedError"
+            ? "not-allowed"
+            : "audio-capture";
+        showTransientSpeechError(getRecordingErrorMessage(errorCode, t), 4500);
+        return false;
+      }
+    },
+    [
+      cleanupRecording,
+      clearAutoStopRecordingTimer,
+      handleRecordedAudio,
+      isGeneratingSpeech,
+      isSending,
+      isSpeaking,
+      isTranscribing,
+      startLiveTranscriptPreview,
+      stopLiveTranscriptPreview,
+      showTransientSpeechError,
+      t,
+    ]
+  );
 
   startVoiceRecordingRef.current = startVoiceRecording;
 
@@ -2750,7 +4400,9 @@ function SafeSpeakAssistantConversationPage({
     setActiveVoiceCaptureTarget(null);
     setPendingVoiceReviewBlob(null);
     setLiveTranscript("");
-    setVoiceAvatarState(isGeneratingSpeech || isSpeaking ? "aiSpeaking" : "idle");
+    setVoiceAvatarState(
+      isGeneratingSpeech || isSpeaking ? "aiSpeaking" : "idle"
+    );
   }, [
     cleanupRecording,
     clearAutoStopRecordingTimer,
@@ -2785,7 +4437,11 @@ function SafeSpeakAssistantConversationPage({
     setIsTranscribing(false);
     setLiveTranscript("");
     setVoiceAvatarState("idle");
-  }, [cleanupRecording, clearAutoStopRecordingTimer, stopLiveTranscriptPreview]);
+  }, [
+    cleanupRecording,
+    clearAutoStopRecordingTimer,
+    stopLiveTranscriptPreview,
+  ]);
 
   const confirmTranscriptionCapture = useCallback(async () => {
     if (activeVoiceCaptureTarget === "transcription" && isRecordingActive) {
@@ -2973,11 +4629,10 @@ function SafeSpeakAssistantConversationPage({
     setInput(event.target.value);
   };
 
-  const conversationVoiceAvatarState: VoiceAvatarState =
-    isSpeaking
-      ? "aiSpeaking"
-      : isGeneratingSpeech || isSending || isTranscribing
-        ? "processing"
+  const conversationVoiceAvatarState: VoiceAvatarState = isSpeaking
+    ? "aiSpeaking"
+    : isGeneratingSpeech || isSending || isTranscribing
+      ? "processing"
       : liveTranscript
         ? "userSpeaking"
         : isRecordingActive
@@ -2993,9 +4648,9 @@ function SafeSpeakAssistantConversationPage({
   return (
     <div
       data-testid="ai-conversation-page"
-      className="px-2 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4 flex flex-1 flex-col overflow-hidden pb-0"
+      className="flex flex-1 flex-col overflow-hidden px-2 pb-0 pb-3 pt-2 sm:px-4 sm:pb-5 sm:pt-4"
     >
-      <div className="mx-auto flex w-full max-w-[1320px] flex-col h-full min-h-0">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[1320px] flex-col">
         <div className="flex items-center justify-between border-b border-[#d9e2ee] px-1 py-2">
           <div />
           <button
@@ -3007,12 +4662,12 @@ function SafeSpeakAssistantConversationPage({
           </button>
         </div>
 
-        <div className="mt-4 min-h-0 flex-1 flex flex-col">
-          <div className="relative flex flex-1 flex-col bg-transparent px-2 pb-2 pt-2 h-full min-h-0 sm:px-3 xl:min-h-[520px]">
+        <div className="mt-4 flex min-h-0 flex-1 flex-col">
+          <div className="relative flex h-full min-h-0 flex-1 flex-col bg-transparent px-2 pb-2 pt-2 sm:px-3 xl:min-h-[520px]">
             {pendingConsentRequirement ? (
               <div className="relative z-30 mb-3 max-w-[560px]">
                 <ConsentRequiredCard
-                  requirement={pendingConsentRequirement}
+                  requirement={pendingConsentRequirement!}
                   isSubmitting={isGrantingConsent}
                   onAllow={() => {
                     void handleAllowPendingConsent();
@@ -3052,7 +4707,7 @@ function SafeSpeakAssistantConversationPage({
                           <div
                             className={`inline-flex max-w-full rounded-[20px] bg-white px-4 py-3 shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
                               message.role === "user"
-                                ? "rounded-tr-[8px] whitespace-pre-wrap text-[14px] leading-[1.6] text-[#314256]"
+                                ? "whitespace-pre-wrap rounded-tr-[8px] text-[14px] leading-[1.6] text-[#314256]"
                                 : "rounded-tl-[8px] text-[#41566f]"
                             }`}
                           >
@@ -3065,17 +4720,25 @@ function SafeSpeakAssistantConversationPage({
                           {message.role === "assistant" ? (
                             <>
                               <AssistantLegalCitationDetails
-                                citations={message.responseMeta?.citations ?? []}
-                                groundedLegalSource={message.responseMeta?.groundedLegalSource}
+                                citations={
+                                  message.responseMeta?.citations ?? []
+                                }
+                                groundedLegalSource={
+                                  message.responseMeta?.groundedLegalSource
+                                }
                                 showDetails={Boolean(
                                   message.responseMeta?.showSources &&
-                                    (message.responseMeta?.sourceDisplayReason === "legal_lookup" ||
-                                      message.responseMeta?.sourceDisplayReason ===
-                                        "explicit_citation_request")
+                                  (message.responseMeta?.sourceDisplayReason ===
+                                    "legal_lookup" ||
+                                    message.responseMeta
+                                      ?.sourceDisplayReason ===
+                                      "explicit_citation_request")
                                 )}
                               />
                               <AssistantResponseCitations
-                                citations={message.responseMeta?.citations ?? []}
+                                citations={
+                                  message.responseMeta?.citations ?? []
+                                }
                                 showSources={Boolean(
                                   message.responseMeta?.showSources
                                 )}
@@ -3107,7 +4770,10 @@ function SafeSpeakAssistantConversationPage({
                   {isSending ? (
                     <div className="inline-flex w-fit items-center rounded-[18px] rounded-tl-[8px] bg-white px-3 py-2 shadow-[0_8px_22px_rgba(148,163,184,0.12)]">
                       <span className="sr-only">Assistant is typing</span>
-                      <div className="flex items-center gap-1" aria-hidden="true">
+                      <div
+                        className="flex items-center gap-1"
+                        aria-hidden="true"
+                      >
                         <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:0ms]" />
                         <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:150ms]" />
                         <span className="h-2 w-2 animate-bounce rounded-full bg-[#9fb3cb] [animation-delay:300ms]" />
@@ -3149,7 +4815,9 @@ function SafeSpeakAssistantConversationPage({
                           type="button"
                           onClick={stopAssistantSpeech}
                           className="ml-1 rounded-full border border-[#d6e7f6] px-2 py-1 text-[10px] font-bold text-[#0f5d9f]"
-                          aria-label={t("dashboard.assistant.stopVoicePlayback")}
+                          aria-label={t(
+                            "dashboard.assistant.stopVoicePlayback"
+                          )}
                         >
                           {t("dashboard.assistant.stopVoicePlayback")}
                         </button>
@@ -3168,8 +4836,9 @@ function SafeSpeakAssistantConversationPage({
                         <button
                           type="button"
                           onClick={() => {
-                            void playAssistantSpeech(replayVoiceText, {
-                              continueVoiceSession: voiceSessionActiveRef.current,
+                            void playAssistantSpeech(replayVoiceText ?? "", {
+                              continueVoiceSession:
+                                voiceSessionActiveRef.current,
                               language: replayVoiceLanguage,
                             });
                           }}
@@ -3203,7 +4872,7 @@ function SafeSpeakAssistantConversationPage({
 
             <form
               onSubmit={handleSubmit}
-              className="w-full px-2 pb-2 pt-3 bg-transparent shrink-0 z-20"
+              className="z-20 w-full shrink-0 bg-transparent px-2 pb-2 pt-3"
             >
               <div className="mx-auto w-full max-w-[1120px] px-2">
                 {shouldShowVoiceAvatar ? (
@@ -3215,48 +4884,52 @@ function SafeSpeakAssistantConversationPage({
                   />
                 ) : null}
                 {isTranscriptionCaptureActive || pendingVoiceReviewBlob ? (
-                  <div className="flex items-center gap-2 rounded-[28px] border border-[#dbe6f2] bg-[#f8fbff]/96 px-4 py-2 shadow-[0_10px_30px_rgba(148,163,184,0.18)] backdrop-blur">
-                  <div className="flex flex-1 items-center gap-3 overflow-hidden">
-                    <span className="text-[11px] font-medium text-[#64748b]">
-                      {isTranscriptionCaptureActive ? "Listening..." : "Use transcribed text"}
-                    </span>
-                    <div className="flex h-8 flex-1 items-center gap-1 overflow-hidden">
-                      {Array.from({ length: 32 }).map((_, index) => (
-                        <span
-                          key={index}
-                          className={`w-1 rounded-full bg-[#7aa4d8] ${
-                            isTranscriptionCaptureActive ? "animate-pulse" : ""
-                          }`}
-                          style={{
-                            height: `${10 + ((index * 7) % 18)}px`,
-                            animationDelay: `${index * 45}ms`,
-                            opacity: 0.38 + ((index % 6) * 0.1),
-                          }}
-                        />
-                      ))}
+                  <div className="bg-[#f8fbff]/96 flex items-center gap-2 rounded-[28px] border border-[#dbe6f2] px-4 py-2 shadow-[0_10px_30px_rgba(148,163,184,0.18)] backdrop-blur">
+                    <div className="flex flex-1 items-center gap-3 overflow-hidden">
+                      <span className="text-[11px] font-medium text-[#64748b]">
+                        {isTranscriptionCaptureActive
+                          ? "Listening..."
+                          : "Use transcribed text"}
+                      </span>
+                      <div className="flex h-8 flex-1 items-center gap-1 overflow-hidden">
+                        {Array.from({ length: 32 }).map((_, index) => (
+                          <span
+                            key={index}
+                            className={`w-1 rounded-full bg-[#7aa4d8] ${
+                              isTranscriptionCaptureActive
+                                ? "animate-pulse"
+                                : ""
+                            }`}
+                            style={{
+                              height: `${10 + ((index * 7) % 18)}px`,
+                              animationDelay: `${index * 45}ms`,
+                              opacity: 0.38 + (index % 6) * 0.1,
+                            }}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={cancelTranscriptionCapture}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#dbe6f2] bg-white text-[#64748b] transition hover:bg-[#f4f7fb]"
-                    aria-label={t("common.cancel")}
-                  >
-                    <IconX size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void confirmTranscriptionCapture();
-                    }}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white transition hover:bg-[#0c518a]"
-                    aria-label="Use voice text"
-                  >
-                    <IconCheck size={16} />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={cancelTranscriptionCapture}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#dbe6f2] bg-white text-[#64748b] transition hover:bg-[#f4f7fb]"
+                      aria-label={t("common.cancel")}
+                    >
+                      <IconX size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void confirmTranscriptionCapture();
+                      }}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#0f5d9f] text-white transition hover:bg-[#0c518a]"
+                      aria-label="Use voice text"
+                    >
+                      <IconCheck size={16} />
+                    </button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 rounded-[28px] border border-[#cfe0f1] bg-[#f4f9ff]/96 px-3 py-2 shadow-[0_10px_30px_rgba(148,163,184,0.14)] backdrop-blur">
+                  <div className="bg-[#f4f9ff]/96 flex items-center gap-2 rounded-[28px] border border-[#cfe0f1] px-3 py-2 shadow-[0_10px_30px_rgba(148,163,184,0.14)] backdrop-blur">
                     <input
                       type="text"
                       value={input}
@@ -3329,7 +5002,9 @@ function SafeSpeakAssistantConversationPage({
                               : "bg-[#196bb1] text-white"
                           }`}
                           aria-label={
-                            isVoiceSessionMuted ? "Unmute voice mode" : "Mute voice mode"
+                            isVoiceSessionMuted
+                              ? "Unmute voice mode"
+                              : "Mute voice mode"
                           }
                         >
                           {isVoiceSessionMuted ? (
@@ -3344,7 +5019,10 @@ function SafeSpeakAssistantConversationPage({
                           className="inline-flex h-8 shrink-0 items-center rounded-full bg-[#1f8cff] px-4 text-[11px] font-bold text-white transition hover:bg-[#137cf0]"
                           aria-label={t("dashboard.assistant.stopRecording")}
                         >
-                          <span className="mr-2 inline-flex items-center gap-[2px]" aria-hidden="true">
+                          <span
+                            className="mr-2 inline-flex items-center gap-[2px]"
+                            aria-hidden="true"
+                          >
                             <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
                             <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
                             <span className="h-[4px] w-[4px] rounded-full bg-white/90" />
@@ -3378,6 +5056,18 @@ function SafeSpeakAssistantConversationPage({
       </div>
     </div>
   );
+}
+
+function SafeSpeakAssistantConversationPage({
+  initialMessage,
+}: {
+  initialMessage?: string;
+  initialPrefillMessage?: string;
+  initialCategory?: AssistantIncidentCategory;
+  initialTopic?: DashboardCardFlowId;
+  startVoiceMode?: boolean;
+}) {
+  return <LocalAssistantConversationPage initialMessage={initialMessage} />;
 }
 
 export { SafeSpeakAssistantConversationPage, SafeSpeakAssistantPage };
