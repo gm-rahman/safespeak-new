@@ -3,9 +3,10 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   BookOpen,
@@ -13,6 +14,8 @@ import {
   ChevronRight,
   ClipboardList,
   Cloud,
+  Copy,
+  Download,
   FileText,
   HeartHandshake,
   HelpCircle,
@@ -22,10 +25,13 @@ import {
   MessageSquareWarning,
   Mic,
   Phone,
+  RefreshCw,
   Save,
+  Scale,
   Search,
   Settings,
   ShieldCheck,
+  Sparkles,
   Upload,
   UserRoundCheck,
   X,
@@ -35,9 +41,38 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { AssistantIncidentCategory } from "@/lib/assistant-categories";
+import { getAssistantTriageSource } from "@/lib/assistant-triage";
 import type { DashboardCardFlowId } from "@/lib/dashboard-card-flows";
+import {
+  type MicroEducationItem,
+  listPublishedMicroEducation,
+} from "@/lib/microeducation";
+import { getResolvedReportFlowDraft, mergeReportFlowDraft } from "@/lib/report-flow";
+import {
+  type ReportBuilderOverview,
+  buildReportBuilderOverview,
+} from "@/lib/report-builder-view-model";
+import {
+  type InjuredValue,
+  type ReportDraft,
+  type SafetyStatusValue,
+  buildReportDraftText,
+  formatTimestamp,
+  toTitleCase,
+} from "@/lib/report-draft-text";
+import {
+  REPORT_REVIEW_ONBOARDING_STEPS,
+  isReportReviewOnboardingStep,
+  reportReviewOnboardingStepHref,
+} from "@/lib/report-review-onboarding";
 import { COVERT_MODE_KEY, NEUTRAL_ROUTE } from "@/lib/safety";
+import type { TriageSupportOption } from "@/lib/triage-view-model";
 import { cn } from "@/lib/utils";
+
+import {
+  ReportReviewOnboardingProgress,
+  ReportReviewOnboardingRouter,
+} from "./report-review-onboarding-pages";
 
 const FLOW_STORAGE_KEY = "safespeak_report_onboarding_flow";
 const REPORT_DRAFT_STORAGE_KEY = "safespeak_report_entry_draft";
@@ -68,14 +103,6 @@ type PrivacyPreferences = {
   anonymousResearchSharing: boolean;
 };
 
-type ReportDraft = {
-  title: string;
-  date: string;
-  location: string;
-  summary: string;
-  updatedAt: string | null;
-};
-
 type ReportOnboardingState = {
   language: LanguageCode | null;
   communityBackground: string[];
@@ -85,6 +112,8 @@ type ReportOnboardingState = {
   privacyUpdatedAt: string | null;
   onboardingCompleted: boolean;
   reportDraft: ReportDraft;
+  autoFilledFields: string[];
+  lastAppliedTriageUpdatedAt: string | null;
 };
 
 const defaultReportDraft: ReportDraft = {
@@ -92,6 +121,10 @@ const defaultReportDraft: ReportDraft = {
   date: "",
   location: "",
   summary: "",
+  safetyStatus: "",
+  wasInjured: "",
+  relationshipToPerson: "",
+  evidenceContext: "",
   updatedAt: null,
 };
 
@@ -108,6 +141,8 @@ const defaultState: ReportOnboardingState = {
   privacyUpdatedAt: null,
   onboardingCompleted: false,
   reportDraft: defaultReportDraft,
+  autoFilledFields: [],
+  lastAppliedTriageUpdatedAt: null,
 };
 
 const languages: Array<{
@@ -157,8 +192,9 @@ function isStep(value: string | null): value is ReportOnboardingStep {
   return steps.some((step) => step.id === value);
 }
 
-function stepHref(step: ReportOnboardingStep): Route {
-  return `/dashboard?view=reportsubmissiondetails&step=${step}` as Route;
+function stepHref(step: ReportOnboardingStep, fromTriage = false): Route {
+  const suffix = fromTriage ? "&fromTriage=1" : "";
+  return `/dashboard?view=reportsubmissiondetails&step=${step}${suffix}` as Route;
 }
 
 function safeParseState(raw: string | null): ReportOnboardingState {
@@ -180,18 +216,15 @@ function safeParseState(raw: string | null): ReportOnboardingState {
         ...defaultReportDraft,
         ...parsed.reportDraft,
       },
+      autoFilledFields: Array.isArray(parsed.autoFilledFields)
+        ? parsed.autoFilledFields.filter(
+            (item): item is string => typeof item === "string"
+          )
+        : [],
     };
   } catch {
     return defaultState;
   }
-}
-
-function formatTimestamp(value: string | null): string {
-  if (!value) return "Not updated yet";
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }
 
 function getLanguageLabel(code: LanguageCode | null): string {
@@ -223,10 +256,24 @@ function ReportSubmissionDetailsPage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedStep = searchParams.get("step");
-  const activeStep = isStep(requestedStep) ? requestedStep : "language";
+  const fromTriage = searchParams.get("fromTriage") === "1";
+  const onboardingStep = isReportReviewOnboardingStep(requestedStep)
+    ? requestedStep
+    : null;
+  const activeStep = isStep(requestedStep)
+    ? requestedStep
+    : fromTriage
+      ? "report"
+      : "language";
   const [state, setState] = useState<ReportOnboardingState>(defaultState);
   const [hydrated, setHydrated] = useState(false);
   const [languageError, setLanguageError] = useState<string | null>(null);
+  const [reportOverview, setReportOverview] =
+    useState<ReportBuilderOverview | null>(null);
+  const [draftFeedback, setDraftFeedback] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const isSavingRef = useRef(false);
+  const isNavigatingToReviewRef = useRef(false);
 
   useEffect(() => {
     const stored = safeParseState(window.sessionStorage.getItem(FLOW_STORAGE_KEY));
@@ -244,12 +291,52 @@ function ReportSubmissionDetailsPage({
       }
     }
 
+    let autoFilledFields = stored.autoFilledFields;
+    let lastAppliedTriageUpdatedAt = stored.lastAppliedTriageUpdatedAt;
+
+    const triageSource = getAssistantTriageSource();
+    const overview = buildReportBuilderOverview(triageSource);
+    setReportOverview(overview);
+
+    if (
+      triageSource &&
+      overview &&
+      triageSource.updatedAt !== lastAppliedTriageUpdatedAt
+    ) {
+      const nextAutoFilled = new Set(autoFilledFields);
+
+      if (overview.prefill.title && !reportDraft.title) {
+        reportDraft = { ...reportDraft, title: overview.prefill.title };
+        nextAutoFilled.add("title");
+      }
+      if (overview.prefill.whatHappened && !reportDraft.summary) {
+        reportDraft = { ...reportDraft, summary: overview.prefill.whatHappened };
+        nextAutoFilled.add("summary");
+      }
+      if (overview.prefill.safetyStatus && !reportDraft.safetyStatus) {
+        reportDraft = {
+          ...reportDraft,
+          safetyStatus: overview.prefill.safetyStatus,
+        };
+        nextAutoFilled.add("safetyStatus");
+      }
+      if (overview.prefill.location && !reportDraft.location) {
+        reportDraft = { ...reportDraft, location: overview.prefill.location };
+        nextAutoFilled.add("location");
+      }
+
+      autoFilledFields = Array.from(nextAutoFilled);
+      lastAppliedTriageUpdatedAt = triageSource.updatedAt;
+    }
+
     setState({
       ...stored,
       reportDraft: {
         ...reportDraft,
         summary: reportDraft.summary || initialMessage || "",
       },
+      autoFilledFields,
+      lastAppliedTriageUpdatedAt,
     });
     setHydrated(true);
   }, [initialMessage]);
@@ -260,10 +347,37 @@ function ReportSubmissionDetailsPage({
   }, [hydrated, state]);
 
   useEffect(() => {
+    if (onboardingStep) return;
     if (!isStep(requestedStep)) {
-      router.replace(stepHref("language"));
+      router.replace(stepHref(fromTriage ? "report" : "language", fromTriage));
     }
-  }, [requestedStep, router]);
+  }, [requestedStep, onboardingStep, router, fromTriage]);
+
+  useEffect(() => {
+    if (activeStep === "report" && !onboardingStep) {
+      isNavigatingToReviewRef.current = false;
+    }
+  }, [activeStep, onboardingStep]);
+
+  useEffect(() => {
+    if (!onboardingStep || !hydrated) return;
+
+    const config = REPORT_REVIEW_ONBOARDING_STEPS[onboardingStep];
+    if (config.allowDirectAccess) return;
+
+    const resolvedDraft = getResolvedReportFlowDraft();
+
+    if (config.requiresDestination && !resolvedDraft?.selectedDestinationId) {
+      router.replace(
+        reportReviewOnboardingStepHref("destination", fromTriage)
+      );
+      return;
+    }
+
+    if (config.requiresConsent && !resolvedDraft?.consentGranted) {
+      router.replace(reportReviewOnboardingStepHref("consent", fromTriage));
+    }
+  }, [onboardingStep, hydrated, fromTriage, router]);
 
   const currentStepIndex = steps.findIndex((step) => step.id === activeStep);
   const selectedLanguage = useMemo(
@@ -276,7 +390,7 @@ function ReportSubmissionDetailsPage({
   }
 
   function goToStep(step: ReportOnboardingStep): void {
-    router.push(stepHref(step));
+    router.push(stepHref(step, fromTriage));
   }
 
   function goNext(): void {
@@ -289,6 +403,19 @@ function ReportSubmissionDetailsPage({
     if (nextStep) {
       goToStep(nextStep);
     }
+  }
+
+  function headerBack(): void {
+    if (onboardingStep) {
+      const previous = REPORT_REVIEW_ONBOARDING_STEPS[onboardingStep].previous;
+      router.push(
+        previous
+          ? reportReviewOnboardingStepHref(previous, fromTriage)
+          : stepHref("report", fromTriage)
+      );
+      return;
+    }
+    goBack();
   }
 
   function goBack(): void {
@@ -345,6 +472,111 @@ function ReportSubmissionDetailsPage({
     saveSessionDraft(nextDraft);
   }
 
+  function updateDraftField<K extends keyof ReportDraft>(
+    key: K,
+    value: ReportDraft[K]
+  ): void {
+    updateDraft({ [key]: value } as Partial<ReportDraft>);
+
+    if (state.autoFilledFields.includes(key)) {
+      updateState({
+        autoFilledFields: state.autoFilledFields.filter((field) => field !== key),
+      });
+    }
+  }
+
+  function handleDiscardPrefill(): void {
+    if (state.autoFilledFields.length === 0) return;
+
+    const cleared: Partial<ReportDraft> = {};
+    for (const field of state.autoFilledFields) {
+      if (field in defaultReportDraft) {
+        cleared[field as keyof ReportDraft] = defaultReportDraft[
+          field as keyof ReportDraft
+        ] as never;
+      }
+    }
+
+    updateDraft(cleared);
+    updateState({ autoFilledFields: [] });
+  }
+
+  function handleSaveLocalDraft(): void {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+
+    try {
+      saveSessionDraft(state.reportDraft);
+      setDraftFeedback("Saved locally in this browser session.");
+    } catch {
+      setDraftFeedback("Could not save the local draft. Try again.");
+    } finally {
+      window.setTimeout(() => {
+        isSavingRef.current = false;
+      }, 400);
+    }
+  }
+
+  function handleDownloadTxt(): void {
+    try {
+      const blob = new Blob(
+        [buildReportDraftText(state.reportDraft, reportOverview)],
+        { type: "text/plain;charset=utf-8" }
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "safespeak-report-draft.txt";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setDraftFeedback("Downloaded safespeak-report-draft.txt");
+    } catch {
+      setDraftFeedback("Could not generate the download. Try again.");
+    }
+  }
+
+  async function handleCopyToClipboard(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(
+        buildReportDraftText(state.reportDraft, reportOverview)
+      );
+      setCopyFeedback("Copied report text to your clipboard.");
+    } catch {
+      setCopyFeedback(
+        "Could not copy automatically. Select and copy the text manually."
+      );
+    }
+  }
+
+  function handleReviewIncident(): void {
+    if (isNavigatingToReviewRef.current) return;
+    isNavigatingToReviewRef.current = true;
+
+    saveSessionDraft(state.reportDraft);
+
+    const draft = state.reportDraft;
+    mergeReportFlowDraft({
+      title: draft.title,
+      date: draft.date,
+      location: draft.location,
+      summary: draft.summary,
+      safetyStatus: draft.safetyStatus || undefined,
+      incidentType: reportOverview?.matchedPathway.category,
+      structuredFields: {
+        who: draft.relationshipToPerson || undefined,
+        what: draft.summary || undefined,
+        when: draft.date || undefined,
+        where: draft.location || undefined,
+        injuries: draft.wasInjured || undefined,
+        witnesses: draft.evidenceContext || undefined,
+      },
+    });
+
+    router.push(reportReviewOnboardingStepHref("review", fromTriage));
+  }
+
   if (!hydrated) {
     return (
       <div className="px-3 py-6 text-sm text-[#60718a] sm:px-5">
@@ -359,7 +591,7 @@ function ReportSubmissionDetailsPage({
         <div className="mb-3 flex flex-col gap-3 border-b border-[#d9e2ee] pb-3 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
-            onClick={goBack}
+            onClick={headerBack}
             className="inline-flex min-h-10 w-fit items-center gap-2 rounded-full border border-[#d7e1ee] bg-white px-3 text-xs font-semibold text-[#334155] transition hover:bg-[#f8fbff]"
           >
             <ArrowLeft size={14} aria-hidden="true" />
@@ -380,10 +612,23 @@ function ReportSubmissionDetailsPage({
           aria-labelledby="report-flow-heading"
           className="rounded-[16px] border border-[#dce4ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5 lg:p-6"
         >
-          <ProgressIndicator currentStepIndex={currentStepIndex} />
+          {onboardingStep ? (
+            <ReportReviewOnboardingProgress currentStepId={onboardingStep} />
+          ) : (
+            <ProgressIndicator currentStepIndex={currentStepIndex} />
+          )}
 
           <div className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200">
-            {activeStep === "language" ? (
+            {onboardingStep ? (
+              <ReportReviewOnboardingRouter
+                step={onboardingStep}
+                overview={reportOverview}
+                onGoToStep={(step) =>
+                  router.push(reportReviewOnboardingStepHref(step, fromTriage))
+                }
+                onEditDetails={() => router.push(stepHref("report", fromTriage))}
+              />
+            ) : activeStep === "language" ? (
               <LanguageStep
                 error={languageError}
                 onContinue={goNext}
@@ -424,8 +669,24 @@ function ReportSubmissionDetailsPage({
             ) : (
               <ReportEntryStep
                 draft={state.reportDraft}
-                onBack={() => goToStep("services")}
-                onDraftChange={updateDraft}
+                autoFilledFields={state.autoFilledFields}
+                overview={reportOverview}
+                fromTriage={fromTriage}
+                draftFeedback={draftFeedback}
+                copyFeedback={copyFeedback}
+                onBack={
+                  fromTriage
+                    ? () => router.push("/dashboard?view=reportsubmissionsupport" as Route)
+                    : () => goToStep("services")
+                }
+                onDraftFieldChange={updateDraftField}
+                onDiscardPrefill={handleDiscardPrefill}
+                onSaveLocalDraft={handleSaveLocalDraft}
+                onDownloadTxt={handleDownloadTxt}
+                onCopyToClipboard={() => {
+                  void handleCopyToClipboard();
+                }}
+                onReviewIncident={handleReviewIncident}
               />
             )}
           </div>
@@ -1207,15 +1468,171 @@ function ToolkitDisabled({ label }: { label: string }) {
   );
 }
 
+
+function AutoFilledBadge() {
+  return (
+    <Badge className="ml-2 border-[#bfdcf5] bg-[#eef6ff] text-[10px] font-bold text-[#0f5d9f]">
+      <Sparkles className="mr-1 size-3" aria-hidden="true" />
+      Auto-filled
+    </Badge>
+  );
+}
+
+function OptionalTag() {
+  return <span className="ml-1 font-normal text-[#94a3b8]">(optional)</span>;
+}
+
+function ReportServiceRow({ service }: { service: TriageSupportOption }) {
+  return (
+    <div
+      className="rounded-[12px] border border-[#e3e8ef] bg-[#f8fafc] p-3"
+      data-testid={`report-service-${service.id}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-bold text-[#1f2a3a]">{service.name}</p>
+          <p className="mt-0.5 text-xs text-[#60718a]">{service.category}</p>
+        </div>
+        {service.recommendationLabel ? (
+          <Badge
+            className={cn(
+              "text-[10px] font-bold",
+              service.recommendationPriority === "emergency_only"
+                ? "border-[#fecaca] bg-[#fee2e2] text-[#b91c1c]"
+                : service.recommendationPriority === "recommended"
+                  ? "border-[#bbf7d0] bg-[#dcfce7] text-[#15803d]"
+                  : "border-[#c7d2fe] bg-[#eef2ff] text-[#4338ca]"
+            )}
+          >
+            {service.recommendationLabel}
+          </Badge>
+        ) : null}
+      </div>
+      <p className="mt-2 text-xs leading-5 text-[#475569]">{service.description}</p>
+      {service.emergencyOnly ? (
+        <p className="mt-1 text-[11px] font-semibold text-[#b91c1c]">
+          Call only if you are in immediate danger.
+        </p>
+      ) : null}
+      {service.phoneDial ? (
+        <a
+          href={`tel:${service.phoneDial}`}
+          className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-full bg-[#0f5d9f] px-3 text-[11px] font-bold text-white transition hover:bg-[#0b528d]"
+        >
+          <Phone className="size-3" aria-hidden="true" />
+          Call {service.phoneDisplay ?? service.phoneDial}
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
+function ReportMicrocards({ category }: { category: string }) {
+  const [cards, setCards] = useState<MicroEducationItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void listPublishedMicroEducation()
+      .then((items) => {
+        if (!isMounted) return;
+
+        const normalizedCategory = category.toLowerCase();
+        const relevant = items.filter((item) => {
+          const chips = item.chips.map((chip) => chip.toLowerCase());
+          return (
+            chips.includes("safety") ||
+            (normalizedCategory.includes("physical") && chips.includes("harassment")) ||
+            item.incidentCategories?.some((incidentCategory) =>
+              normalizedCategory.includes(incidentCategory.replace(/_/g, " "))
+            )
+          );
+        });
+
+        setCards(relevant.slice(0, 4));
+      })
+      .catch(() => {
+        if (isMounted) setCards([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [category]);
+
+  if (!isLoading && cards.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card className="mt-4 rounded-[14px] p-4" data-testid="report-microcards">
+      <h2 className="flex items-center gap-2 font-bold text-[#1f2a3a]">
+        <BookOpen className="size-4 text-[#0f5d9f]" aria-hidden="true" />
+        Guidance for this incident
+      </h2>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {isLoading
+          ? Array.from({ length: 2 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-20 animate-pulse rounded-[12px] bg-[#f1f5f9]"
+              />
+            ))
+          : cards.map((card) => (
+              <div
+                key={card.id}
+                className="rounded-[12px] border border-[#e3e8ef] bg-[#f8fafc] p-3"
+              >
+                <p className="text-xs font-bold text-[#1f2a3a]">{card.title}</p>
+                <p className="mt-1 text-xs leading-5 text-[#60718a]">
+                  {card.summary}
+                </p>
+              </div>
+            ))}
+      </div>
+    </Card>
+  );
+}
+
 function ReportEntryStep({
   draft,
+  autoFilledFields,
+  overview,
+  fromTriage,
+  draftFeedback,
+  copyFeedback,
   onBack,
-  onDraftChange,
+  onDraftFieldChange,
+  onDiscardPrefill,
+  onSaveLocalDraft,
+  onDownloadTxt,
+  onCopyToClipboard,
+  onReviewIncident,
 }: {
   draft: ReportDraft;
+  autoFilledFields: string[];
+  overview: ReportBuilderOverview | null;
+  fromTriage: boolean;
+  draftFeedback: string | null;
+  copyFeedback: string | null;
   onBack: () => void;
-  onDraftChange: (partial: Partial<ReportDraft>) => void;
+  onDraftFieldChange: <K extends keyof ReportDraft>(
+    key: K,
+    value: ReportDraft[K]
+  ) => void;
+  onDiscardPrefill: () => void;
+  onSaveLocalDraft: () => void;
+  onDownloadTxt: () => void;
+  onCopyToClipboard: () => void;
+  onReviewIncident: () => void;
 }) {
+  const isAutoFilled = (field: keyof ReportDraft) =>
+    autoFilledFields.includes(field);
+
   return (
     <div>
       <StepHeader
@@ -1223,50 +1640,275 @@ function ReportEntryStep({
         description="Write the story once and save a local draft. This frontend-only report entry screen does not submit anything to SafeSpeak or an external service."
       />
 
+      {overview ? (
+        <>
+          <Card
+            className="mt-6 rounded-[14px] border-[#dbe5f0] bg-[#f8fbff] p-4"
+            data-testid="report-incident-classification"
+          >
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+              Incident classification
+            </p>
+            <h2 className="mt-1 text-lg font-extrabold text-[#1f2a3a]">
+              {toTitleCase(overview.incident.title)}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#60718a]">
+              {overview.incident.description}
+            </p>
+            <p className="mt-2 text-xs italic leading-5 text-[#94a3b8]">
+              {overview.incident.disclaimer}
+            </p>
+          </Card>
+
+          <Card className="mt-4 rounded-[14px] border-[#f2d8b0] bg-[#fffaf2] p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle
+                className="mt-0.5 size-4 shrink-0 text-[#9a5b12]"
+                aria-hidden="true"
+              />
+              <div>
+                <p className="text-sm font-bold text-[#9a5b12]">
+                  Information, not legal advice
+                </p>
+                <p className="mt-1 text-xs leading-5 text-[#9a5b12]">
+                  SafeSpeak provides information, not legal advice. Nothing is
+                  submitted automatically, and you choose what happens next.
+                  If you are in immediate danger, call 000.
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card
+            className="mt-4 rounded-[14px] p-4"
+            data-testid="report-conversation-match"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-bold text-[#1f2a3a]">What you told us</h2>
+                <p className="mt-1 text-sm leading-6 text-[#60718a]">
+                  Supported fields below were carried over from your SafeSpeak
+                  conversation. Review and edit anything before continuing.
+                </p>
+              </div>
+              {overview.incident.urgencyLevel ? (
+                <Badge className="border-[#bfdcf5] bg-[#eef6ff] text-[#0f5d9f]">
+                  {overview.incident.urgencyLevel} urgency
+                </Badge>
+              ) : null}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href="/dashboard?view=assistantconversation"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#dbe5f0] bg-white px-3 text-xs font-semibold text-[#334155] transition hover:bg-[#f8fbff]"
+              >
+                <RefreshCw className="size-3.5" aria-hidden="true" />
+                Re-answer Triage
+              </Link>
+              <Link
+                href="/dashboard?view=reportsubmissionsupport"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#dbe5f0] bg-white px-3 text-xs font-semibold text-[#334155] transition hover:bg-[#f8fbff]"
+              >
+                Change category
+              </Link>
+              {autoFilledFields.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={onDiscardPrefill}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#dbe5f0] bg-white px-3 text-xs font-semibold text-[#334155] transition hover:bg-[#f8fbff]"
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                  Discard pre-fill
+                </button>
+              ) : null}
+            </div>
+          </Card>
+
+          <Card
+            className="mt-4 rounded-[14px] p-4"
+            data-testid="report-matched-pathway"
+          >
+            <h2 className="font-bold text-[#1f2a3a]">Matched pathway</h2>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">
+                  Category
+                </p>
+                <p className="mt-1 text-sm font-semibold text-[#1f2a3a]">
+                  {toTitleCase(overview.matchedPathway.category)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">
+                  Destination
+                </p>
+                <p className="mt-1 text-sm font-semibold text-[#1f2a3a]">
+                  {overview.matchedPathway.destination}
+                </p>
+              </div>
+              {overview.matchedPathway.legalLookupLabel ? (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">
+                    Legal lookup
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[#1f2a3a]">
+                    {overview.matchedPathway.legalLookupLabel}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+            {overview.matchedPathway.autoFilled ? (
+              <p className="mt-3 text-xs leading-5 text-[#94a3b8]">
+                Auto-filled from your Triage result. SafeSpeak has not
+                contacted this destination.
+              </p>
+            ) : null}
+          </Card>
+
+          <ReportMicrocards category={overview.incident.title} />
+        </>
+      ) : null}
+
       <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Card className="rounded-[14px] p-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <label htmlFor="incident-title" className="block">
-              <span className="text-sm font-bold text-[#1f2a3a]">Incident Title</span>
+            <label htmlFor="incident-title" className="block sm:col-span-2">
+              <span className="flex flex-wrap items-center text-sm font-bold text-[#1f2a3a]">
+                Incident Title
+                {isAutoFilled("title") ? <AutoFilledBadge /> : null}
+              </span>
               <input
                 id="incident-title"
                 value={draft.title}
-                onChange={(event) => onDraftChange({ title: event.target.value })}
+                onChange={(event) => onDraftFieldChange("title", event.target.value)}
                 placeholder="e.g. Online scam attempt"
                 className="mt-2 min-h-11 w-full rounded-full border border-[#dbe5f0] bg-white px-4 text-sm text-[#1f2a3a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
               />
             </label>
 
-            <label htmlFor="incident-date" className="block">
-              <span className="text-sm font-bold text-[#1f2a3a]">Date</span>
-              <input
-                id="incident-date"
-                type="date"
-                value={draft.date}
-                onChange={(event) => onDraftChange({ date: event.target.value })}
-                className="mt-2 min-h-11 w-full rounded-full border border-[#dbe5f0] bg-white px-4 text-sm text-[#1f2a3a] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
+            <label htmlFor="incident-summary" className="block sm:col-span-2">
+              <span className="flex flex-wrap items-center text-sm font-bold text-[#1f2a3a]">
+                What happened?
+                {isAutoFilled("summary") ? <AutoFilledBadge /> : null}
+              </span>
+              <textarea
+                id="incident-summary"
+                value={draft.summary}
+                onChange={(event) =>
+                  onDraftFieldChange("summary", event.target.value)
+                }
+                placeholder="Describe what happened in your own words. Include only what feels useful to capture right now."
+                className="mt-2 min-h-48 w-full resize-y rounded-[14px] border border-[#dbe5f0] bg-white p-4 text-sm leading-7 text-[#1f2a3a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
               />
             </label>
 
-            <label htmlFor="incident-location" className="block sm:col-span-2">
-              <span className="text-sm font-bold text-[#1f2a3a]">Location</span>
+            <label htmlFor="incident-safety" className="block">
+              <span className="flex flex-wrap items-center text-sm font-bold text-[#1f2a3a]">
+                Are you safe and away from the person who hurt you?
+                {isAutoFilled("safetyStatus") ? <AutoFilledBadge /> : null}
+              </span>
+              <select
+                id="incident-safety"
+                value={draft.safetyStatus}
+                onChange={(event) =>
+                  onDraftFieldChange(
+                    "safetyStatus",
+                    event.target.value as SafetyStatusValue
+                  )
+                }
+                className="mt-2 min-h-11 w-full rounded-full border border-[#dbe5f0] bg-white px-4 text-sm text-[#1f2a3a] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
+              >
+                <option value="">Prefer not to answer</option>
+                <option value="safe">I am safe now</option>
+                <option value="unsafe">I am not safe</option>
+                <option value="unknown">I&apos;m not sure</option>
+              </select>
+            </label>
+
+            <label htmlFor="incident-injured" className="block">
+              <span className="text-sm font-bold text-[#1f2a3a]">
+                Were you injured?
+                <OptionalTag />
+              </span>
+              <select
+                id="incident-injured"
+                value={draft.wasInjured}
+                onChange={(event) =>
+                  onDraftFieldChange(
+                    "wasInjured",
+                    event.target.value as InjuredValue
+                  )
+                }
+                className="mt-2 min-h-11 w-full rounded-full border border-[#dbe5f0] bg-white px-4 text-sm text-[#1f2a3a] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
+              >
+                <option value="">Skip this question</option>
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+                <option value="unsure">Not sure</option>
+              </select>
+            </label>
+
+            <label htmlFor="incident-location" className="block">
+              <span className="flex flex-wrap items-center text-sm font-bold text-[#1f2a3a]">
+                Where did it happen?
+                <OptionalTag />
+                {isAutoFilled("location") ? <AutoFilledBadge /> : null}
+              </span>
               <input
                 id="incident-location"
                 value={draft.location}
-                onChange={(event) => onDraftChange({ location: event.target.value })}
+                onChange={(event) =>
+                  onDraftFieldChange("location", event.target.value)
+                }
                 placeholder="City or post code"
                 className="mt-2 min-h-11 w-full rounded-full border border-[#dbe5f0] bg-white px-4 text-sm text-[#1f2a3a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
               />
             </label>
 
-            <label htmlFor="incident-summary" className="block sm:col-span-2">
-              <span className="text-sm font-bold text-[#1f2a3a]">What happened</span>
+            <label htmlFor="incident-date" className="block">
+              <span className="text-sm font-bold text-[#1f2a3a]">
+                When did it happen?
+                <OptionalTag />
+              </span>
+              <input
+                id="incident-date"
+                type="date"
+                value={draft.date}
+                onChange={(event) => onDraftFieldChange("date", event.target.value)}
+                className="mt-2 min-h-11 w-full rounded-full border border-[#dbe5f0] bg-white px-4 text-sm text-[#1f2a3a] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
+              />
+            </label>
+
+            <label htmlFor="incident-relationship" className="block sm:col-span-2">
+              <span className="text-sm font-bold text-[#1f2a3a]">
+                Do you know the person who did this, or were they a stranger?
+                <OptionalTag />
+              </span>
+              <input
+                id="incident-relationship"
+                value={draft.relationshipToPerson}
+                onChange={(event) =>
+                  onDraftFieldChange("relationshipToPerson", event.target.value)
+                }
+                placeholder="e.g. Stranger, colleague, family member"
+                className="mt-2 min-h-11 w-full rounded-full border border-[#dbe5f0] bg-white px-4 text-sm text-[#1f2a3a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
+              />
+            </label>
+
+            <label htmlFor="incident-evidence" className="block sm:col-span-2">
+              <span className="text-sm font-bold text-[#1f2a3a]">
+                Were there any witnesses, CCTV, photos, messages, or medical
+                records?
+                <OptionalTag />
+              </span>
               <textarea
-                id="incident-summary"
-                value={draft.summary}
-                onChange={(event) => onDraftChange({ summary: event.target.value })}
-                placeholder="Describe what happened in your own words. Include only what feels useful to capture right now."
-                className="mt-2 min-h-48 w-full resize-y rounded-[14px] border border-[#dbe5f0] bg-white p-4 text-sm leading-7 text-[#1f2a3a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
+                id="incident-evidence"
+                value={draft.evidenceContext}
+                onChange={(event) =>
+                  onDraftFieldChange("evidenceContext", event.target.value)
+                }
+                placeholder="Note anything you have. Nothing is uploaded automatically."
+                className="mt-2 min-h-24 w-full resize-y rounded-[14px] border border-[#dbe5f0] bg-white p-4 text-sm leading-7 text-[#1f2a3a] placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-[#0f5d9f]"
               />
             </label>
           </div>
@@ -1279,11 +1921,14 @@ function ReportEntryStep({
               Draft status
             </h2>
             <p className="mt-2 text-sm leading-6 text-[#60718a]">
-              Saved locally in session storage:{" "}
-              <span className="font-semibold text-[#1f2a3a]">{formatTimestamp(draft.updatedAt)}</span>
+              Saved locally in this browser&apos;s session storage:{" "}
+              <span className="font-semibold text-[#1f2a3a]">
+                {formatTimestamp(draft.updatedAt)}
+              </span>
             </p>
             <p className="mt-2 text-xs leading-5 text-[#60718a]">
-              Closing this browser session may remove the draft. No report API is called.
+              Closing this browser session may remove the draft. No report API
+              is called.
             </p>
           </Card>
 
@@ -1297,20 +1942,104 @@ function ReportEntryStep({
               These controls are not connected in this frontend-only phase.
             </p>
           </Card>
+
+          {overview && overview.services.length > 0 ? (
+            <Card
+              className="rounded-[14px] p-4"
+              data-testid="report-tailored-services"
+            >
+              <h2 className="font-bold text-[#1f2a3a]">Where to go next</h2>
+              <div className="mt-3 grid gap-3">
+                {[...overview.services]
+                  .sort((a, b) => a.order - b.order)
+                  .map((service) => (
+                    <ReportServiceRow key={service.id} service={service} />
+                  ))}
+              </div>
+            </Card>
+          ) : null}
+
+          {overview ? (
+            <Card
+              className="rounded-[14px] p-4"
+              data-testid="report-legal-information"
+            >
+              <h2 className="flex items-center gap-2 font-bold text-[#1f2a3a]">
+                <Scale className="size-4 text-[#0f5d9f]" aria-hidden="true" />
+                Legal information
+              </h2>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">
+                Jurisdiction: {overview.legalInfo.jurisdiction}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-[#60718a]">
+                {overview.legalInfo.summary}
+              </p>
+              <p className="mt-2 text-[11px] italic leading-5 text-[#94a3b8]">
+                {overview.legalInfo.citationPolicy}
+              </p>
+            </Card>
+          ) : null}
         </aside>
       </div>
+
+      <Card
+        className="mt-4 rounded-[14px] p-4"
+        data-testid="report-local-draft-preview"
+      >
+        <h2 className="flex items-center gap-2 font-bold text-[#1f2a3a]">
+          <FileText className="size-4 text-[#0f5d9f]" aria-hidden="true" />
+          Local report draft
+        </h2>
+        <p className="mt-1 text-xs leading-5 text-[#60718a]">
+          Generated in your browser from the details above. Nothing is
+          submitted, shared, or sent to a service. You decide whether and when
+          to save, download, copy, or review it.
+        </p>
+        <pre className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-[12px] border border-[#e3e8ef] bg-[#f8fafc] p-3 text-xs leading-5 text-[#334155]">
+          {buildReportDraftText(draft, overview)}
+        </pre>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Button
+            variant="outline"
+            onClick={onSaveLocalDraft}
+            className="min-h-10 rounded-full"
+          >
+            <Save className="mr-2 size-4" aria-hidden="true" />
+            Save local draft
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onDownloadTxt}
+            className="min-h-10 rounded-full"
+          >
+            <Download className="mr-2 size-4" aria-hidden="true" />
+            Download .txt
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onCopyToClipboard}
+            className="min-h-10 rounded-full"
+          >
+            <Copy className="mr-2 size-4" aria-hidden="true" />
+            Copy
+          </Button>
+        </div>
+        <p aria-live="polite" className="mt-2 min-h-[1.25rem] text-xs font-semibold text-[#0f5d9f]">
+          {draftFeedback ?? copyFeedback ?? ""}
+        </p>
+      </Card>
 
       <div className="mt-8 flex flex-col-reverse gap-3 border-t border-[#e3ebf5] pt-5 sm:flex-row sm:items-center sm:justify-between">
         <Button variant="outline" onClick={onBack} className="min-h-11 rounded-full">
           <ArrowLeft className="mr-2 size-4" aria-hidden="true" />
-          Back to hub
+          {fromTriage ? "Back to Triage" : "Back to hub"}
         </Button>
         <Button
-          disabled
-          className="min-h-11 rounded-full bg-[#0f5d9f] hover:bg-[#0f5d9f]"
-          title="Submission is not connected in this frontend-only phase"
+          onClick={onReviewIncident}
+          className="min-h-11 rounded-full bg-[#0f5d9f] hover:bg-[#0b528d]"
         >
-          Submit disabled
+          Review your incident
+          <ArrowRight className="ml-2 size-4" aria-hidden="true" />
         </Button>
       </div>
     </div>

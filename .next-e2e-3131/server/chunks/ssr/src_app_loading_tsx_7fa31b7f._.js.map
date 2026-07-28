@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/rakib/projects/spark-tech/safespeak/safespeak-frontend/src/app/loading.tsx"],"sourcesContent":["export default function Loading() {\r\n  return (\r\n    <div className=\"flex min-h-[220px] items-center justify-center\">\r\n      <div\r\n        className=\"h-12 w-12 animate-spin rounded-full border-4 border-[#d9e8f3] border-t-[#01579b]\"\r\n        aria-label=\"Loading page...\"\r\n        role=\"status\"\r\n      />\r\n    </div>\r\n  );\r\n}\r\n"],"names":[],"mappings":";;;;;;AAAe,SAAS;IACtB,qBACE,8OAAC;QAAI,WAAU;kBACb,cAAA,8OAAC;YACC,WAAU;YACV,cAAW;YACX,MAAK;;;;;;;;;;;AAIb","debugId":null}}]
+}

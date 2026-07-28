@@ -95,6 +95,7 @@ const HOME_VIEWS: HomeView[] = [
 const REPORT_VIEWS: HomeView[] = [
   "reportsubmissiondetails",
   "reportsubmissionevidence",
+  "reportsubmissionincidentreview",
   "reportsubmissionreview",
   "reportsubmissionshare",
 ];

@@ -167,6 +167,13 @@ const ReportSubmissionEvidencePage = dynamic(
     ),
   { loading: DashboardViewFallback }
 );
+const ReportSubmissionIncidentReviewPage = dynamic(
+  () =>
+    import(
+      "./dashboard-report-submission-pages/report-submission-incident-review-page"
+    ).then((module) => module.ReportSubmissionIncidentReviewPage),
+  { loading: DashboardViewFallback }
+);
 const ReportSubmissionReviewPage = dynamic(
   () =>
     import("./dashboard-report-submission-pages/report-submission-review-page").then(
@@ -282,6 +289,8 @@ export default function DashboardHomeScreen({
       />
     ) : homeView === "reportsubmissionevidence" ? (
       <ReportSubmissionEvidencePage />
+    ) : homeView === "reportsubmissionincidentreview" ? (
+      <ReportSubmissionIncidentReviewPage />
     ) : homeView === "reportsubmissionreview" ? (
       <ReportSubmissionReviewPage />
     ) : homeView === "reportsubmissionshare" ? (

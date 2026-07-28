@@ -919,10 +919,10 @@ function ReportSubmissionReviewPage() {
       skipSupportStep={!fromTriage}
       backHref={
         fromTriage
-          ? ("/dashboard?view=reportsubmissionevidence&fromTriage=1" as Route)
+          ? ("/dashboard?view=reportsubmissionincidentreview&fromTriage=1" as Route)
           : ("/dashboard?view=reportsubmissionevidence" as Route)
       }
-      backLabel="Details"
+      backLabel={fromTriage ? "Incident review" : "Details"}
     >
       <div className="mt-4">
             {loadError ? (

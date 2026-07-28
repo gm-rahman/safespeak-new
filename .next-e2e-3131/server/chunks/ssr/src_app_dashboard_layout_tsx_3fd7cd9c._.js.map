@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/rakib/projects/spark-tech/safespeak/safespeak-frontend/src/app/dashboard/layout.tsx"],"sourcesContent":["// import { RequireUserAuth } from \"@/components/auth/require-user-auth\";\r\n\r\nexport default function DashboardLayout({\r\n  children,\r\n}: Readonly<{\r\n  children: React.ReactNode;\r\n}>) {\r\n  // Temporarily bypass RequireUserAuth for local debugging\r\n  return <>{children}</>;\r\n}\r\n"],"names":[],"mappings":"AAAA,yEAAyE;;;;;;;AAE1D,SAAS,gBAAgB,EACtC,QAAQ,EAGR;IACA,yDAAyD;IACzD,qBAAO;kBAAG;;AACZ","debugId":null}}]
+}

@@ -102,6 +102,17 @@
   display: none;
 }
 
+/*
+ * The voice conversation stage (DemoVoiceSessionStage) renders its own
+ * live, audio-level-driven waveform below the session duration. The
+ * avatar's built-in decorative waveform is purely CSS-animated and would
+ * duplicate that same "audio activity" concept, so it is suppressed only
+ * for this size variant.
+ */
+.session .waveform {
+  display: none;
+}
+
 .waveBar {
   display: block;
   width: 4px;

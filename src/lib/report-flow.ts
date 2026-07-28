@@ -15,6 +15,12 @@ const REPORT_FLOW_SUBMISSION_ID_QUERY_KEY = "submissionId";
 export type ReportFlowDraft = {
   reportId?: string;
   selectedDestinationId?: string;
+  selectedDestinationName?: string;
+  selectedDestinationSource?: "backend" | "manual";
+  jurisdiction?: string;
+  consentGranted?: boolean;
+  consentGrantedAt?: string;
+  consentMode?: "backend" | "local_only";
   latestSubmissionId?: string;
   shareAnonymityMode?: "identified" | "anonymous" | "pseudonymous";
   shareNotes?: string;
@@ -40,6 +46,7 @@ export type ReportFlowDraft = {
   date: string;
   location: string;
   summary: string;
+  safetyStatus?: "safe" | "unsafe" | "unknown" | "";
   structuredFields?: Record<string, unknown>;
   incidentType?: string;
   incidentCategory?: AssistantIncidentCategory;

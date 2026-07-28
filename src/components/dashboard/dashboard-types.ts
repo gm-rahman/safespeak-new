@@ -23,6 +23,7 @@ export type HomeView =
   | "reportsubmissiondetailedexplanations"
   | "reportsubmissiondetails"
   | "reportsubmissionevidence"
+  | "reportsubmissionincidentreview"
   | "reportsubmissionreview"
   | "reportsubmissionshare";
 

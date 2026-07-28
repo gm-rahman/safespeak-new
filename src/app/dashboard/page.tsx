@@ -107,6 +107,8 @@ export default async function DashboardPage({
     homeView = "reportsubmissiondetails";
   } else if (view === "reportsubmissionevidence") {
     homeView = "reportsubmissionevidence";
+  } else if (view === "reportsubmissionincidentreview") {
+    homeView = "reportsubmissionincidentreview";
   } else if (view === "reportsubmissionreview") {
     homeView = "reportsubmissionreview";
   } else if (view === "reportsubmissionshare") {

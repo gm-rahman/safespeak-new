@@ -1,14 +1,26 @@
 // Demo-only frontend conversation adapter. This module intentionally does not
 // call production conversation, AI, transcription, speech, or upload services.
 
+import {
+  EMERGENCY_NUMBER,
+  SUPPORT_NUMBER_DIAL,
+  SUPPORT_NUMBER_DISPLAY,
+} from "@/lib/safety";
+
 export type DemoConversationStage =
-  | "safety"
-  | "what_happened"
-  | "timing"
-  | "people"
-  | "evidence"
-  | "next_step"
-  | "summary";
+  | "opening"
+  | "initial_clarification"
+  | "more_detail"
+  | "understanding_summary"
+  | "added_complexity"
+  | "people_involved"
+  | "updated_summary"
+  | "completion_transition"
+  | "final_result"
+  | "hijab_clarification"
+  | "hijab_result"
+  | "hijab_reclarify"
+  | "hijab_confirmed";
 
 export type DemoMessageRole = "assistant" | "user" | "system";
 
@@ -17,6 +29,75 @@ export type DemoSuggestion = {
   label: string;
   value: string;
 };
+
+export type DemoSafetyStatus = "unknown" | "safe" | "unsafe";
+
+export type DemoUrgencyLevel = "low" | "medium" | "high";
+
+export type DemoBiasIndicator = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+export type DemoUnderstanding = {
+  concernType: string;
+  urgencyLevel: DemoUrgencyLevel;
+  safetyStatus: DemoSafetyStatus;
+  biasIndicators: DemoBiasIndicator[];
+  summary: string;
+};
+
+export type DemoEmergencyAction = {
+  id: string;
+  label: string;
+  type: "call";
+  value: string;
+};
+
+export type DemoEmergencyAlert = {
+  id: string;
+  heading: string;
+  body: string;
+  actions: DemoEmergencyAction[];
+};
+
+export type DemoExplanation = {
+  id: string;
+  heading: string;
+  body: string;
+};
+
+export type DemoNextStep = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+export type DemoNextStepGroup = {
+  id: string;
+  heading: string;
+  steps: DemoNextStep[];
+};
+
+export type DemoServiceOption = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  contactLabel?: string;
+  contactValue?: string;
+  website?: string;
+  whyRelevant?: string;
+  howSelected?: string;
+  matchScore?: number;
+};
+
+export type DemoMessageBlock =
+  | { kind: "safety_alert"; alert: DemoEmergencyAlert }
+  | { kind: "explanation"; explanation: DemoExplanation }
+  | { kind: "next_steps"; group: DemoNextStepGroup }
+  | { kind: "service_options"; services: DemoServiceOption[] };
 
 export type DemoAttachmentStatus = "processing" | "ready" | "error";
 
@@ -38,12 +119,48 @@ export type DemoConversationMessage = {
   createdAt: string;
   suggestions?: DemoSuggestion[];
   attachmentId?: string;
+  blocks?: DemoMessageBlock[];
+};
+
+export type DemoCollectedAnswers = {
+  initialConcern?: string;
+  timingOrLocation?: string;
+  details?: string;
+  complexity?: string;
+  people?: string;
+  confirmation?: string;
+};
+
+type DemoRecommendation = {
+  id: string;
+  title: string;
+  description: string;
+  relevanceScore: number;
+  category: string;
+  tags: string[];
+  location: string;
+  availability: string;
+  contactLabel: string;
+  contactValue: string;
+};
+
+type DemoConversationResult = {
+  summaryTitle: string;
+  summaryText: string;
+  categories: string[];
+  disclaimerTitle: string;
+  disclaimerText: string;
+  recommendations: DemoRecommendation[];
+  actions: DemoSuggestion[];
 };
 
 export type DemoConversationState = {
   messages: DemoConversationMessage[];
   attachments: DemoAttachment[];
   stage: DemoConversationStage;
+  collectedAnswers: DemoCollectedAnswers;
+  finalResult?: DemoConversationResult;
+  understanding?: DemoUnderstanding;
   progress: number;
   readiness: number;
 };
@@ -51,6 +168,9 @@ export type DemoConversationState = {
 export type DemoAssistantTurn = {
   message: DemoConversationMessage;
   stage: DemoConversationStage;
+  collectedAnswers: DemoCollectedAnswers;
+  finalResult?: DemoConversationResult;
+  understanding?: DemoUnderstanding;
   progress: number;
   readiness: number;
 };
@@ -59,9 +179,9 @@ export const DEMO_ASSISTANT_STORAGE_KEY =
   "safespeak_demo_assistant_conversation";
 
 export const DEMO_VOICE_TRANSCRIPT =
-  "I want to explain what happened and get some guidance.";
+  "Someone from my building keeps following me near the train station.";
 export const DEMO_DICTATION_TRANSCRIPT =
-  "I would like to explain what happened in my own words.";
+  "It happened near Redfern Station after work.";
 
 const demoDelays = {
   assistant: 620,
@@ -69,29 +189,297 @@ const demoDelays = {
   attachmentStep: 180,
 };
 
-const safetySuggestions: DemoSuggestion[] = [
-  { id: "safe", label: "I am safe", value: "I am safe right now." },
-  { id: "unsafe", label: "I'm not safe", value: "I'm not safe right now." },
-  { id: "unsure", label: "I'm not sure", value: "I'm not sure if I am safe." },
+const openingSuggestions: DemoSuggestion[] = [
+  {
+    id: "followed",
+    label: "Someone is following me",
+    value: "Someone from my building keeps following me near the train station.",
+  },
+  {
+    id: "harassed",
+    label: "I am being harassed",
+    value: "Someone has been harassing me and I am not sure what to do.",
+  },
+  {
+    id: "unsafe",
+    label: "I feel unsafe",
+    value: "I feel unsafe and want help understanding my options.",
+  },
+  {
+    id: "hijab_pulled",
+    label: "Someone pulled my hijab",
+    value: "Someone pulled my hijab.",
+  },
 ];
 
-const nextStepSuggestions: DemoSuggestion[] = [
+const hijabSafetySuggestions: DemoSuggestion[] = [
   {
-    id: "keep_talking",
-    label: "Keep talking",
-    value: "I want to keep talking through what happened.",
+    id: "hijab_not_safe",
+    label: "I'm not safe right now",
+    value: "I'm not safe right now.",
   },
   {
-    id: "organize_summary",
-    label: "Organize a summary",
-    value: "Please organize a short summary of what I shared.",
-  },
-  {
-    id: "support_options",
-    label: "Show support options",
-    value: "I want to understand what support options might be available.",
+    id: "hijab_safe",
+    label: "I am safe right now",
+    value: "I am safe right now.",
   },
 ];
+
+export const HIJAB_CONFIRM_TRIAGE_SUGGESTION_ID = "hijab_confirm_correct";
+
+const hijabConfirmationActions: DemoSuggestion[] = [
+  {
+    id: HIJAB_CONFIRM_TRIAGE_SUGGESTION_ID,
+    label: "Yes, this is right",
+    value: "Yes, this is right.",
+  },
+  {
+    id: "hijab_confirm_clarify",
+    label: "Let me clarify something",
+    value: "Let me clarify something.",
+  },
+  {
+    id: "hijab_confirm_restart",
+    label: "Start over",
+    value: "I want to start over.",
+  },
+];
+
+const confirmationSuggestions: DemoSuggestion[] = [
+  {
+    id: "correct",
+    label: "That is correct",
+    value: "Yes, that is correct.",
+  },
+  {
+    id: "complex",
+    label: "It is more complex",
+    value: "It is a bit more complex than that.",
+  },
+  {
+    id: "change",
+    label: "I need to change something",
+    value: "I need to change one part of that.",
+  },
+];
+
+const finalActions: DemoSuggestion[] = [
+  {
+    id: "continue_next_steps",
+    label: "Continue to next steps",
+    value: "I want to continue to next steps.",
+  },
+  {
+    id: "start_over",
+    label: "Start over",
+    value: "I want to start over.",
+  },
+];
+
+const demoRecommendations: DemoRecommendation[] = [
+  {
+    id: "1800respect",
+    title: "1800RESPECT",
+    description:
+      "Confidential counselling and support for people affected by domestic, family, or sexual violence.",
+    relevanceScore: 94,
+    category: "Crisis and counselling support",
+    tags: ["24/7", "Confidential", "Phone and web chat"],
+    location: "Australia-wide",
+    availability: "24 hours, 7 days",
+    contactLabel: "Contact",
+    contactValue: "1800 737 732",
+  },
+  {
+    id: "nsw-police",
+    title: "NSW Police Assistance Line",
+    description:
+      "For non-urgent police assistance where there is no immediate danger.",
+    relevanceScore: 86,
+    category: "Reporting option",
+    tags: ["Non-emergency", "NSW", "Incident report"],
+    location: "New South Wales",
+    availability: "24 hours, 7 days",
+    contactLabel: "Contact",
+    contactValue: "131 444",
+  },
+  {
+    id: "legal-aid-nsw",
+    title: "Legal Aid NSW",
+    description:
+      "Free legal information and referral pathways for safety, housing, and personal protection questions.",
+    relevanceScore: 78,
+    category: "Legal information",
+    tags: ["Legal help", "NSW", "Referral"],
+    location: "New South Wales",
+    availability: "Business hours and online information",
+    contactLabel: "Access",
+    contactValue: "legalaid.nsw.gov.au",
+  },
+];
+
+function buildFinalResult(answers: DemoCollectedAnswers): DemoConversationResult {
+  const location = answers.timingOrLocation ?? "the place you described";
+  const people = answers.people ?? "the person involved";
+
+  return {
+    summaryTitle: "Here's what I've understood",
+    summaryText: `You described repeated unwanted following around ${location}, possible connection to ${people}, and concern that the situation may become unsafe. You have not submitted a formal report through this demo.`,
+    categories: [
+      "Harassment or stalking",
+      "Personal safety planning",
+      "Support options",
+    ],
+    disclaimerTitle: "Important note",
+    disclaimerText:
+      "This is informational and hypothetical. SafeSpeak has not contacted police, a support service, or any other organisation. If you are in immediate danger, use the emergency controls already visible on this page.",
+    recommendations: demoRecommendations,
+    actions: finalActions,
+  };
+}
+
+const hijabServiceRelevance: Record<string, string> = {
+  "1800respect":
+    "Provides confidential support for people affected by violence, including unwanted physical contact.",
+  "nsw-police":
+    "An option if you want to consider a non-emergency report about what happened.",
+  "legal-aid-nsw":
+    "Can help explain your options if you want to understand safety, protection, or reporting pathways.",
+};
+
+const hijabServiceOptions: DemoServiceOption[] = demoRecommendations.map(
+  (recommendation) => ({
+    id: recommendation.id,
+    name: recommendation.title,
+    category: recommendation.category,
+    description: recommendation.description,
+    contactLabel: recommendation.contactLabel,
+    contactValue: recommendation.contactValue,
+    website:
+      recommendation.id === "legal-aid-nsw"
+        ? recommendation.contactValue
+        : undefined,
+    whyRelevant: hijabServiceRelevance[recommendation.id],
+    howSelected:
+      "Matched from SafeSpeak's local demo support directory based on what you described.",
+    matchScore: recommendation.relevanceScore,
+  })
+);
+
+function buildHijabUnderstanding(
+  safetyStatus: DemoSafetyStatus
+): DemoUnderstanding {
+  return {
+    concernType: "Physical assault or unwanted physical contact",
+    urgencyLevel: safetyStatus === "unsafe" ? "high" : "medium",
+    safetyStatus,
+    biasIndicators: [
+      {
+        id: "religious-bias",
+        label: "Possible religious bias indicator",
+        description:
+          "Targeting a hijab may point to a religiously motivated element. This is a contextual indicator, not a confirmed legal finding.",
+      },
+      {
+        id: "gender-bias",
+        label: "Possible gender-related bias indicator",
+        description:
+          "A hijab is also commonly associated with gender identity and presentation, so this may include a gender-related dimension. This is a contextual indicator, not a confirmed legal finding.",
+      },
+    ],
+    summary:
+      "You described someone pulling your hijab, which SafeSpeak is treating as a possible physical assault or unwanted physical contact concern.",
+  };
+}
+
+function buildHijabSafetyAlert(): DemoEmergencyAlert {
+  return {
+    id: "hijab-safety-alert",
+    heading: "Your safety matters most",
+    body: `If you are in immediate danger, call ${EMERGENCY_NUMBER} now. If you can, move to a public place, nearby people, a staffed location, or another place that feels safer. ${SUPPORT_NUMBER_DISPLAY} offers confidential counselling and support for people affected by violence or abuse, 24 hours a day, 7 days a week. This is general safety information, not legal advice, and SafeSpeak has not contacted any service on your behalf.`,
+    actions: [
+      {
+        id: "call-emergency",
+        label: `Call ${EMERGENCY_NUMBER}`,
+        type: "call",
+        value: EMERGENCY_NUMBER,
+      },
+      {
+        id: "call-support",
+        label: SUPPORT_NUMBER_DISPLAY,
+        type: "call",
+        value: SUPPORT_NUMBER_DIAL,
+      },
+    ],
+  };
+}
+
+function buildHijabExplanation(): DemoExplanation {
+  return {
+    id: "hijab-explanation",
+    heading: "Why the understanding changed",
+    body: "Someone pulling your hijab is being treated as a possible physical assault or unwanted physical contact concern. Because a hijab is often connected to religious practice, this may also carry a possible religious bias indicator. Because it can also relate to gender identity and presentation, there may be a related gender-based bias dimension. These are contextual indicators SafeSpeak uses to help tailor next steps, not a legal determination of bias or an official finding.",
+  };
+}
+
+function buildHijabNextSteps(safetyStatus: DemoSafetyStatus): DemoNextStepGroup {
+  const steps: DemoNextStep[] = [];
+
+  if (safetyStatus === "unsafe") {
+    steps.push({
+      id: "immediate-safety",
+      label: "Prioritise immediate safety",
+      description: `Call ${EMERGENCY_NUMBER} if you are in immediate danger, or move to a public place, nearby people, or a staffed location if you are able to.`,
+    });
+  }
+
+  steps.push(
+    {
+      id: "support-call",
+      label: "Speak with a support service",
+      description: `${SUPPORT_NUMBER_DISPLAY} offers confidential counselling for people affected by violence or abuse, 24 hours a day.`,
+    },
+    {
+      id: "reporting-option",
+      label: "Consider a non-emergency report",
+      description:
+        "If there is no immediate danger, you can consider a non-emergency report with police for what happened.",
+    },
+    {
+      id: "legal-information",
+      label: "Look into legal information",
+      description:
+        "Free legal information services can help you understand your options for personal safety and protection.",
+    }
+  );
+
+  return {
+    id: "hijab-next-steps",
+    heading: "Next steps tailored to you",
+    steps,
+  };
+}
+
+function buildHijabResultBlocks(
+  safetyStatus: DemoSafetyStatus
+): { blocks: DemoMessageBlock[]; leadText: string } {
+  const alert = safetyStatus === "unsafe" ? buildHijabSafetyAlert() : undefined;
+  const explanation = buildHijabExplanation();
+  const nextStepGroup = buildHijabNextSteps(safetyStatus);
+
+  const blocks: DemoMessageBlock[] = [
+    ...(alert ? [{ kind: "safety_alert", alert } as const] : []),
+    { kind: "explanation", explanation },
+    { kind: "next_steps", group: nextStepGroup },
+    { kind: "service_options", services: hijabServiceOptions },
+  ];
+
+  const leadText = alert
+    ? "Your safety matters most right now. I have also put together what I understood, why, and some tailored next steps below."
+    : "Thank you for letting me know you are safe. Here is what I understood, why, and some tailored next steps below.";
+
+  return { blocks, leadText };
+}
 
 let demoMessageSequence = 0;
 
@@ -104,7 +492,10 @@ function wait(ms: number): Promise<void> {
 export function createDemoMessage(
   role: DemoMessageRole,
   content: string,
-  options: Pick<DemoConversationMessage, "suggestions" | "attachmentId"> = {}
+  options: Pick<
+    DemoConversationMessage,
+    "suggestions" | "attachmentId" | "blocks"
+  > = {}
 ): DemoConversationMessage {
   demoMessageSequence += 1;
 
@@ -125,19 +516,38 @@ export function resetDemoConversation(
 
   if (trimmed) {
     messages.push(createDemoMessage("user", trimmed));
+
+    if (hasAnyKeyword(trimmed, ["hijab"])) {
+      messages.push(
+        createDemoMessage(
+          "assistant",
+          "Thank you for telling me that. I'm sorry this happened to you. Could you tell me a little more about what happened? And are you somewhere safe right now?",
+          { suggestions: hijabSafetySuggestions }
+        )
+      );
+
+      return {
+        messages,
+        attachments: [],
+        stage: "hijab_clarification",
+        collectedAnswers: { initialConcern: trimmed },
+        progress: 30,
+        readiness: 20,
+      };
+    }
+
     messages.push(
       createDemoMessage(
         "assistant",
-        "Thanks for starting with that. Before we go further, are you somewhere you can safely keep talking?",
-        { suggestions: safetySuggestions }
+        "I’m listening. Could you tell me a little more about what has been happening?"
       )
     );
   } else {
     messages.push(
       createDemoMessage(
         "assistant",
-        "I am here with you. You can speak, type, or attach something for this demo conversation. To start gently: are you somewhere you can safely keep talking?",
-        { suggestions: safetySuggestions }
+        "I’m listening. You can explain what has been happening in your own words. What would you like SafeSpeak to understand first?",
+        { suggestions: openingSuggestions }
       )
     );
   }
@@ -145,32 +555,11 @@ export function resetDemoConversation(
   return {
     messages,
     attachments: [],
-    stage: "safety",
-    progress: trimmed ? 18 : 12,
-    readiness: trimmed ? 10 : 6,
+    stage: "opening",
+    collectedAnswers: trimmed ? { initialConcern: trimmed } : {},
+    progress: trimmed ? 16 : 8,
+    readiness: trimmed ? 8 : 4,
   };
-}
-
-function classifyNextStage(
-  currentStage: DemoConversationStage,
-  content: string
-): DemoConversationStage {
-  const normalized = content.toLowerCase();
-
-  if (
-    /\b(file|photo|screenshot|recording|document|evidence)\b/.test(normalized)
-  ) {
-    return currentStage === "summary" ? "summary" : "next_step";
-  }
-
-  if (currentStage === "safety") return "what_happened";
-  if (currentStage === "what_happened") return "timing";
-  if (currentStage === "timing") return "people";
-  if (currentStage === "people") return "evidence";
-  if (currentStage === "evidence") return "next_step";
-  if (currentStage === "next_step") return "summary";
-
-  return "summary";
 }
 
 function progressForStage(stage: DemoConversationStage): {
@@ -178,89 +567,447 @@ function progressForStage(stage: DemoConversationStage): {
   readiness: number;
 } {
   switch (stage) {
-    case "safety":
-      return { progress: 12, readiness: 6 };
-    case "what_happened":
-      return { progress: 28, readiness: 18 };
-    case "timing":
-      return { progress: 44, readiness: 32 };
-    case "people":
+    case "opening":
+      return { progress: 16, readiness: 8 };
+    case "initial_clarification":
+      return { progress: 30, readiness: 20 };
+    case "more_detail":
+      return { progress: 44, readiness: 34 };
+    case "understanding_summary":
       return { progress: 58, readiness: 48 };
-    case "evidence":
-      return { progress: 72, readiness: 62 };
-    case "next_step":
-      return { progress: 86, readiness: 78 };
-    case "summary":
+    case "added_complexity":
+      return { progress: 68, readiness: 58 };
+    case "people_involved":
+      return { progress: 78, readiness: 70 };
+    case "updated_summary":
+      return { progress: 88, readiness: 82 };
+    case "completion_transition":
+      return { progress: 94, readiness: 88 };
+    case "final_result":
       return { progress: 96, readiness: 90 };
+    case "hijab_clarification":
+      return { progress: 30, readiness: 20 };
+    case "hijab_result":
+      return { progress: 70, readiness: 55 };
+    case "hijab_reclarify":
+      return { progress: 74, readiness: 55 };
+    case "hijab_confirmed":
+      return { progress: 92, readiness: 80 };
   }
 }
 
-function getResponseForStage(
-  stage: DemoConversationStage,
-  content: string
-): Pick<DemoConversationMessage, "content" | "suggestions"> {
+const hijabUnsafeKeywords = [
+  "not safe",
+  "unsafe",
+  "not okay",
+  "not ok",
+  "in danger",
+  "no i'm not",
+  "no i am not",
+  "not currently safe",
+];
+
+const hijabSafeKeywords = [
+  "i am safe",
+  "i'm safe",
+  "safe now",
+  "i feel safe",
+  "currently safe",
+];
+
+function hasAnyKeyword(content: string, keywords: string[]): boolean {
   const normalized = content.toLowerCase();
+  return keywords.some((keyword) => normalized.includes(keyword));
+}
 
-  if (stage === "what_happened") {
-    const safetyPrefix = normalized.includes("not safe")
-      ? "If you may be in immediate danger, use the emergency and quick-exit controls already visible in SafeSpeak. For this demo, I will keep the conversation focused and calm."
-      : "Thank you for letting me know.";
+function buildUnderstandingSummary(answers: DemoCollectedAnswers): string {
+  return [
+    "Here’s what I’ve understood so far:",
+    "",
+    `- What happened: ${answers.initialConcern ?? "You described an unwanted or concerning interaction."}`,
+    `- Where it happened: ${answers.timingOrLocation ?? "You have not said where it happened yet."}`,
+    `- Who was involved: ${answers.people ?? "The person or role involved is not clear yet."}`,
+    `- What you are concerned or unsure about: ${answers.details ?? "You are unsure what this means and what options may be available."}`,
+    "",
+    "Is anything missing, or should I change any part of that?",
+  ].join("\n");
+}
 
+function buildUpdatedSummary(answers: DemoCollectedAnswers): string {
+  return [
+    "Here’s what I’ve understood so far:",
+    "",
+    `- What happened: ${answers.initialConcern ?? "You described an unwanted or concerning interaction."}`,
+    `- Where it happened: ${answers.timingOrLocation ?? "You have not said where it happened yet."}`,
+    `- Who was involved: ${answers.people ?? "The person or role involved is not clear yet."}`,
+    `- Added complexity: ${answers.complexity ?? "There may be extra context that affects what happened."}`,
+    `- What you are concerned or unsure about: ${answers.details ?? "You want to understand what to do next without formally reporting anything yet."}`,
+    "",
+    "Does this summary look accurate?",
+  ].join("\n");
+}
+
+function renderFinalResult(result: DemoConversationResult): string {
+  return [
+    `## ${result.summaryTitle}`,
+    "",
+    result.summaryText,
+    "",
+    "**Relevant topics**",
+    "",
+    ...result.categories.map((category) => `- ${category}`),
+    "",
+    `**${result.disclaimerTitle}**`,
+    "",
+    result.disclaimerText,
+    "",
+    "**Recommended options and resources**",
+    "",
+    ...result.recommendations.flatMap((recommendation) => [
+      `### ${recommendation.title} (${recommendation.relevanceScore}% match)`,
+      recommendation.description,
+      `- Category: ${recommendation.category}`,
+      `- Tags: ${recommendation.tags.join(", ")}`,
+      `- Location: ${recommendation.location}`,
+      `- Availability: ${recommendation.availability}`,
+      `- ${recommendation.contactLabel}: ${recommendation.contactValue}`,
+      "",
+    ]),
+    "**Actions**",
+    "",
+    ...result.actions.map((action) => `- ${action.label}`),
+  ].join("\n");
+}
+
+function getScenarioResponse(input: {
+  content: string;
+  stage: DemoConversationStage;
+  collectedAnswers: DemoCollectedAnswers;
+  understanding?: DemoUnderstanding;
+}): Omit<DemoAssistantTurn, "progress" | "readiness"> {
+  const content = input.content.trim();
+  const answers: DemoCollectedAnswers = { ...input.collectedAnswers };
+
+  if (
+    input.stage !== "final_result" &&
+    hasAnyKeyword(content, ["start over", "restart", "begin again"])
+  ) {
     return {
-      content: `${safetyPrefix} When you are ready, tell me a little about what happened in your own words.`,
+      stage: "opening",
+      collectedAnswers: {},
+      message: createDemoMessage(
+        "assistant",
+        "I’m listening. You can explain what has been happening in your own words. What would you like SafeSpeak to understand first?",
+        { suggestions: openingSuggestions }
+      ),
     };
   }
 
-  if (stage === "timing") {
+  if (input.stage === "opening") {
+    if (!content) {
+      return {
+        stage: "opening",
+        collectedAnswers: answers,
+        message: createDemoMessage(
+          "assistant",
+          "Take your time. What has been happening?"
+        ),
+      };
+    }
+
+    if (hasAnyKeyword(content, ["hijab"])) {
+      answers.initialConcern = content;
+      return {
+        stage: "hijab_clarification",
+        collectedAnswers: answers,
+        message: createDemoMessage(
+          "assistant",
+          "Thank you for telling me that. I'm sorry this happened to you. Could you tell me a little more about what happened? And are you somewhere safe right now?",
+          { suggestions: hijabSafetySuggestions }
+        ),
+      };
+    }
+
+    answers.initialConcern = content;
     return {
-      content:
-        "I understand the broad shape of what happened. A rough time helps organize the story. Was this today, recently, or at another time you remember?",
+      stage: "initial_clarification",
+      collectedAnswers: answers,
+      message: createDemoMessage(
+        "assistant",
+        "Thank you for telling me. When or where did this happen?"
+      ),
     };
   }
 
-  if (stage === "people") {
+  if (input.stage === "hijab_clarification") {
+    const isUnsafe = hasAnyKeyword(content, hijabUnsafeKeywords);
+    const isSafe = !isUnsafe && hasAnyKeyword(content, hijabSafeKeywords);
+
+    if (!isUnsafe && !isSafe) {
+      return {
+        stage: "hijab_clarification",
+        collectedAnswers: answers,
+        message: createDemoMessage(
+          "assistant",
+          "I want to make sure I understand — are you somewhere safe right now?",
+          { suggestions: hijabSafetySuggestions }
+        ),
+      };
+    }
+
+    answers.details = content;
+    const safetyStatus: DemoSafetyStatus = isUnsafe ? "unsafe" : "safe";
+    const understanding = buildHijabUnderstanding(safetyStatus);
+    const { blocks, leadText } = buildHijabResultBlocks(safetyStatus);
+
     return {
-      content:
-        "That timing is helpful. Who was involved or nearby? You can use first names, roles, or descriptions only if that feels safer.",
+      stage: "hijab_result",
+      collectedAnswers: answers,
+      understanding,
+      message: createDemoMessage("assistant", leadText, {
+        blocks,
+        suggestions: hijabConfirmationActions,
+      }),
     };
   }
 
-  if (stage === "evidence") {
+  if (input.stage === "hijab_result") {
+    if (
+      hasAnyKeyword(content, [
+        "let me clarify",
+        "clarify something",
+        "clarify",
+      ])
+    ) {
+      return {
+        stage: "hijab_reclarify",
+        collectedAnswers: answers,
+        understanding: input.understanding,
+        message: createDemoMessage(
+          "assistant",
+          "Of course. What would you like to add or clarify?"
+        ),
+      };
+    }
+
+    if (
+      hasAnyKeyword(content, [
+        "yes, this is right",
+        "yes this is right",
+        "correct",
+        "that is right",
+        "that's right",
+      ])
+    ) {
+      return {
+        stage: "hijab_confirmed",
+        collectedAnswers: answers,
+        understanding: input.understanding,
+        message: createDemoMessage(
+          "assistant",
+          "Thank you for confirming. I have kept this understanding for this demo session. You can review the next steps and support options above, or start over at any time."
+        ),
+      };
+    }
+
     return {
-      content:
-        "Thanks. If you have screenshots, photos, documents, or a note saved locally, you can attach one for this demo. Nothing is uploaded.",
+      stage: "hijab_result",
+      collectedAnswers: answers,
+      understanding: input.understanding,
+      message: createDemoMessage(
+        "assistant",
+        "You can choose “Yes, this is right” to confirm, “Let me clarify something” to add detail, or start over at any time.",
+        { suggestions: hijabConfirmationActions }
+      ),
     };
   }
 
-  if (stage === "next_step") {
+  if (input.stage === "hijab_reclarify") {
+    answers.details = answers.details ? `${answers.details} ${content}` : content;
+    const priorUnderstanding =
+      input.understanding ?? buildHijabUnderstanding("unsafe");
+    const { blocks } = buildHijabResultBlocks(priorUnderstanding.safetyStatus);
+
     return {
-      content:
-        "I have enough for a demo summary. What would feel most useful next: keep talking, organize a short summary, or look at support options?",
-      suggestions: nextStepSuggestions,
+      stage: "hijab_result",
+      collectedAnswers: answers,
+      understanding: priorUnderstanding,
+      message: createDemoMessage(
+        "assistant",
+        "Thank you for clarifying. I have noted that alongside what you already told me. Here is the understanding again, with the same safety guidance and next steps.",
+        { blocks, suggestions: hijabConfirmationActions }
+      ),
+    };
+  }
+
+  if (input.stage === "hijab_confirmed") {
+    return {
+      stage: "hijab_confirmed",
+      collectedAnswers: answers,
+      understanding: input.understanding,
+      message: createDemoMessage(
+        "assistant",
+        "This demo conversation is complete. You can start over at any time using the suggestion below or the Reset Conversation button.",
+        {
+          suggestions: [
+            {
+              id: "hijab_start_over_confirmed",
+              label: "Start over",
+              value: "I want to start over.",
+            },
+          ],
+        }
+      ),
+    };
+  }
+
+  if (input.stage === "initial_clarification") {
+    if (!hasAnyKeyword(content, ["station", "work", "home", "building", "street", "today", "yesterday", "night", "morning", "redfern"])) {
+      return {
+        stage: "initial_clarification",
+        collectedAnswers: answers,
+        message: createDemoMessage(
+          "assistant",
+          "Could you tell me when or where this happened? A rough place or time is enough."
+        ),
+      };
+    }
+
+    answers.timingOrLocation = content;
+    return {
+      stage: "more_detail",
+      collectedAnswers: answers,
+      message: createDemoMessage(
+        "assistant",
+        "Could you share a little more about what happened?"
+      ),
+    };
+  }
+
+  if (input.stage === "more_detail") {
+    answers.details = content;
+    return {
+      stage: "understanding_summary",
+      collectedAnswers: answers,
+      message: createDemoMessage("assistant", buildUnderstandingSummary(answers), {
+        suggestions: confirmationSuggestions,
+      }),
+    };
+  }
+
+  if (input.stage === "understanding_summary") {
+    answers.confirmation = content;
+
+    if (hasAnyKeyword(content, ["correct", "yes", "right", "accurate"])) {
+      return {
+        stage: "people_involved",
+        collectedAnswers: answers,
+        message: createDemoMessage(
+          "assistant",
+          "Who was involved, or what role did they have? You can use a description instead of a name."
+        ),
+      };
+    }
+
+    return {
+      stage: "added_complexity",
+      collectedAnswers: answers,
+      message: createDemoMessage(
+        "assistant",
+        "Thank you. What part is more complex, or what should I change in the summary?"
+      ),
+    };
+  }
+
+  if (input.stage === "added_complexity") {
+    answers.complexity = content;
+    return {
+      stage: "people_involved",
+      collectedAnswers: answers,
+      message: createDemoMessage(
+        "assistant",
+        "That helps. Who was involved, or what role did they have? You can use a description instead of a name."
+      ),
+    };
+  }
+
+  if (input.stage === "people_involved") {
+    answers.people = content;
+    return {
+      stage: "updated_summary",
+      collectedAnswers: answers,
+      message: createDemoMessage("assistant", buildUpdatedSummary(answers), {
+        suggestions: confirmationSuggestions,
+      }),
+    };
+  }
+
+  if (input.stage === "updated_summary") {
+    answers.confirmation = content;
+
+    if (!hasAnyKeyword(content, ["yes", "correct", "accurate", "right", "that is it"])) {
+      return {
+        stage: "added_complexity",
+        collectedAnswers: answers,
+        message: createDemoMessage(
+          "assistant",
+          "I can update that. What should be changed or added?"
+        ),
+      };
+    }
+
+    return {
+      stage: "completion_transition",
+      collectedAnswers: answers,
+      message: createDemoMessage(
+        "assistant",
+        "I have enough information to show some options. This is informational and hypothetical only, and nothing has been formally submitted or reported."
+      ),
+    };
+  }
+
+  if (input.stage === "completion_transition") {
+    const finalResult = buildFinalResult(answers);
+
+    return {
+      stage: "final_result",
+      collectedAnswers: answers,
+      finalResult,
+      message: createDemoMessage("assistant", renderFinalResult(finalResult), {
+        suggestions: finalResult.actions,
+      }),
     };
   }
 
   return {
-    content:
-      "Here is the demo summary so far: you shared a concern, answered the immediate safety check, added context, and can include local evidence for review. This is only a frontend demo and does not submit, report, or store anything outside this browser session.",
+    stage: "final_result",
+    collectedAnswers: answers,
+    message: createDemoMessage(
+      "assistant",
+      "The demo result is already available above. You can continue to next steps or start over.",
+      { suggestions: finalActions }
+    ),
   };
 }
 
 export async function sendDemoConversationMessage(input: {
   content: string;
   stage: DemoConversationStage;
+  collectedAnswers?: DemoCollectedAnswers;
+  understanding?: DemoUnderstanding;
 }): Promise<DemoAssistantTurn> {
   await wait(demoDelays.assistant);
 
-  const stage = classifyNextStage(input.stage, input.content);
-  const response = getResponseForStage(stage, input.content);
-  const progress = progressForStage(stage);
+  const response = getScenarioResponse({
+    content: input.content,
+    stage: input.stage,
+    collectedAnswers: input.collectedAnswers ?? {},
+    understanding: input.understanding,
+  });
+  const progress = progressForStage(response.stage);
 
   return {
-    message: createDemoMessage("assistant", response.content, {
-      suggestions: response.suggestions,
-    }),
-    stage,
+    ...response,
     ...progress,
   };
 }
@@ -268,6 +1015,8 @@ export async function sendDemoConversationMessage(input: {
 export async function getDemoAssistantResponse(input: {
   content: string;
   stage: DemoConversationStage;
+  collectedAnswers?: DemoCollectedAnswers;
+  understanding?: DemoUnderstanding;
 }): Promise<DemoAssistantTurn> {
   return sendDemoConversationMessage(input);
 }

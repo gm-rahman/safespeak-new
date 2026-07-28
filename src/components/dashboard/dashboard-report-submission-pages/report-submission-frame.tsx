@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 const reportSubmissionSteps = [
   { key: "support", label: "Support" },
   { key: "details", label: "Details" },
+  { key: "incidentreview", label: "Incident Review" },
   { key: "review", label: "Review" },
   { key: "share", label: "Share" },
   { key: "done", label: "Done" },

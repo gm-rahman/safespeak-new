@@ -1,0 +1,227 @@
+(globalThis.TURBOPACK || (globalThis.TURBOPACK = [])).push([typeof document === "object" ? document.currentScript : undefined,
+"[project]/src/components/dashboard/dashboard-home-overview-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/[root-of-the-server]__102c9c06._.js",
+  "static/chunks/d2cdc_@tabler_icons-react_dist_esm_icons_IconMicrophone_mjs_b850c6d4._.js",
+  {
+    "path": "static/chunks/[root-of-the-server]__20ecdb72._.css",
+    "included": [
+      "[next]/internal/font/google/inter_93cd5328.module.css [app-client] (css)",
+      "[project]/src/components/dashboard/voice-avatar-animation.module.css [app-client] (css)"
+    ],
+    "moduleChunks": [
+      "static/chunks/[next]_internal_font_google_inter_93cd5328_module_css_bad6b30c._.single.css",
+      "static/chunks/src_components_dashboard_voice-avatar-animation_module_css_bad6b30c._.single.css"
+    ]
+  },
+  "static/chunks/src_components_dashboard_dashboard-home-overview-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-home-overview-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-microeducation-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/[root-of-the-server]__75cb4e83._.js",
+  "static/chunks/node_modules__pnpm_5b1c61b7._.js",
+  {
+    "path": "static/chunks/[next]_internal_font_google_inter_93cd5328_module_a1df3c65.css",
+    "included": [
+      "[next]/internal/font/google/inter_93cd5328.module.css [app-client] (css)"
+    ]
+  },
+  "static/chunks/src_components_dashboard_dashboard-microeducation-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-microeducation-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-safety-pages.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/src_29d692ea._.js",
+  "static/chunks/d2cdc_@tabler_icons-react_dist_esm_icons_ed9e3e7a._.js",
+  "static/chunks/src_components_dashboard_dashboard-safety-pages_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-safety-pages.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-microcards-pages.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/[root-of-the-server]__fa4c4eb6._.js",
+  "static/chunks/node_modules__pnpm_44f60960._.js",
+  {
+    "path": "static/chunks/[next]_internal_font_google_inter_93cd5328_module_a1df3c65.css",
+    "included": [
+      "[next]/internal/font/google/inter_93cd5328.module.css [app-client] (css)"
+    ]
+  },
+  "static/chunks/src_components_dashboard_dashboard-microcards-pages_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-microcards-pages.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-assistant-pages.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/[root-of-the-server]__586be863._.js",
+  "static/chunks/node_modules_micromark-core-commonmark_dev_lib_fc41dd51._.js",
+  "static/chunks/node_modules_0887a0b7._.js",
+  {
+    "path": "static/chunks/[root-of-the-server]__fe973b90._.css",
+    "included": [
+      "[project]/src/components/dashboard/voice-avatar-animation.module.css [app-client] (css)",
+      "[next]/internal/font/google/inter_93cd5328.module.css [app-client] (css)"
+    ],
+    "moduleChunks": [
+      "static/chunks/src_components_dashboard_voice-avatar-animation_module_css_bad6b30c._.single.css",
+      "static/chunks/[next]_internal_font_google_inter_93cd5328_module_css_bad6b30c._.single.css"
+    ]
+  },
+  "static/chunks/src_components_dashboard_dashboard-assistant-pages_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-assistant-pages.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-scam-shield-pages.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/[root-of-the-server]__c34be305._.js",
+  "static/chunks/d2cdc_@tabler_icons-react_dist_esm_icons_18afbfcc._.js",
+  {
+    "path": "static/chunks/[next]_internal_font_google_inter_93cd5328_module_a1df3c65.css",
+    "included": [
+      "[next]/internal/font/google/inter_93cd5328.module.css [app-client] (css)"
+    ]
+  },
+  "static/chunks/src_components_dashboard_dashboard-scam-shield-pages_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-scam-shield-pages.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-reports-pages.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/[root-of-the-server]__6671f3fc._.js",
+  "static/chunks/d2cdc_@tabler_icons-react_dist_esm_icons_f0e91dc6._.js",
+  {
+    "path": "static/chunks/[next]_internal_font_google_inter_93cd5328_module_a1df3c65.css",
+    "included": [
+      "[next]/internal/font/google/inter_93cd5328.module.css [app-client] (css)"
+    ]
+  },
+  "static/chunks/src_components_dashboard_dashboard-reports-pages_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-reports-pages.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-support-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/src_a163c7bf._.js",
+  "static/chunks/d2cdc_@tabler_icons-react_dist_esm_icons_7ab296d2._.js",
+  "static/chunks/15769_dashboard-report-submission-pages_report-submission-support-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-support-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-recommendations-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/_9946c40c._.js",
+  "static/chunks/161d7_oard-report-submission-pages_report-submission-recommendations-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-recommendations-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-history-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/_d87512e5._.js",
+  "static/chunks/15769_dashboard-report-submission-pages_report-submission-history-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-history-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-detailed-explanations-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/src_components_2a0cca58._.js",
+  "static/chunks/682cd_lucide-react_dist_esm_f46d194e._.js",
+  "static/chunks/9512f_eport-submission-pages_report-submission-detailed-explanations-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-detailed-explanations-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-details-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/src_components_91a07aa2._.js",
+  "static/chunks/682cd_lucide-react_dist_esm_f46d194e._.js",
+  "static/chunks/15769_dashboard-report-submission-pages_report-submission-details-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-details-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-evidence-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/src_ebababc8._.js",
+  "static/chunks/d2cdc_@tabler_icons-react_dist_esm_icons_d625d2eb._.js",
+  "static/chunks/15769_dashboard-report-submission-pages_report-submission-evidence-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-evidence-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-review-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/src_7b71e3d3._.js",
+  "static/chunks/d2cdc_@tabler_icons-react_dist_esm_icons_c1da1e27._.js",
+  "static/chunks/15769_dashboard-report-submission-pages_report-submission-review-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-review-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+"[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-share-page.tsx [app-client] (ecmascript, next/dynamic entry, async loader)", ((__turbopack_context__) => {
+
+__turbopack_context__.v((parentImport) => {
+    return Promise.all([
+  "static/chunks/src_a57cc6b9._.js",
+  "static/chunks/d2cdc_@tabler_icons-react_dist_esm_icons_c2a41fe2._.js",
+  "static/chunks/15769_dashboard-report-submission-pages_report-submission-share-page_tsx_cb9c2916._.js"
+].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
+        return parentImport("[project]/src/components/dashboard/dashboard-report-submission-pages/report-submission-share-page.tsx [app-client] (ecmascript, next/dynamic entry)");
+    });
+});
+}),
+]);

@@ -21,6 +21,8 @@ import {
   IconGavel,
   IconHeadphones,
   IconHeartbeat,
+  IconInfoCircle,
+  IconLogout,
   IconPhoneCall,
   IconPhoneFilled,
   IconShieldCheckFilled,
@@ -31,7 +33,10 @@ import { useTranslation } from "react-i18next";
 import { ConsentRequiredCard } from "@/components/consent/consent-required-card";
 import { ReportSubmissionFrame } from "./report-submission-frame";
 import { useConsentGate } from "@/hooks/use-consent-gate";
-import { getAssistantTriageSource } from "@/lib/assistant-triage";
+import {
+  getAssistantTriageSource,
+  saveAssistantTriageSource,
+} from "@/lib/assistant-triage";
 import {
   type ConversationFlowSupportAction,
   type ConversationFlowSupportBundle,
@@ -44,6 +49,13 @@ import {
   listPublishedMicroEducation,
 } from "@/lib/microeducation";
 import { EMERGENCY_NUMBER } from "@/lib/safety";
+import {
+  type TriageOverview,
+  type TriagePrimaryAction,
+  type TriageResourceItem,
+  type TriageSupportOption,
+  buildDemoTriageOverview,
+} from "@/lib/triage-view-model";
 
 const EMPTY_SUPPORT_BUNDLE: ConversationFlowSupportBundle = {
   suggestedMicroCardIds: [],
@@ -124,7 +136,8 @@ function withConversationSessionId(
 
 function buildTriagePresentation(
   triage: ConversationFlowTriage | null,
-  isLoading: boolean
+  isLoading: boolean,
+  demoTriage?: TriageOverview | null
 ): TriagePresentation {
   if (!isLoading && triage?.presentation) {
     return {
@@ -159,14 +172,18 @@ function buildTriagePresentation(
     };
   }
 
-  const label = triage?.likelyCategoryLabel || "Review Your Options";
+  const label =
+    triage?.likelyCategoryLabel ||
+    (demoTriage ? toLabel(demoTriage.incident.concernType) : "Review Your Options");
   const canProceed = triage?.canProceedToRecommendations ?? false;
 
   return {
     title: label,
     body:
       triage?.reasoningSummary ||
-      "SafeSpeak is showing broad support, evidence, and safety options while keeping control with you.",
+      (demoTriage
+        ? `SafeSpeak is treating this as a possible ${toLabel(demoTriage.incident.concernType).toLowerCase()} concern. Review the options below to decide what happens next.`
+        : "SafeSpeak is showing broad support, evidence, and safety options while keeping control with you."),
     assessmentNote: "This is not a formal finding. You choose what to do next.",
     primaryStepTitle: "Review your options",
     primaryStepBody: canProceed
@@ -715,15 +732,183 @@ function buildDisplayedActionRows(input: {
   return combined.slice(0, 3);
 }
 
+const PRIMARY_ACTION_ICONS: Record<
+  TriagePrimaryAction["kind"],
+  { icon: ReactNode; iconClassName: string }
+> = {
+  build_report: {
+    icon: <IconFirstAidKit size={18} />,
+    iconClassName: "bg-[#FEF2F2] text-[#EF4444]",
+  },
+  learn_more: {
+    icon: <IconGavel size={20} />,
+    iconClassName: "bg-[#EEF2FF] text-[#4F63F6]",
+  },
+  find_support: {
+    icon: <IconHeadphones size={20} />,
+    iconClassName: "bg-[#E6FFFA] text-[#14B8A6]",
+  },
+  save_privately: {
+    icon: <IconShieldCheckFilled size={20} />,
+    iconClassName: "bg-[#F0FDF4] text-[#16A34A]",
+  },
+  finish_for_now: {
+    icon: <IconLogout size={20} />,
+    iconClassName: "bg-[#F8FAFC] text-[#64748B]",
+  },
+};
+
+function TriagePrimaryActionRow({
+  action,
+  savedPrivatelyAt,
+  onSavePrivately,
+}: {
+  action: TriagePrimaryAction;
+  savedPrivatelyAt: string | null;
+  onSavePrivately: () => void;
+}) {
+  const { icon, iconClassName } = PRIMARY_ACTION_ICONS[action.kind];
+  const isPrimaryAction = action.kind === "build_report";
+  const buttonClassName = isPrimaryAction
+    ? "inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#0F5D9F] px-6 text-xs font-extrabold text-white shadow-[0_12px_22px_rgba(15,93,159,0.28)] transition hover:bg-[#004E92] sm:w-auto"
+    : "inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-[#F3F4F6] px-6 text-xs font-extrabold text-[#374151] transition hover:bg-[#E5E7EB] sm:w-auto";
+  const arrowClassName = isPrimaryAction ? "text-white" : "text-[#9CA3AF]";
+
+  const actionElement =
+    action.kind === "save_privately" ? (
+      <div className="flex flex-col items-end gap-2">
+        <button type="button" onClick={onSavePrivately} className={buttonClassName}>
+          {action.ctaLabel}
+          <IconArrowRight size={16} className={arrowClassName} />
+        </button>
+        {savedPrivatelyAt ? (
+          <span className="text-[11px] font-semibold text-[#16A34A]">
+            Saved to this browser session
+          </span>
+        ) : null}
+      </div>
+    ) : (
+      <ActionLink href={action.href ?? "/dashboard"} className={buttonClassName}>
+        {action.ctaLabel}
+        <IconArrowRight size={16} className={arrowClassName} />
+      </ActionLink>
+    );
+
+  return (
+    <RecommendationRow
+      icon={icon}
+      iconClassName={iconClassName}
+      title={action.label}
+      description={action.description}
+      action={actionElement}
+    />
+  );
+}
+
+function resourceItemToSupportAction(
+  item: TriageResourceItem
+): ConversationFlowSupportAction {
+  const href = item.phoneDial
+    ? `tel:${item.phoneDial}`
+    : item.href ?? "/dashboard?view=resources";
+
+  return {
+    slot: "additional",
+    title: item.title,
+    description: item.description,
+    whySuggested: item.category,
+    ctaLabel: item.actionLabel,
+    phone: item.phoneDisplay,
+    href,
+    actionKind: item.phoneDial ? "call" : "external_link",
+    consentNote:
+      "SafeSpeak does not contact this service for you. Opening this option is your choice.",
+  };
+}
+
+const RECOMMENDATION_PRIORITY_BADGE_CLASS: Record<
+  TriageSupportOption["recommendationPriority"],
+  string
+> = {
+  recommended: "bg-[#DCFCE7] text-[#15803D]",
+  also_available: "bg-[#EEF2FF] text-[#4338CA]",
+  emergency_only: "bg-[#FEE2E2] text-[#B91C1C]",
+};
+
+function TriageSupportOptionCard({ option }: { option: TriageSupportOption }) {
+  const badgeClass =
+    RECOMMENDATION_PRIORITY_BADGE_CLASS[option.recommendationPriority];
+
+  return (
+    <article
+      className="rounded-[24px] border border-[#D8E3F0] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)] sm:rounded-[30px] sm:p-6"
+      data-testid={`triage-support-option-${option.id}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-extrabold text-[#111827]">{option.name}</p>
+          <p className="mt-1 text-xs font-semibold text-[#6B7280]">
+            {option.category}
+          </p>
+        </div>
+        {option.recommendationLabel ? (
+          <span
+            className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.06em] ${badgeClass}`}
+          >
+            {option.recommendationLabel}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-3 text-sm leading-6 text-[#475569]">
+        {option.description}
+      </p>
+      {option.emergencyOnly ? (
+        <p className="mt-2 text-xs font-semibold text-[#B91C1C]">
+          Call only if you are in immediate danger.
+        </p>
+      ) : null}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        {option.phoneDial ? (
+          <a
+            href={`tel:${option.phoneDial}`}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#0F5D9F] px-5 text-xs font-extrabold text-white transition hover:bg-[#004E92]"
+          >
+            <IconPhoneFilled size={14} />
+            Call {option.phoneDisplay ?? option.phoneDial}
+          </a>
+        ) : null}
+        {option.url ? (
+          <ActionLink
+            href={option.url}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#D8E3F0] bg-white px-5 text-xs font-extrabold text-[#334155] transition hover:bg-[#F8FAFC]"
+          >
+            Visit
+            <IconExternalLink size={14} />
+          </ActionLink>
+        ) : null}
+      </div>
+      {option.jurisdiction || option.availability ? (
+        <p className="mt-3 text-[11px] leading-5 text-[#94A3B8]">
+          {[option.jurisdiction, option.availability].filter(Boolean).join(" · ")}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
 function ReportSubmissionSupportPage() {
   const { t } = useTranslation();
   const [triage, setTriage] = useState<ConversationFlowTriage | null>(null);
   const [support, setSupport] =
     useState<ConversationFlowSupportBundle>(EMPTY_SUPPORT_BUNDLE);
+  const [demoTriage, setDemoTriage] = useState<TriageOverview | null>(null);
   const [resolvedConversationSessionId, setResolvedConversationSessionId] =
     useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [supportLoadNotice, setSupportLoadNotice] = useState<string | null>(
+    null
+  );
+  const [savedPrivatelyAt, setSavedPrivatelyAt] = useState<string | null>(
     null
   );
   const [microCards, setMicroCards] = useState<MicroEducationItem[]>([]);
@@ -750,13 +935,20 @@ function ReportSubmissionSupportPage() {
     if (!conversationSessionId) {
       setTriage(null);
       setSupport(EMPTY_SUPPORT_BUNDLE);
+
+      const source = getAssistantTriageSource();
+      const overview = source ? buildDemoTriageOverview(source.timeline) : null;
+      setDemoTriage(overview);
       setSupportLoadNotice(
-        "Live triage support is not available yet because this report is not linked to an active SafeSpeak triage session."
+        overview
+          ? "This triage preview uses the information you shared in your SafeSpeak conversation. It is not linked to a live backend triage session."
+          : "Live triage support is not available yet because this report is not linked to an active SafeSpeak triage session."
       );
       setLoading(false);
       return;
     }
 
+    setDemoTriage(null);
     setLoading(true);
     setSupportLoadNotice(null);
 
@@ -866,16 +1058,34 @@ function ReportSubmissionSupportPage() {
     setLoading(false);
   };
 
+  const handleSavePrivately = () => {
+    const source = getAssistantTriageSource();
+
+    if (!source) {
+      return;
+    }
+
+    saveAssistantTriageSource({
+      conversationSessionId: source.conversationSessionId,
+      conversation: source.conversation,
+      timeline: source.timeline,
+      incidentCategory: source.incidentCategory,
+    });
+    setSavedPrivatelyAt(new Date().toISOString());
+  };
+
   const canProceedToRecommendations = useMemo(() => {
     return triage?.canProceedToRecommendations ?? false;
   }, [triage]);
 
   const triagePresentation = useMemo(
-    () => buildTriagePresentation(triage, loading),
-    [loading, triage]
+    () => buildTriagePresentation(triage, loading, demoTriage),
+    [loading, triage, demoTriage]
   );
   const shouldShowSupportOptions =
     !loading && !pendingConsentRequirement && Boolean(triage);
+  const shouldShowDemoTriage =
+    !loading && !pendingConsentRequirement && !triage && Boolean(demoTriage);
   const suggestedMicroCards = useMemo(() => {
     if (support.suggestedMicroCardIds.length === 0 || microCards.length === 0) {
       return [];
@@ -980,6 +1190,39 @@ function ReportSubmissionSupportPage() {
     >
       <div className="mx-auto flex w-full max-w-[1136px] flex-col gap-8 pt-3 sm:gap-9">
 
+          {!pendingConsentRequirement && supportLoadNotice ? (
+            <div
+              data-testid="triage-status-notice"
+              className="rounded-[14px] border border-[#dce5f1] bg-[#f8fbff] px-4 py-3"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#0f5d9f]">
+                    <IconInfoCircle size={12} />
+                    SafeSpeak status
+                  </p>
+                  <p className="mt-1 text-[11px] leading-[1.55] text-[#60728a]">
+                    {supportLoadNotice}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                  <Link
+                    href="/dashboard?view=assistantconversation"
+                    className="inline-flex h-9 items-center justify-center rounded-full bg-[#0f5d9f] px-4 text-[11px] font-bold text-white"
+                  >
+                    Return to AI conversation
+                  </Link>
+                  <Link
+                    href="/dashboard?view=reportsubmissionhistory"
+                    className="inline-flex h-9 items-center justify-center rounded-full border border-[#d7e1ee] px-4 text-[11px] font-semibold text-[#334155]"
+                  >
+                    View report history
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <section>
             <article className="relative overflow-hidden rounded-[28px] bg-white px-5 py-8 text-center shadow-[0_10px_40px_-10px_rgba(0,0,0,0.08)] sm:rounded-[38px] sm:px-8 sm:py-10 lg:rounded-[48px] lg:px-12 lg:py-12">
               <div className="absolute left-1/2 top-0 h-52 w-52 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#EFF6FF]" />
@@ -1024,29 +1267,88 @@ function ReportSubmissionSupportPage() {
             </div>
           ) : null}
 
-          {!pendingConsentRequirement && supportLoadNotice ? (
-            <section className="rounded-[24px] border border-[#D8E3F0] bg-white p-5 shadow-[0_10px_32px_rgba(15,23,42,0.04)] sm:rounded-[30px] sm:p-6">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#64748B]">
-                SafeSpeak status
-              </p>
-              <p className="mt-3 text-sm leading-6 text-[#475569]">
-                {supportLoadNotice}
-              </p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <Link
-                  href="/dashboard?view=assistantconversation"
-                  className="inline-flex h-11 items-center justify-center rounded-full bg-[#0f5d9f] px-5 text-[12px] font-bold text-white"
-                >
-                  Return to AI conversation
-                </Link>
-                <Link
-                  href="/dashboard?view=reportsubmissionhistory"
-                  className="inline-flex h-11 items-center justify-center rounded-full border border-[#D8E3F0] px-5 text-[12px] font-bold text-[#475569]"
-                >
-                  View report history
-                </Link>
-              </div>
-            </section>
+          {shouldShowDemoTriage && demoTriage ? (
+            <>
+              <section className="rounded-[24px] border border-[#D8E3F0] bg-[#F8FAFC] p-5 sm:rounded-[30px] sm:p-6">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#0F5D9F]">
+                  {demoTriage.introEyebrow}
+                </p>
+                <h3 className="mt-3 text-lg font-extrabold leading-7 text-[#111827] sm:text-2xl sm:leading-8">
+                  {demoTriage.introHeading}
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-[#334155]">
+                  {demoTriage.introBody}
+                </p>
+                <p className="mt-3 text-sm leading-6 text-[#334155]">
+                  {demoTriage.controlNote}
+                </p>
+              </section>
+
+              <section>
+                <SectionTitle>Your options</SectionTitle>
+                <div className="mt-5 grid gap-4" data-testid="triage-primary-actions">
+                  {demoTriage.primaryActions.map((action) => (
+                    <TriagePrimaryActionRow
+                      key={action.id}
+                      action={action}
+                      savedPrivatelyAt={savedPrivatelyAt}
+                      onSavePrivately={handleSavePrivately}
+                    />
+                  ))}
+                </div>
+              </section>
+
+              {demoTriage.resourceGroups.map((group) =>
+                group.items.length > 0 ? (
+                  <section key={group.id}>
+                    <SectionTitle>{`You may also find useful — ${group.heading}`}</SectionTitle>
+                    <div
+                      className="mt-5 grid gap-4 sm:grid-cols-2 lg:gap-6"
+                      data-testid={`triage-resource-group-${group.id}`}
+                    >
+                      {group.items.map((item) => (
+                        <ResourceCard
+                          key={item.id}
+                          action={resourceItemToSupportAction(item)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ) : null
+              )}
+
+              {demoTriage.supportOptions.length > 0 ? (
+                <section>
+                  <SectionTitle>Support options tailored to you</SectionTitle>
+                  <p className="mt-2 text-sm leading-5 text-[#64748B]">
+                    Based on what you shared, relevant options may include police
+                    support, medical guidance, and victims support. Call 000 only
+                    if you are in immediate danger.
+                  </p>
+                  <div
+                    className="mt-5 grid gap-4 lg:grid-cols-2"
+                    data-testid="triage-support-options"
+                  >
+                    {[...demoTriage.supportOptions]
+                      .sort((a, b) => a.order - b.order)
+                      .map((option) => (
+                        <TriageSupportOptionCard key={option.id} option={option} />
+                      ))}
+                  </div>
+                </section>
+              ) : null}
+
+              <footer className="border-t border-[#F3F4F6] pt-8">
+                <div className="mx-auto flex max-w-[760px] flex-col gap-2 text-center text-xs leading-5 text-[#9CA3AF]">
+                  <p>
+                    SafeSpeak provides information, not legal advice. You decide
+                    what happens next, and nothing is submitted merely by viewing
+                    this page. Emergency services are for immediate danger only.
+                  </p>
+                  <p>{t("dashboard.assistant.triage.footerNote")}</p>
+                </div>
+              </footer>
+            </>
           ) : null}
 
           {shouldShowSupportOptions ? (

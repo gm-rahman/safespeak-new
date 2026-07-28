@@ -160,17 +160,18 @@ body.assistant-conversation-lock .assistant-conversation-dashboard-shell {
   transition: padding-bottom 0.25s ease-in-out;
 }
 
-body.assistant-conversation-lock .assistant-demo-conversation-page {
-  padding-bottom: 8rem;
-}
+/*
+ * .assistant-demo-conversation-page (the <main> rendered inside the shell) intentionally
+ * does NOT repeat the shell's padding-bottom reservation below. The shell's padding-bottom
+ * already carves the safety-rail clearance out of the shared 100dvh box, and this page fills
+ * whatever height the shell leaves via flex-1/min-h-0. Reserving the same clearance a second
+ * time on this nested element used to double-subtract it, crushing the conversation card and
+ * hiding the composer behind a wall of dead padding when the safety rail was expanded.
+ */
 
 body.assistant-conversation-lock:has(.dashboard-safety-rail):not(:has(.dashboard-safety-minimized)) .assistant-conversation-dashboard-shell {
   padding-bottom: 13.75rem;
   /* Pushes input field above the expanded safety rail */
-}
-
-body.assistant-conversation-lock:has(.dashboard-safety-rail):not(:has(.dashboard-safety-minimized)) .assistant-demo-conversation-page {
-  padding-bottom: 13.75rem;
 }
 
 @media (min-width: 640px) {
@@ -179,17 +180,9 @@ body.assistant-conversation-lock:has(.dashboard-safety-rail):not(:has(.dashboard
     /* Space for Mobile Navigation Bar and minimized safety rail on tablet */
   }
 
-  body.assistant-conversation-lock .assistant-demo-conversation-page {
-    padding-bottom: 8.5rem;
-  }
-
   body.assistant-conversation-lock:has(.dashboard-safety-rail):not(:has(.dashboard-safety-minimized)) .assistant-conversation-dashboard-shell {
     padding-bottom: 15.75rem;
     /* Pushes input field above the expanded safety rail on tablet */
-  }
-
-  body.assistant-conversation-lock:has(.dashboard-safety-rail):not(:has(.dashboard-safety-minimized)) .assistant-demo-conversation-page {
-    padding-bottom: 15.75rem;
   }
 }
 
@@ -198,16 +191,8 @@ body.assistant-conversation-lock:has(.dashboard-safety-rail):not(:has(.dashboard
     padding-bottom: 2rem; /* Snug default on desktop when safety rail is minimized or absent */
   }
 
-  body.assistant-conversation-lock .assistant-demo-conversation-page {
-    padding-bottom: 2rem;
-  }
-
   body.assistant-conversation-lock:has(.dashboard-safety-rail):not(:has(.dashboard-safety-minimized)) .assistant-conversation-dashboard-shell {
     padding-bottom: 13.75rem; /* Push up when safety rail is expanded */
-  }
-
-  body.assistant-conversation-lock:has(.dashboard-safety-rail):not(:has(.dashboard-safety-minimized)) .assistant-demo-conversation-page {
-    padding-bottom: 13.75rem;
   }
 }
 

@@ -75,9 +75,15 @@ import {
 import { LAST_NON_CONVERSATION_DASHBOARD_URL_STORAGE_KEY } from "@/lib/dashboard-navigation";
 import {
   DEMO_ASSISTANT_STORAGE_KEY,
+  HIJAB_CONFIRM_TRIAGE_SUGGESTION_ID,
   type DemoAttachment,
   type DemoConversationMessage,
   type DemoConversationState,
+  type DemoEmergencyAlert,
+  type DemoExplanation,
+  type DemoMessageBlock,
+  type DemoNextStepGroup,
+  type DemoServiceOption,
   type DemoSuggestion,
   createDemoMessage,
   getDemoAssistantResponse,
@@ -1157,6 +1163,8 @@ type DemoVoiceTurn = {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  blocks?: DemoMessageBlock[];
+  suggestions?: DemoSuggestion[];
 };
 
 function formatLocalFileSize(size: number): string {
@@ -1262,20 +1270,32 @@ function getDictationStatusText(status: DemoDictationStatus): string {
 
 function getDemoPhaseLabel(stage: DemoConversationState["stage"]): string {
   switch (stage) {
-    case "safety":
-      return "Safety check";
-    case "what_happened":
-      return "Understanding";
-    case "timing":
-      return "Timing";
-    case "people":
+    case "opening":
+      return "Listening";
+    case "initial_clarification":
+      return "Clarifying";
+    case "more_detail":
+      return "More detail";
+    case "understanding_summary":
+      return "Checking understanding";
+    case "added_complexity":
+      return "Added context";
+    case "people_involved":
       return "People involved";
-    case "evidence":
-      return "Evidence";
-    case "next_step":
-      return "Next step";
-    case "summary":
+    case "updated_summary":
+      return "Confirming summary";
+    case "completion_transition":
+      return "Options ready";
+    case "final_result":
       return "Summary ready";
+    case "hijab_clarification":
+      return "Clarifying";
+    case "hijab_result":
+      return "Understanding";
+    case "hijab_reclarify":
+      return "Clarifying";
+    case "hijab_confirmed":
+      return "Next Steps";
   }
 }
 
@@ -1299,6 +1319,7 @@ function loadDemoConversation(initialMessage?: string): DemoConversationState {
 
     return {
       ...parsed,
+      collectedAnswers: parsed.collectedAnswers ?? {},
       attachments: Array.isArray(parsed.attachments)
         ? parsed.attachments.map((attachment) => ({
             ...attachment,
@@ -1510,10 +1531,14 @@ function DemoVoiceSessionStage({
 
 function LocalAssistantConversationPage({
   initialMessage,
+  initialCategory,
 }: {
   initialMessage?: string;
+  initialCategory?: AssistantIncidentCategory;
 }) {
+  const router = useRouter();
   const initialMessageRef = useRef(initialMessage?.trim() ?? "");
+  const triageHandoffInFlightRef = useRef(false);
   const [demoState, setDemoState] = useState<DemoConversationState>(() =>
     loadDemoConversation(initialMessageRef.current)
   );
@@ -1547,6 +1572,9 @@ function LocalAssistantConversationPage({
   const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const voiceDraftRef = useRef({
     stage: demoState.stage,
+    collectedAnswers: demoState.collectedAnswers,
+    finalResult: demoState.finalResult,
+    understanding: demoState.understanding,
     progress: demoState.progress,
     readiness: demoState.readiness,
   });
@@ -1617,10 +1645,20 @@ function LocalAssistantConversationPage({
   useEffect(() => {
     voiceDraftRef.current = {
       stage: demoState.stage,
+      collectedAnswers: demoState.collectedAnswers,
+      finalResult: demoState.finalResult,
+      understanding: demoState.understanding,
       progress: demoState.progress,
       readiness: demoState.readiness,
     };
-  }, [demoState.stage, demoState.progress, demoState.readiness]);
+  }, [
+    demoState.stage,
+    demoState.collectedAnswers,
+    demoState.finalResult,
+    demoState.understanding,
+    demoState.progress,
+    demoState.readiness,
+  ]);
 
   useEffect(() => {
     if (voiceStatus !== "idle") {
@@ -1838,6 +1876,8 @@ function LocalAssistantConversationPage({
         const turn = await getDemoAssistantResponse({
           content: trimmed,
           stage: stageAtSend,
+          collectedAnswers: demoState.collectedAnswers,
+          understanding: demoState.understanding,
         });
 
         if (requestId !== requestSequenceRef.current) {
@@ -1848,10 +1888,12 @@ function LocalAssistantConversationPage({
           ...current,
           messages: [...current.messages, turn.message],
           stage: turn.stage,
+          collectedAnswers: turn.collectedAnswers,
+          finalResult: turn.finalResult ?? current.finalResult,
+          understanding: turn.understanding,
           progress: turn.progress,
           readiness: turn.readiness,
         }));
-
       } catch {
         setDemoError("SafeSpeak could not create a demo response. Try again.");
       } finally {
@@ -1860,13 +1902,91 @@ function LocalAssistantConversationPage({
         }
       }
     },
-    [demoState.stage, isComposerBusy]
+    [
+      demoState.stage,
+      demoState.collectedAnswers,
+      demoState.understanding,
+      isComposerBusy,
+    ]
   );
+
+  const handleContinueToTriage = useCallback(() => {
+    if (triageHandoffInFlightRef.current) {
+      return;
+    }
+
+    const understanding = demoState.understanding;
+
+    if (!understanding) {
+      setDemoError(
+        "SafeSpeak could not prepare Triage from this demo conversation. Try again."
+      );
+      return;
+    }
+
+    triageHandoffInFlightRef.current = true;
+    setDemoError(null);
+
+    try {
+      const conversation: AssistantConversationMessage[] = demoState.messages
+        .filter((message) => message.role === "assistant" || message.role === "user")
+        .map((message) => ({
+          role: message.role as "assistant" | "user",
+          content: message.content,
+        }));
+
+      const timeline: AssistantTimeline = {
+        ...(demoState.collectedAnswers.initialConcern
+          ? { initialConcern: demoState.collectedAnswers.initialConcern }
+          : {}),
+        ...(demoState.collectedAnswers.timingOrLocation
+          ? { timingOrLocation: demoState.collectedAnswers.timingOrLocation }
+          : {}),
+        ...(demoState.collectedAnswers.details
+          ? { details: demoState.collectedAnswers.details }
+          : {}),
+        ...(demoState.collectedAnswers.people
+          ? { people: demoState.collectedAnswers.people }
+          : {}),
+        concernType: understanding.concernType,
+        urgencyLevel: understanding.urgencyLevel,
+        safetyStatus: understanding.safetyStatus,
+        ...(understanding.biasIndicators.length
+          ? {
+              possibleBiasIndicators: understanding.biasIndicators
+                .map(
+                  (indicator) =>
+                    `${indicator.label} (possible indicator, not a confirmed finding)`
+                )
+                .join("; "),
+            }
+          : {}),
+      };
+
+      saveAssistantTriageSource({
+        conversation,
+        timeline,
+        incidentCategory: initialCategory,
+      });
+
+      router.push(getContinueReportSubmissionPath(initialCategory) as Route);
+    } catch {
+      triageHandoffInFlightRef.current = false;
+      setDemoError(
+        "SafeSpeak could not prepare Triage from this demo conversation. Try again."
+      );
+    }
+  }, [demoState, initialCategory, router]);
 
   const handleSuggestionClick = (
     suggestion: DemoSuggestion,
     messageId: string
   ) => {
+    if (suggestion.id === HIJAB_CONFIRM_TRIAGE_SUGGESTION_ID) {
+      handleContinueToTriage();
+      return;
+    }
+
     void submitDemoMessage(suggestion.value, {
       suggestionMessageId: messageId,
     });
@@ -1884,6 +2004,9 @@ function LocalAssistantConversationPage({
     voiceTurnSequenceRef.current += 1;
     voiceDraftRef.current = {
       stage: demoState.stage,
+      collectedAnswers: demoState.collectedAnswers,
+      finalResult: demoState.finalResult,
+      understanding: demoState.understanding,
       progress: demoState.progress,
       readiness: demoState.readiness,
     };
@@ -1938,6 +2061,8 @@ function LocalAssistantConversationPage({
       const response = await getDemoAssistantResponse({
         content: transcript,
         stage: voiceDraftRef.current.stage,
+        collectedAnswers: voiceDraftRef.current.collectedAnswers,
+        understanding: voiceDraftRef.current.understanding,
       });
 
       if (voiceRequestId !== voiceTurnSequenceRef.current) {
@@ -1949,10 +2074,15 @@ function LocalAssistantConversationPage({
         role: "assistant",
         content: response.message.content,
         createdAt: response.message.createdAt,
+        blocks: response.message.blocks,
+        suggestions: response.message.suggestions,
       };
 
       voiceDraftRef.current = {
         stage: response.stage,
+        collectedAnswers: response.collectedAnswers,
+        finalResult: response.finalResult,
+        understanding: response.understanding,
         progress: response.progress,
         readiness: response.readiness,
       };
@@ -1994,10 +2124,16 @@ function LocalAssistantConversationPage({
         messages: [
           ...current.messages,
           ...completedTurns.map((turn) =>
-            createDemoMessage(turn.role, turn.content)
+            createDemoMessage(turn.role, turn.content, {
+              blocks: turn.blocks,
+              suggestions: turn.suggestions,
+            })
           ),
         ],
         stage: voiceDraftRef.current.stage,
+        collectedAnswers: voiceDraftRef.current.collectedAnswers,
+        finalResult: voiceDraftRef.current.finalResult,
+        understanding: voiceDraftRef.current.understanding,
         progress: voiceDraftRef.current.progress,
         readiness: voiceDraftRef.current.readiness,
       }));
@@ -2218,7 +2354,7 @@ function LocalAssistantConversationPage({
         <div className="grid min-h-0 flex-1 gap-4 py-4 xl:grid-cols-[minmax(0,1fr)_300px]">
           <section
             aria-labelledby="local-conversation-title"
-            className="flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#dbe5f1] bg-[#f8fbff] shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+            className="flex min-h-0 flex-col overflow-y-auto overflow-x-hidden rounded-[18px] border border-[#dbe5f1] bg-[#f8fbff] shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
           >
             <header className="bg-white/82 border-b border-[#dbe6f2] px-4 py-4 sm:px-5">
               <div className="max-w-4xl">
@@ -2236,7 +2372,7 @@ function LocalAssistantConversationPage({
               </div>
             </header>
 
-            <div className="conversation-scrollbar min-h-[260px] flex-1 overflow-y-auto px-4 py-5 sm:px-5">
+            <div className="conversation-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-5">
               {isVoiceSessionActive ? (
                 <DemoVoiceSessionStage
                   status={voiceStatus}
@@ -2396,7 +2532,9 @@ function LocalAssistantConversationPage({
                     What SafeSpeak has understood
                   </h2>
                   <p className="mt-1 text-xs leading-5 text-[#60718a]">
-                    Local demo summary. Nothing has been sent.
+                    {demoState.understanding
+                      ? `${demoState.understanding.summary} Nothing has been sent.`
+                      : "Local demo summary. Nothing has been sent."}
                   </p>
                 </div>
                 <span className="rounded-full bg-[#e7f1fb] px-3 py-1.5 text-xs font-bold text-[#0f5d9f]">
@@ -2423,6 +2561,41 @@ function LocalAssistantConversationPage({
                     Status: {isAssistantTyping ? "SafeSpeak typing" : "Ready"}
                   </span>
                 </div>
+                {demoState.understanding ? (
+                  <div
+                    data-testid="ai-conversation-understanding-summary"
+                    className="rounded-[14px] border border-[#dbe5f0] bg-[#f8fbff] p-3 text-xs leading-5 text-[#60718a]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-[#1f2a3a]">
+                        {demoState.understanding.concernType}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.04em] ${
+                          demoState.understanding.urgencyLevel === "high"
+                            ? "bg-[#fde2e2] text-[#b42323]"
+                            : demoState.understanding.urgencyLevel === "medium"
+                              ? "bg-[#fff1da] text-[#9a5b12]"
+                              : "bg-[#e7f1fb] text-[#0f5d9f]"
+                        }`}
+                      >
+                        {demoState.understanding.urgencyLevel} urgency
+                      </span>
+                    </div>
+                    {demoState.understanding.biasIndicators.length ? (
+                      <ul className="mt-2 flex flex-col gap-1">
+                        {demoState.understanding.biasIndicators.map(
+                          (indicator) => (
+                            <li key={indicator.id}>
+                              - {indicator.label} (possible indicator, not a
+                              confirmed finding)
+                            </li>
+                          )
+                        )}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <div className="mt-4 rounded-[14px] border border-[#f2d8b0] bg-[#fffaf2] px-3 py-3 text-xs leading-5 text-[#9a5b12]">
@@ -2548,19 +2721,33 @@ function DemoMessageItem({
           </span>
         ) : null}
         <div className={isUser ? "items-end" : "items-start"}>
-          <div
-            className={`rounded-[18px] px-4 py-3 text-sm leading-6 shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
-              isUser
-                ? "rounded-tr-[8px] bg-[#0f5d9f] text-white"
-                : "rounded-tl-[8px] bg-white text-[#41566f]"
-            }`}
-          >
-            {isUser ? (
-              message.content
-            ) : (
-              <AssistantMessageRenderer content={message.content} />
-            )}
-          </div>
+          {isUser || message.content ? (
+            <div
+              className={`rounded-[18px] px-4 py-3 text-sm leading-6 shadow-[0_8px_22px_rgba(148,163,184,0.12)] ${
+                isUser
+                  ? "rounded-tr-[8px] bg-[#0f5d9f] text-white"
+                  : "rounded-tl-[8px] bg-white text-[#41566f]"
+              }`}
+            >
+              {isUser ? (
+                message.content
+              ) : (
+                <AssistantMessageRenderer content={message.content} />
+              )}
+            </div>
+          ) : null}
+          {!isUser && message.blocks?.length ? (
+            <div
+              className={`flex flex-col gap-3 ${message.content ? "mt-3" : ""}`}
+            >
+              {message.blocks.map((block, index) => (
+                <DemoMessageBlockRenderer
+                  key={`${message.id}-block-${index}`}
+                  block={block}
+                />
+              ))}
+            </div>
+          ) : null}
           {attachment ? (
             <div className="mt-2">
               <DemoAttachmentCard
@@ -2588,6 +2775,170 @@ function DemoMessageItem({
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DemoMessageBlockRenderer({ block }: { block: DemoMessageBlock }) {
+  switch (block.kind) {
+    case "safety_alert":
+      return <DemoSafetyAlertBlock alert={block.alert} />;
+    case "explanation":
+      return <DemoExplanationBlock explanation={block.explanation} />;
+    case "next_steps":
+      return <DemoNextStepsBlock group={block.group} />;
+    case "service_options":
+      return <DemoServiceOptionsBlock services={block.services} />;
+    default:
+      return null;
+  }
+}
+
+function DemoSafetyAlertBlock({ alert }: { alert: DemoEmergencyAlert }) {
+  return (
+    <div
+      role="alert"
+      data-testid="ai-conversation-safety-alert"
+      className="w-full max-w-[600px] rounded-[18px] border border-[#f7c9c9] bg-[#fff5f5] p-4 shadow-[0_8px_22px_rgba(148,163,184,0.12)]"
+    >
+      <div className="flex items-center gap-2 text-sm font-extrabold text-[#b42323]">
+        <IconAlertCircle size={16} />
+        {alert.heading}
+      </div>
+      <p className="mt-2 text-sm leading-6 text-[#7a2b2b]">{alert.body}</p>
+      {alert.actions.length ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {alert.actions.map((action) => (
+            <a
+              key={action.id}
+              href={`tel:${action.value}`}
+              className={
+                action.id === "call-emergency"
+                  ? "inline-flex h-11 max-w-full items-center gap-2 whitespace-nowrap rounded-full bg-[#de3838] px-4 text-[11px] font-bold text-white"
+                  : "inline-flex h-11 items-center rounded-full bg-[#0f5d9f] px-4 text-[11px] font-bold uppercase tracking-[0.08em] text-white"
+              }
+            >
+              {action.label}
+            </a>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DemoExplanationBlock({
+  explanation,
+}: {
+  explanation: DemoExplanation;
+}) {
+  return (
+    <div
+      data-testid="ai-conversation-explanation"
+      className="w-full max-w-[600px] rounded-[14px] border border-[#dbe5f0] bg-[#f8fbff] p-4"
+    >
+      <p className="text-xs font-extrabold uppercase tracking-[0.06em] text-[#0f5d9f]">
+        {explanation.heading}
+      </p>
+      <p className="mt-2 text-sm leading-6 text-[#41566f]">
+        {explanation.body}
+      </p>
+    </div>
+  );
+}
+
+function DemoNextStepsBlock({ group }: { group: DemoNextStepGroup }) {
+  return (
+    <div
+      data-testid="ai-conversation-next-steps"
+      className="w-full max-w-[600px] rounded-[14px] border border-[#dbe5f0] bg-white p-4 shadow-[0_6px_18px_rgba(148,163,184,0.12)]"
+    >
+      <p className="text-sm font-extrabold text-[#1f2a3a]">{group.heading}</p>
+      <ul className="mt-2 flex flex-col gap-2">
+        {group.steps.map((step) => (
+          <li key={step.id} className="rounded-[10px] bg-[#f8fbff] p-3">
+            <p className="text-xs font-bold text-[#1f2a3a]">{step.label}</p>
+            <p className="mt-1 text-xs leading-5 text-[#60718a]">
+              {step.description}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function DemoServiceOptionsBlock({
+  services,
+}: {
+  services: DemoServiceOption[];
+}) {
+  if (!services.length) {
+    return null;
+  }
+
+  return (
+    <div
+      data-testid="ai-conversation-service-options"
+      className="flex w-full max-w-[600px] flex-col gap-2"
+    >
+      {services.map((service) => (
+        <article
+          key={service.id}
+          className="rounded-[14px] border border-[#dbe5f0] bg-white p-3 shadow-[0_6px_18px_rgba(148,163,184,0.12)]"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-xs font-extrabold text-[#1f2a3a]">
+                {service.name}
+              </p>
+              <p className="mt-0.5 text-[11px] font-semibold text-[#60718a]">
+                {service.category}
+              </p>
+            </div>
+            {typeof service.matchScore === "number" ? (
+              <span className="shrink-0 rounded-full bg-[#e7f1fb] px-2 py-1 text-[10px] font-bold text-[#0f5d9f]">
+                {service.matchScore}% match
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-2 text-xs leading-5 text-[#41566f]">
+            {service.description}
+          </p>
+          {service.whyRelevant ? (
+            <p className="mt-2 text-[11px] leading-5 text-[#60718a]">
+              <span className="font-bold text-[#334155]">
+                Why this may help:{" "}
+              </span>
+              {service.whyRelevant}
+            </p>
+          ) : null}
+          {service.howSelected ? (
+            <p className="mt-1 text-[11px] leading-5 text-[#8896ab]">
+              {service.howSelected}
+            </p>
+          ) : null}
+          {service.contactValue ? (
+            <p className="mt-2 text-[11px] font-bold text-[#0f5d9f]">
+              {service.contactLabel ?? "Contact"}: {service.contactValue}
+            </p>
+          ) : null}
+          {service.website ? (
+            <a
+              href={
+                service.website.startsWith("http")
+                  ? service.website
+                  : `https://${service.website}`
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-block text-[11px] font-bold text-[#0f5d9f] underline"
+            >
+              {service.website}
+            </a>
+          ) : null}
+        </article>
+      ))}
     </div>
   );
 }
@@ -5060,6 +5411,7 @@ function LegacySafeSpeakAssistantConversationPage({
 
 function SafeSpeakAssistantConversationPage({
   initialMessage,
+  initialCategory,
 }: {
   initialMessage?: string;
   initialPrefillMessage?: string;
@@ -5067,7 +5419,12 @@ function SafeSpeakAssistantConversationPage({
   initialTopic?: DashboardCardFlowId;
   startVoiceMode?: boolean;
 }) {
-  return <LocalAssistantConversationPage initialMessage={initialMessage} />;
+  return (
+    <LocalAssistantConversationPage
+      initialMessage={initialMessage}
+      initialCategory={initialCategory}
+    />
+  );
 }
 
 export { SafeSpeakAssistantConversationPage, SafeSpeakAssistantPage };
