@@ -32,7 +32,9 @@ export default function RootLayout({
           <main id="main-content" className="site-shell pb-24">
             <Suspense>{children}</Suspense>
           </main>
-          <SafetyExperience />
+          <Suspense>
+            <SafetyExperience />
+          </Suspense>
         </I18nProvider>
       </body>
     </html>

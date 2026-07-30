@@ -9,6 +9,7 @@ A lightweight Next.js starter that now ships without any backend pieces. All API
 - [Branches](#branches)
 - [Setup](#setup)
 - [Notes for adding your backend](#notes-for-adding-your-backend)
+- [Phase 6 — deterministic mock content + matching engine](docs/PHASE_6_MOCK_MATCHING.md)
 
 ## Stack
 

@@ -80,6 +80,7 @@ export function getApiBaseUrl(explicit?: string): string {
 
 export function getAiAgentApiBaseUrl(): string {
   return normalizeApiBaseUrl(
+    // eslint-disable-next-line n/no-process-env
     process.env.NEXT_PUBLIC_AI_AGENT_API_BASE_URL ?? DEFAULT_AI_AGENT_API_BASE_URL,
   );
 }

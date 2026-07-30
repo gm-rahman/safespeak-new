@@ -74,6 +74,7 @@ import {
 } from "@/lib/dashboard-card-flows";
 import { LAST_NON_CONVERSATION_DASHBOARD_URL_STORAGE_KEY } from "@/lib/dashboard-navigation";
 import {
+  CONTINUE_TO_TRIAGE_SUGGESTION_ID,
   DEMO_ASSISTANT_STORAGE_KEY,
   HIJAB_CONFIRM_TRIAGE_SUGGESTION_ID,
   type DemoAttachment,
@@ -1982,7 +1983,10 @@ function LocalAssistantConversationPage({
     suggestion: DemoSuggestion,
     messageId: string
   ) => {
-    if (suggestion.id === HIJAB_CONFIRM_TRIAGE_SUGGESTION_ID) {
+    if (
+      suggestion.id === HIJAB_CONFIRM_TRIAGE_SUGGESTION_ID ||
+      suggestion.id === CONTINUE_TO_TRIAGE_SUGGESTION_ID
+    ) {
       handleContinueToTriage();
       return;
     }

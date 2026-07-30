@@ -48,14 +48,27 @@ import {
   type MicroEducationItem,
   listPublishedMicroEducation,
 } from "@/lib/microeducation";
+import {
+  type TriageRecommendationResult,
+  MockTriageRecommendationService,
+} from "@/lib/mock/triage-recommendation-service";
 import { EMERGENCY_NUMBER } from "@/lib/safety";
 import {
   type TriageOverview,
   type TriagePrimaryAction,
   type TriageResourceItem,
   type TriageSupportOption,
+  buildDemoSupportOptions,
   buildDemoTriageOverview,
 } from "@/lib/triage-view-model";
+import {
+  TriageAdvocateCardView,
+  TriageReportingDestinationCardView,
+} from "./triage-mock-cards";
+
+// Phase 6 — one shared mock-content-backed recommendation service instance
+// for the no-live-backend-session (demo) Triage branch only.
+const mockTriageRecommendationService = new MockTriageRecommendationService();
 
 const EMPTY_SUPPORT_BUNDLE: ConversationFlowSupportBundle = {
   suggestedMicroCardIds: [],
@@ -212,7 +225,10 @@ function isExternalHref(href: string) {
   return /^(https?:|tel:|mailto:)/i.test(href);
 }
 
-function ActionLink({
+// Exported (minimal one-line change) so the new mock-triage card components
+// in `triage-mock-cards.tsx` can reuse the exact same tel:/mailto:/external
+// link behaviour instead of duplicating it.
+export function ActionLink({
   href,
   className,
   children,
@@ -902,6 +918,9 @@ function ReportSubmissionSupportPage() {
   const [support, setSupport] =
     useState<ConversationFlowSupportBundle>(EMPTY_SUPPORT_BUNDLE);
   const [demoTriage, setDemoTriage] = useState<TriageOverview | null>(null);
+  const [mockTriage, setMockTriage] = useState<TriageRecommendationResult | null>(
+    null
+  );
   const [resolvedConversationSessionId, setResolvedConversationSessionId] =
     useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -944,10 +963,20 @@ function ReportSubmissionSupportPage() {
           ? "This triage preview uses the information you shared in your SafeSpeak conversation. It is not linked to a live backend triage session."
           : "Live triage support is not available yet because this report is not linked to an active SafeSpeak triage session."
       );
+
+      const mockResult = await mockTriageRecommendationService.getRecommendations({
+        topic: source?.incidentCategory,
+        timeline: source?.timeline,
+      });
+      setMockTriage(mockResult);
+
       setLoading(false);
       return;
     }
 
+    // Mock recommendations never apply to a live backend session — an
+    // important safety boundary, not just tidiness.
+    setMockTriage(null);
     setDemoTriage(null);
     setLoading(true);
     setSupportLoadNotice(null);
@@ -1084,8 +1113,20 @@ function ReportSubmissionSupportPage() {
   );
   const shouldShowSupportOptions =
     !loading && !pendingConsentRequirement && Boolean(triage);
-  const shouldShowDemoTriage =
-    !loading && !pendingConsentRequirement && !triage && Boolean(demoTriage);
+  // The shared gate for the whole no-live-backend path — both the legacy
+  // `demoTriage` intro/options block and the single governed mock
+  // recommendation source key off this, and it is mutually exclusive with
+  // `shouldShowSupportOptions` by construction (`!triage` vs `Boolean(triage)`),
+  // so the mock and live-session branches can never render together.
+  const shouldShowNoSessionTriage = !loading && !pendingConsentRequirement && !triage;
+  const shouldShowDemoTriage = shouldShowNoSessionTriage && Boolean(demoTriage);
+  const shouldShowMockTriage = shouldShowNoSessionTriage && mockTriage?.status === "success";
+  // Independent of both `demoTriage` and the governed mock match result —
+  // emergency guidance must never depend on whether a matching rule fired.
+  const emergencyOptions = useMemo(
+    () => buildDemoSupportOptions().filter((option) => option.emergencyOnly),
+    []
+  );
   const suggestedMicroCards = useMemo(() => {
     if (support.suggestedMicroCardIds.length === 0 || microCards.length === 0) {
       return [];
@@ -1298,46 +1339,6 @@ function ReportSubmissionSupportPage() {
                 </div>
               </section>
 
-              {demoTriage.resourceGroups.map((group) =>
-                group.items.length > 0 ? (
-                  <section key={group.id}>
-                    <SectionTitle>{`You may also find useful — ${group.heading}`}</SectionTitle>
-                    <div
-                      className="mt-5 grid gap-4 sm:grid-cols-2 lg:gap-6"
-                      data-testid={`triage-resource-group-${group.id}`}
-                    >
-                      {group.items.map((item) => (
-                        <ResourceCard
-                          key={item.id}
-                          action={resourceItemToSupportAction(item)}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                ) : null
-              )}
-
-              {demoTriage.supportOptions.length > 0 ? (
-                <section>
-                  <SectionTitle>Support options tailored to you</SectionTitle>
-                  <p className="mt-2 text-sm leading-5 text-[#64748B]">
-                    Based on what you shared, relevant options may include police
-                    support, medical guidance, and victims support. Call 000 only
-                    if you are in immediate danger.
-                  </p>
-                  <div
-                    className="mt-5 grid gap-4 lg:grid-cols-2"
-                    data-testid="triage-support-options"
-                  >
-                    {[...demoTriage.supportOptions]
-                      .sort((a, b) => a.order - b.order)
-                      .map((option) => (
-                        <TriageSupportOptionCard key={option.id} option={option} />
-                      ))}
-                  </div>
-                </section>
-              ) : null}
-
               <footer className="border-t border-[#F3F4F6] pt-8">
                 <div className="mx-auto flex max-w-[760px] flex-col gap-2 text-center text-xs leading-5 text-[#9CA3AF]">
                   <p>
@@ -1348,6 +1349,118 @@ function ReportSubmissionSupportPage() {
                   <p>{t("dashboard.assistant.triage.footerNote")}</p>
                 </div>
               </footer>
+            </>
+          ) : null}
+
+          {/*
+            Independently required emergency guidance — deliberately gated on
+            `shouldShowNoSessionTriage` alone, never on `demoTriage` or
+            `mockTriage`/a governed match. This must remain visible whether or
+            not any matching rule fired for the current topic/context.
+          */}
+          {shouldShowNoSessionTriage && emergencyOptions.length > 0 ? (
+            <section>
+              <SectionTitle>Emergency</SectionTitle>
+              <p className="mt-2 text-sm leading-5 text-[#64748B]">
+                Call 000 only if you are in immediate danger.
+              </p>
+              <div className="mt-5 grid gap-4 lg:grid-cols-2" data-testid="triage-emergency-options">
+                {emergencyOptions.map((option) => (
+                  <TriageSupportOptionCard key={option.id} option={option} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/*
+            Single governed mock recommendation source for the no-live-backend
+            path — the canonical generated mock bundle -> MockContentRepository
+            -> deterministic matcher -> Triage adapters pipeline. Gated on the
+            same `shouldShowNoSessionTriage` boundary as `demoTriage` above
+            (independent of whether `demoTriage` itself is non-null, since
+            e.g. General Assistant has no `concernType` yet `demoTriage` can be
+            null while matched mock content should still render). Each
+            category is omitted entirely when empty — never backfilled with
+            the old hardcoded catalogue or shown as a disruptive empty-state
+            box. The old static "Get Support"/"Know Your Rights"/"Support
+            options tailored to you" recommendation arrays
+            (buildStandardTriageResourceGroups / buildDemoSupportOptions'
+            non-emergency entries) are no longer rendered here — only this
+            governed result and the always-present Emergency card below are.
+          */}
+          {shouldShowMockTriage && mockTriage?.status === "success" ? (
+            <>
+              {mockTriage.resourceGroups.map((group) => (
+                <section key={group.id}>
+                  <SectionTitle>{`You may also find useful — ${group.heading}`}</SectionTitle>
+                  {group.id === "matched-rights-information" &&
+                  mockTriage.rightsContentDisclaimer ? (
+                    <p className="mt-2 text-xs leading-5 text-[#94A3B8]">
+                      {mockTriage.rightsContentDisclaimer}
+                    </p>
+                  ) : null}
+                  <div
+                    className="mt-5 grid gap-4 sm:grid-cols-2 lg:gap-6"
+                    data-testid={`triage-resource-group-${group.id}`}
+                  >
+                    {group.items.map((item) => (
+                      <ResourceCard
+                        key={item.id}
+                        action={resourceItemToSupportAction(item)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+
+              {mockTriage.supportOptions.length > 0 ? (
+                <section>
+                  <SectionTitle>Support options tailored to you</SectionTitle>
+                  <p className="mt-2 text-sm leading-5 text-[#64748B]">
+                    Based on what you shared, these are governed, deterministic
+                    matches — not a live availability check.
+                  </p>
+                  <div
+                    className="mt-5 grid gap-4 lg:grid-cols-2"
+                    data-testid="triage-mock-support-options"
+                  >
+                    {mockTriage.supportOptions.map((option) => (
+                      <TriageSupportOptionCard key={option.id} option={option} />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {mockTriage.advocates.length > 0 ? (
+                <section>
+                  <SectionTitle>Advocates & Counsellors</SectionTitle>
+                  <div
+                    className="mt-5 grid gap-4 sm:grid-cols-2 lg:gap-6"
+                    data-testid="triage-advocates-section"
+                  >
+                    {mockTriage.advocates.map((advocate) => (
+                      <TriageAdvocateCardView key={advocate.id} advocate={advocate} />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {mockTriage.reportingDestinations.length > 0 ? (
+                <section>
+                  <SectionTitle>Reporting Destinations</SectionTitle>
+                  <div
+                    className="mt-5 grid gap-4 sm:grid-cols-2 lg:gap-6"
+                    data-testid="triage-reporting-destinations-section"
+                  >
+                    {mockTriage.reportingDestinations.map((destination) => (
+                      <TriageReportingDestinationCardView
+                        key={destination.id}
+                        destination={destination}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </>
           ) : null}
 

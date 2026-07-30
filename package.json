@@ -9,6 +9,9 @@
     "build": "next build",
     "start": "next start",
     "test:e2e": "playwright test",
+    "test": "tsx --test \"tests/**/*.test.ts\" \"tests/**/*.test.tsx\"",
+    "typecheck": "tsc --noEmit",
+    "mock-bundle:validate": "tsx scripts/validate-mock-bundle.ts",
     "lint": "next lint",
     "format": "prettier src/ --write"
   },
@@ -37,7 +40,8 @@
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
-    "three": "^0.183.1"
+    "three": "^0.183.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
@@ -55,6 +59,7 @@
     "prettier": "3.7.4",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
   "license": "MIT"

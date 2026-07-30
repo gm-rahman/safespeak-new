@@ -263,9 +263,20 @@ const confirmationSuggestions: DemoSuggestion[] = [
   },
 ];
 
+/**
+ * The general (non-hijab) storyline's own "confirm and continue to Triage"
+ * suggestion — the counterpart to `HIJAB_CONFIRM_TRIAGE_SUGGESTION_ID`. Both
+ * ids are handled identically by `handleSuggestionClick` in
+ * `dashboard-assistant-pages.tsx` (call `handleContinueToTriage()` rather
+ * than sending the suggestion text back into the conversation) — see the
+ * confirmed regression this fixes in docs/PHASE_6_MOCK_MATCHING.md
+ * "Canonical Assistant conversation state."
+ */
+export const CONTINUE_TO_TRIAGE_SUGGESTION_ID = "continue_next_steps";
+
 const finalActions: DemoSuggestion[] = [
   {
-    id: "continue_next_steps",
+    id: CONTINUE_TO_TRIAGE_SUGGESTION_ID,
     label: "Continue to next steps",
     value: "I want to continue to next steps.",
   },
@@ -317,6 +328,29 @@ const demoRecommendations: DemoRecommendation[] = [
     contactValue: "legalaid.nsw.gov.au",
   },
 ];
+
+/**
+ * The general storyline's counterpart to `buildHijabUnderstanding` —
+ * without this, `demoState.understanding` stayed `undefined` for every
+ * conversation that never mentions "hijab", which silently blocked
+ * `handleContinueToTriage` (it requires `understanding`) for four of the
+ * five Assistant topics. Deterministic and scenario-driven, matching
+ * `buildFinalResult`'s own already-hardcoded narrative (this demo storyline
+ * does not perform real free-text classification — its summary text is
+ * fixed regardless of what the user typed) — never inferred from raw
+ * keywords. `safetyStatus: "unknown"` rather than assuming "safe": this
+ * storyline never explicitly asks a safety-check question the way the
+ * hijab branch does, so it is left honestly unknown rather than guessed.
+ */
+function buildFinalStoryUnderstanding(answers: DemoCollectedAnswers): DemoUnderstanding {
+  return {
+    concernType: "Harassment or stalking",
+    urgencyLevel: "medium",
+    safetyStatus: "unknown",
+    biasIndicators: [],
+    summary: buildUpdatedSummary(answers),
+  };
+}
 
 function buildFinalResult(answers: DemoCollectedAnswers): DemoConversationResult {
   const location = answers.timingOrLocation ?? "the place you described";
@@ -508,57 +542,58 @@ export function createDemoMessage(
   };
 }
 
+/**
+ * Seeds a fresh conversation, optionally from a URL-param/prefill initial
+ * message. This used to duplicate the "opening" stage's own transition
+ * logic (a second, divergent copy of the hijab-keyword check and the
+ * next-stage/message decision) instead of reusing `getScenarioResponse` —
+ * confirmed bug: a seeded non-hijab message stayed on `stage: "opening"`
+ * forever (showing the generic "I'm listening..." reply) instead of
+ * advancing to `"initial_clarification"` the way the identical text typed
+ * manually into the opening stage would. The next turn then re-processed
+ * whatever the user typed next as if it were still the very first message,
+ * silently diverging from the manually-typed path. Delegating to
+ * `getScenarioResponse` here means there is exactly one place that decides
+ * what happens to an "opening" stage message, seeded or typed.
+ */
 export function resetDemoConversation(
   initialMessage?: string
 ): DemoConversationState {
   const trimmed = initialMessage?.trim();
-  const messages: DemoConversationMessage[] = [];
 
-  if (trimmed) {
-    messages.push(createDemoMessage("user", trimmed));
-
-    if (hasAnyKeyword(trimmed, ["hijab"])) {
-      messages.push(
+  if (!trimmed) {
+    return {
+      messages: [
         createDemoMessage(
           "assistant",
-          "Thank you for telling me that. I'm sorry this happened to you. Could you tell me a little more about what happened? And are you somewhere safe right now?",
-          { suggestions: hijabSafetySuggestions }
-        )
-      );
-
-      return {
-        messages,
-        attachments: [],
-        stage: "hijab_clarification",
-        collectedAnswers: { initialConcern: trimmed },
-        progress: 30,
-        readiness: 20,
-      };
-    }
-
-    messages.push(
-      createDemoMessage(
-        "assistant",
-        "I’m listening. Could you tell me a little more about what has been happening?"
-      )
-    );
-  } else {
-    messages.push(
-      createDemoMessage(
-        "assistant",
-        "I’m listening. You can explain what has been happening in your own words. What would you like SafeSpeak to understand first?",
-        { suggestions: openingSuggestions }
-      )
-    );
+          "I’m listening. You can explain what has been happening in your own words. What would you like SafeSpeak to understand first?",
+          { suggestions: openingSuggestions }
+        ),
+      ],
+      attachments: [],
+      stage: "opening",
+      collectedAnswers: {},
+      progress: 8,
+      readiness: 4,
+    };
   }
 
-  return {
-    messages,
-    attachments: [],
+  const turn = getScenarioResponse({
+    content: trimmed,
     stage: "opening",
-    collectedAnswers: trimmed ? { initialConcern: trimmed } : {},
-    progress: trimmed ? 16 : 8,
-    readiness: trimmed ? 8 : 4,
+    collectedAnswers: {},
+  });
+  const { progress, readiness } = progressForStage(turn.stage);
+
+  return {
+    messages: [createDemoMessage("user", trimmed), turn.message],
+    attachments: [],
+    stage: turn.stage,
+    collectedAnswers: turn.collectedAnswers,
+    understanding: turn.understanding,
+    finalResult: turn.finalResult,
+    progress,
+    readiness,
   };
 }
 
@@ -973,6 +1008,7 @@ function getScenarioResponse(input: {
       stage: "final_result",
       collectedAnswers: answers,
       finalResult,
+      understanding: buildFinalStoryUnderstanding(answers),
       message: createDemoMessage("assistant", renderFinalResult(finalResult), {
         suggestions: finalResult.actions,
       }),
@@ -982,6 +1018,7 @@ function getScenarioResponse(input: {
   return {
     stage: "final_result",
     collectedAnswers: answers,
+    understanding: input.understanding ?? buildFinalStoryUnderstanding(answers),
     message: createDemoMessage(
       "assistant",
       "The demo result is already available above. You can continue to next steps or start over.",
